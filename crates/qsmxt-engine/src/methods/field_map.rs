@@ -45,30 +45,7 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
     describe_centre_frequency(ran, doc);
     let fm = &config.field_mapping;
     let d = FieldMappingConfig::default();
-    let m = &config.motion_correction;
-    // Decided per run ([`Topic::MotionCorrection`]), worded as MEDI+0 is: applied to every run,
-    // plainly; to none, that it was not; where the runs differ, or nothing is known of them, with
-    // the condition.
-    if m.enabled && ran.only(Topic::MotionCorrection, &[Choice::NotApplied]) {
-        doc.say(&[Stage::Motion],
-            "Motion correction was not applied: it needs at least two echoes with magnitude images, and no run had them.");
-    } else if m.enabled {
-        let scope = if ran.only(Topic::MotionCorrection, &[Choice::Applied]) { "" }
-            else { ", in runs with more than one echo and magnitude images" };
-        // The reference echo says what was done (which echo the others were moved onto), so it
-        // is always named; the registration settings only when changed.
-        let reference = match m.reference {
-            crate::motion::MotionReference::First => "the first echo".to_string(),
-            crate::motion::MotionReference::Last => "the last echo".to_string(),
-            crate::motion::MotionReference::Echo(n) => format!("echo {n}"),
-        };
-        let mut changed = registration_changes(config);
-        changed.add_fields(m, &crate::motion::MotionCorrectionConfig::default(),
-            &["enabled", "reference", "min_ncc"]);
-        doc.say(&[Stage::Motion], format!(
-            "Before field mapping{scope}, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images over a multi-resolution pyramid{}, and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
-            changed.paren()));
-    }
+    describe_motion_correction(config, ran, doc);
     let sigma = if fm.phase_offset_sigma_mm.iter().zip(d.phase_offset_sigma_mm).any(|(a, b)| differs(*a, b)) {
         format!("; smoothing σ = {} mm",
             fm.phase_offset_sigma_mm.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "))
@@ -112,6 +89,47 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
     }
 
     // Unwrapping
+    describe_unwrapping(config, doc);
+
+    // A per-echo QSM combines no echoes into a B0 field map.
+    if per_echo {
+        return;
+    }
+    describe_b0_estimation(config, doc);
+}
+
+/// Motion correction before field mapping.
+fn describe_motion_correction(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
+    let m = &config.motion_correction;
+    // Decided per run ([`Topic::MotionCorrection`]), worded as MEDI+0 is: applied to every run,
+    // plainly; to none, that it was not; where the runs differ, or nothing is known of them, with
+    // the condition.
+    if m.enabled && ran.only(Topic::MotionCorrection, &[Choice::NotApplied]) {
+        doc.say(&[Stage::Motion],
+            "Motion correction was not applied: it needs at least two echoes with magnitude images, and no run had them.");
+    } else if m.enabled {
+        let scope = if ran.only(Topic::MotionCorrection, &[Choice::Applied]) { "" }
+            else { ", in runs with more than one echo and magnitude images" };
+        // The reference echo says what was done (which echo the others were moved onto), so it
+        // is always named; the registration settings only when changed.
+        let reference = match m.reference {
+            crate::motion::MotionReference::First => "the first echo".to_string(),
+            crate::motion::MotionReference::Last => "the last echo".to_string(),
+            crate::motion::MotionReference::Echo(n) => format!("echo {n}"),
+        };
+        let mut changed = registration_changes(config);
+        changed.add_fields(m, &crate::motion::MotionCorrectionConfig::default(),
+            &["enabled", "reference", "min_ncc"]);
+        doc.say(&[Stage::Motion], format!(
+            "Before field mapping{scope}, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images over a multi-resolution pyramid{}, and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
+            changed.paren()));
+    }
+}
+
+/// Phase unwrapping.
+fn describe_unwrapping(config: &PipelineConfig, doc: &mut Draft) {
+    let fm = &config.field_mapping;
+    let d = FieldMappingConfig::default();
     match fm.unwrapping_algorithm {
         UnwrappingAlgorithm::Romeo => {
             let mode = if fm.romeo.individual == d.romeo.individual {
@@ -163,11 +181,12 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
                 "Phase unwrapping was performed separately for each echo using MEDI's magnitude-guided region growing (Liu et al., 2013).".to_string());
         }
     }
+}
 
-    // A per-echo QSM combines no echoes into a B0 field map.
-    if per_echo {
-        return;
-    }
+/// How the unwrapped echoes were combined into the B0 field map.
+fn describe_b0_estimation(config: &PipelineConfig, doc: &mut Draft) {
+    let fm = &config.field_mapping;
+    let d = FieldMappingConfig::default();
     // B0 estimation. The linear fit's settings are shared with the robust fit.
     let mut linear = Changed::default();
     linear.add_fields(&fm.linear_fit, &d.linear_fit, &[]);

@@ -3,6 +3,24 @@
 use super::*;
 
 pub(super) fn defs() -> Vec<Def> {
+    [
+        algorithm(),
+        r2star_qsm(),
+        decompose(),
+        chi_sep_ilsqr(),
+        chi_sep_medi(),
+        wavesep(),
+        hc_chisep(),
+        chi_sepnet(),
+        susep_net(),
+        custom_qsm_tool(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn algorithm() -> Vec<Def> {
     vec![
         d("pipeline.do_chi_separation", Separation, "Compute χ-separation", "Split QSM into paramagnetic (χ+, iron) and diamagnetic (χ−, myelin) maps", Bool).basic().flag("--do-chisep")
         .cli("Compute chi-separation (paramagnetic/diamagnetic susceptibility maps)")
@@ -27,10 +45,20 @@ pub(super) fn defs() -> Vec<Def> {
         .cli("Chi-separation method (default: r2star-qsm)")
         .cli_id("chi_separation_algorithm")
         .value_help("r2star-qsm", "R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)").value_help("decompose", "DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)").value_help("chi-sep-ilsqr", "χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM").value_help("chi-sep-medi", "χ-separation MEDI — local field + R2' + magnitude").value_help("wavesep", "WaveSep wavelet-L1 (Fang 2023) — QSM + R2'").value_help("hc-chisep", "Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude").value_help("susep-net", "SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use)").value_help("chi-sepnet", "χ-sepnet deep-learning separation — QSM + R2' + local field (weights downloaded on first use)"),
+    ]
+}
+
+fn r2star_qsm() -> Vec<Def> {
+    vec![
         d("separation.r2star_qsm.r_const_3t", Separation, "Relaxometric const @3T", "Hz/ppm at 3T (scales with B0)", Float).units("Hz/ppm").flag("--r2star-qsm-r-const-3t").parent("separation.algorithm")
         .when(|x| x.sep("r2star-qsm")).full("Relaxometric constant at 3 T")
         .gui("Relaxometric constant at 3 T (scales with B0)")
         .cli("R2*-QSM relaxometric constant at 3T (Hz/ppm)"),
+    ]
+}
+
+fn decompose() -> Vec<Def> {
+    vec![
         d("separation.decompose.n_inner", Separation, "Inner passes", "Alternating 3-stage fit passes per voxel", Int).flag("--decompose-n-inner").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("Inner passes")
         .cli("DECOMPOSE inner alternating passes per voxel"),
@@ -79,6 +107,11 @@ pub(super) fn defs() -> Vec<Def> {
         d("separation.decompose.lsqcurvefit.typical_x", Separation, "Typical x", "Typical magnitude of each fitted value, for the finite differences (lsqcurvefit TypicalX)", Float).above(0.0).flag("--decompose-typical-x").parent("separation.algorithm")
         .when(|x| x.sep("decompose")).full("Typical x")
         .cli("DECOMPOSE: typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1)"),
+    ]
+}
+
+fn chi_sep_ilsqr() -> Vec<Def> {
+    vec![
         // QSM.rs ChiSepIlsqrParams::validate: D_r finite and > 0; cone > 0; CG tolerances in (0, 1);
         // percentiles 0 <= min < max <= 100 (the pairs are checked by qsm-core).
         d("separation.chi_sep_ilsqr.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxometric constant. Blank = 137 × B0 / 2.9 T", Float).above(0.0).optional().units("Hz/ppm").flag("--chi-sep-ilsqr-dr-pos").parent("separation.algorithm")
@@ -140,6 +173,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Arithmetic of the two least-squares solves of the iLSQR that reconstructs the QSM separated")
         .cli("χ-sep iLSQR: arithmetic of that QSM's two LSQR solves: double, or single as the original implementation (default: double)")
         .parse(P::Named).value_name("PRECISION"),
+    ]
+}
+
+fn chi_sep_medi() -> Vec<Def> {
+    vec![
         // QSM.rs ChiSepMediParams::validate: λ, λ_CSF and the tolerances finite and >= 0; D_r finite
         // and > 0; at least 1 iteration.
         d("separation.chi_sep_medi.lambda", Separation, "Lambda", "Weight of the data terms against the L1 terms", Float).min(0.0).flag("--chi-sep-medi-lambda").parent("separation.algorithm")
@@ -200,6 +238,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("The R2* fit the CSF mask is extracted from")
         .cli("χ-sep MEDI: the R2* its CSF mask is extracted from: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs)")
         .parse(P::Named).value_name("METHOD"),
+    ]
+}
+
+fn wavesep() -> Vec<Def> {
+    vec![
         d("separation.wavesep.dr_pos", Separation, "Dr+ (Hz/ppm)", "Paramagnetic relaxivity", Float).units("Hz/ppm").flag("--wavesep-dr-pos").parent("separation.algorithm")
         .when(|x| x.sep("wavesep")).full("Paramagnetic constant (Dr+)")
         .cli("WaveSep paramagnetic relaxivity (Hz/ppm)"),
@@ -222,6 +265,11 @@ pub(super) fn defs() -> Vec<Def> {
         d("separation.wavesep.tol", Separation, "Tolerance", "Relative-change stop tolerance", Float).flag("--wavesep-tol").parent("separation.algorithm")
         .when(|x| x.sep("wavesep"))
         .cli("WaveSep relative-change stop tolerance"),
+    ]
+}
+
+fn hc_chisep() -> Vec<Def> {
+    vec![
         // QSM.rs separation/hc_chisep.rs: r2prime/dr_pos is inf at 0; below 0 the calibration window is empty.
         d("separation.hc_chisep.dr_pos_3t", Separation, "Dr+ @3T (Hz/ppm)", "Paramagnetic relaxivity at 3T", Float).above(0.0).units("Hz/ppm").flag("--hc-chisep-dr-pos-3t").parent("separation.algorithm")
         .when(|x| x.sep("hc-chisep")).full("Paramagnetic constant at 3 T (Dr+)")
@@ -230,6 +278,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.sep("hc-chisep")).full("R2' bin width")
         .gui("R2' bin width for the anchored grid search")
         .cli("HC-ChiSep R2' bin width for the anchored grid search (Hz)"),
+    ]
+}
+
+fn chi_sepnet() -> Vec<Def> {
+    vec![
         // QSM.rs ChiSepNetParams::validate: each side a positive multiple of chisepnet::POOL_MULTIPLE
         // (16). The texts' "16" is pinned to it by a test.
         d("separation.chi_sepnet.route", Separation, "Route", "", Enum(vec![
@@ -250,6 +303,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Patch size for running the networks piece by piece, which needs less memory, each a multiple of 16; empty runs the whole frame at once")
         .cli("χ-sepnet (`--chi-sepnet-route toolbox`): run the networks as a sliding window of patches this size over the 1 mm frame, D H W, each a multiple of 16, so memory follows the patch. Omit to run the whole frame at once, as the authors do")
         .value_names(&["D", "H", "W"]),
+    ]
+}
+
+fn susep_net() -> Vec<Def> {
+    vec![
         // QSM.rs SusepNetParams::validate: each side a positive multiple of susep_net::POOL_MULTIPLE
         // (8). The texts' "8" is pinned to it by a test.
         d("separation.susep_net.patch", Separation, "Sliding window", "Run the network on patches D H W in voxels, each a multiple of 8, so its memory follows the patch instead of the volume; empty runs the whole volume at once", IntVec3).min(qsm_core::separation::susep_net::POOL_MULTIPLE as f64).units("voxels").optional().flag("--susep-net-patch").parent("separation.algorithm")
@@ -257,6 +315,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Patch size for running SUSEP-Net piece by piece, which needs less memory; empty runs the whole volume at once")
         .cli("Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once")
         .value_names(&["D", "H", "W"]),
+    ]
+}
+
+fn custom_qsm_tool() -> Vec<Def> {
+    vec![
         d("separation.custom_qsm_tool", Separation, "Custom QSM tool", "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool", Text).basic().optional().flag("--use-custom-qsm").also(&[SwiSmwi, Segmentation])
         .supplied_file(Item::SuppliedChi, "A susceptibility (χ) map to use instead of computing QSM, for χ-separation, the statistics and SMWI")
         .when(|x| x.reads_qsm).full("Custom QSM")

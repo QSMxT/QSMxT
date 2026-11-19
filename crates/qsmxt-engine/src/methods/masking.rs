@@ -176,45 +176,7 @@ pub(super) fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draf
     // (the RSS for RSS and phase-quality inputs, the first or last echo for those), and every echo
     // for the combined magnitude.
     if config.masking.inhomogeneity_correction {
-        let mut changed = Changed::default();
-        let correction = match config.masking.inhomogeneity_method {
-            InhomogeneityMethod::Makehomogeneous => {
-                doc.cite_method(MethodStage::InhomogeneityCorrection, "makehomogeneous");
-                changed.add_fields(&config.homogeneity, &HomogeneityConfig::default(), &[]);
-                "Inhomogeneity correction (Eckstein et al., 2019"
-            }
-            InhomogeneityMethod::N4 => {
-                doc.cite_method(MethodStage::InhomogeneityCorrection, "n4");
-                let (n4, d) = (&config.n4, N4Config::default());
-                if n4.max_iterations != d.max_iterations {
-                    let levels: Vec<String> = n4.max_iterations.iter().map(|i| i.to_string()).collect();
-                    let n = levels.len();
-                    changed.0.push(format!("at most {} iterations at {n} fitting level{}",
-                                           join_list(&levels), if n == 1 { "" } else { "s" }));
-                }
-                changed.add_fields(n4, &d, &["max_iterations"]);
-                "N4 inhomogeneity correction (Tustison et al., 2010"
-            }
-        };
-        let settings = changed.semi();
-
-        let inputs: Vec<MaskingInput> = config.masking.sections.iter().map(|s| s.input).collect();
-        let uses_rss = inputs.iter().any(|i| matches!(i, MaskingInput::Magnitude | MaskingInput::PhaseQuality));
-        let uses_first = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeFirst));
-        let uses_last = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeLast));
-
-        // Each echo the mask reads is corrected on its own, and every echo when the combined
-        // magnitude (the RSS of the corrected echoes) is published.
-        let all = uses_rss || config.pipeline.do_magnitude
-            || crate::stages::magnitude::refinements_read_magnitude(&config.masking.refinements);
-        let what = if all || (uses_first && uses_last) {
-            "each echo's magnitude"
-        } else if uses_first {
-            "the first-echo magnitude"
-        } else {
-            "the last-echo magnitude"
-        };
-        doc.say(&[Stage::InhomogeneityCorrection], format!("{correction}{settings}) was applied to {what}."));
+        describe_inhomogeneity_correction(config, doc);
     }
 
     // No run generated a mask: there is no recipe to describe.
@@ -276,4 +238,47 @@ pub(super) fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draf
             "This masking follows the recommendation of the ISMRM electro-magnetic tissue \
              properties study group consensus (Bilgic et al., 2024).".to_string());
     }
+}
+
+/// The inhomogeneity correction, and which echoes it corrected.
+fn describe_inhomogeneity_correction(config: &PipelineConfig, doc: &mut Draft) {
+    let mut changed = Changed::default();
+    let correction = match config.masking.inhomogeneity_method {
+        InhomogeneityMethod::Makehomogeneous => {
+            doc.cite_method(MethodStage::InhomogeneityCorrection, "makehomogeneous");
+            changed.add_fields(&config.homogeneity, &HomogeneityConfig::default(), &[]);
+            "Inhomogeneity correction (Eckstein et al., 2019"
+        }
+        InhomogeneityMethod::N4 => {
+            doc.cite_method(MethodStage::InhomogeneityCorrection, "n4");
+            let (n4, d) = (&config.n4, N4Config::default());
+            if n4.max_iterations != d.max_iterations {
+                let levels: Vec<String> = n4.max_iterations.iter().map(|i| i.to_string()).collect();
+                let n = levels.len();
+                changed.0.push(format!("at most {} iterations at {n} fitting level{}",
+                                       join_list(&levels), if n == 1 { "" } else { "s" }));
+            }
+            changed.add_fields(n4, &d, &["max_iterations"]);
+            "N4 inhomogeneity correction (Tustison et al., 2010"
+        }
+    };
+    let settings = changed.semi();
+
+    let inputs: Vec<MaskingInput> = config.masking.sections.iter().map(|s| s.input).collect();
+    let uses_rss = inputs.iter().any(|i| matches!(i, MaskingInput::Magnitude | MaskingInput::PhaseQuality));
+    let uses_first = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeFirst));
+    let uses_last = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeLast));
+
+    // Each echo the mask reads is corrected on its own, and every echo when the combined
+    // magnitude (the RSS of the corrected echoes) is published.
+    let all = uses_rss || config.pipeline.do_magnitude
+        || crate::stages::magnitude::refinements_read_magnitude(&config.masking.refinements);
+    let what = if all || (uses_first && uses_last) {
+        "each echo's magnitude"
+    } else if uses_first {
+        "the first-echo magnitude"
+    } else {
+        "the last-echo magnitude"
+    };
+    doc.say(&[Stage::InhomogeneityCorrection], format!("{correction}{settings}) was applied to {what}."));
 }

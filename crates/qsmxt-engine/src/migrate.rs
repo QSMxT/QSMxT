@@ -386,93 +386,9 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
             && s("field_mapping.phase_offset_removal").and_then(|v| v.as_bool()) != Some(false)
     };
 
-    // TFI's `merit` did nothing before version 2 (TFI had no MERIT); it now turns MERIT on and off,
-    // on by default, so an old value is not carried over.
-    if let Some(v) = take(value, "inversion.tfi.merit") {
-        let off = v.as_bool() == Some(false);
-        if off && !full && tfi {
-            out.warnings.push(format!(
-                "inversion.tfi.merit = {v} had no effect when this file was written and is ignored: TFI \
-                 now runs MERIT by default. To turn it off, keep the setting and add \
-                 `schema_version = {CONFIG_SCHEMA_VERSION}` at the top of the file"));
-        } else {
-            out.notes.push(format!(
-                "inversion.tfi.merit = {v} had no effect when this file was written and is ignored; \
-                 TFI now runs MERIT by default"));
-        }
-    }
-
-    // The phase-offset smoothing went from voxels to mm under a new name.
-    if let Some(v) = take(value, "field_mapping.phase_offset_sigma") {
-        let mm = qsm_core::pipeline::FieldMappingConfig::default().phase_offset_sigma_mm;
-        let default_mm = format!("{} × {} × {} mm", mm[0], mm[1], mm[2]);
-        let old_default =
-            toml::Value::Array(OLD_PHASE_OFFSET_SIGMA.iter().map(|&x| x.into()).collect());
-        if full && same(&v, &old_default) {
-            out.notes.push(format!(
-                "field_mapping.phase_offset_sigma = {v} (voxels) was QSMxT's default when this file was \
-                 written; using today's default, field_mapping.phase_offset_sigma_mm = {default_mm}"));
-        } else if mcpc {
-            return Err(ConfigError::Parse(format!(
-                "field_mapping.phase_offset_sigma = {v} is in voxels, and the phase-offset smoothing is \
-                 now set in mm as field_mapping.phase_offset_sigma_mm (the same width at every \
-                 resolution). Replace it with phase_offset_sigma_mm, the sigma in voxels times the \
-                 voxel size, or remove it to use the default ({default_mm})")));
-        } else {
-            out.notes.push(format!(
-                "field_mapping.phase_offset_sigma = {v} is ignored: it is in voxels, the setting is now \
-                 phase_offset_sigma_mm (mm), and this configuration does not remove phase offsets"));
-        }
-    }
-
-    // QSMART's vessel sizes were in mm before `vessel_size_units` (now voxels by default, as
-    // QSMART gives them). A full file at the earlier defaults takes today's; any other sizes keep
-    // their meaning, in mm.
-    let sizes: Vec<(String, toml::Value)> = crate::config::QSMART_VESSEL_SIZE_KEYS
-        .iter()
-        .filter_map(|k| {
-            let path = format!("inversion.qsmart.{k}");
-            get(value, &path).cloned().map(|v| (path, v))
-        })
-        .collect();
-    if !sizes.is_empty() && get(value, "inversion.qsmart.vessel_size_units").is_none() {
-        let at_old_defaults = crate::config::QSMART_VESSEL_SIZE_KEYS
-            .iter()
-            .zip(OLD_QSMART_VESSEL_SIZES)
-            .all(|(k, old)| {
-                get(value, &format!("inversion.qsmart.{k}"))
-                    .is_some_and(|v| same(v, &toml::Value::Float(old)))
-            });
-        if full && at_old_defaults {
-            for (path, _) in &sizes {
-                take(value, path);
-            }
-            out.notes.push(
-                "inversion.qsmart's vessel sizes (8 mm bottom-hat radius, Frangi scales 0.5 to 6 mm \
-                 in steps of 0.5 mm) were QSMxT's defaults when this file was written; using \
-                 today's defaults, in voxels as QSMART gives them"
-                    .into(),
-            );
-        } else {
-            set(
-                value,
-                "inversion.qsmart.vessel_size_units",
-                toml::Value::String("mm".into()),
-            );
-            let s = |p: &str| {
-                get(value, p)
-                    .or_else(|| get(&today, p))
-                    .and_then(|v| v.as_str().map(str::to_owned))
-            };
-            if s("inversion.algorithm").as_deref() == Some("qsmart") {
-                out.warnings.push(
-                    "inversion.qsmart gives vessel sizes without vessel_size_units: read in mm; add \
-                     vessel_size_units = \"voxels\" to read them in voxels"
-                        .into(),
-                );
-            }
-        }
-    }
+    tfi_merit(value, full, tfi, out);
+    phase_offset_sigma(value, full, mcpc, out)?;
+    qsmart_vessel_sizes(value, &today, full, out);
 
     for (path, olds) in leaves(&old, String::new()) {
         let Some(v) = get(value, &path) else { continue };
@@ -525,6 +441,101 @@ fn from_v1(value: &mut toml::Table, kind: Kind, out: &mut Migration) -> Result<(
         }
     }
     Ok(())
+}
+
+fn tfi_merit(value: &mut toml::Table, full: bool, tfi: bool, out: &mut Migration) {
+    // TFI's `merit` did nothing before version 2 (TFI had no MERIT); it now turns MERIT on and off,
+    // on by default, so an old value is not carried over.
+    if let Some(v) = take(value, "inversion.tfi.merit") {
+        let off = v.as_bool() == Some(false);
+        if off && !full && tfi {
+            out.warnings.push(format!(
+                "inversion.tfi.merit = {v} had no effect when this file was written and is ignored: TFI \
+                 now runs MERIT by default. To turn it off, keep the setting and add \
+                 `schema_version = {CONFIG_SCHEMA_VERSION}` at the top of the file"));
+        } else {
+            out.notes.push(format!(
+                "inversion.tfi.merit = {v} had no effect when this file was written and is ignored; \
+                 TFI now runs MERIT by default"));
+        }
+    }
+}
+
+fn phase_offset_sigma(value: &mut toml::Table, full: bool, mcpc: bool, out: &mut Migration) -> Result<(), ConfigError> {
+    // The phase-offset smoothing went from voxels to mm under a new name.
+    if let Some(v) = take(value, "field_mapping.phase_offset_sigma") {
+        let mm = qsm_core::pipeline::FieldMappingConfig::default().phase_offset_sigma_mm;
+        let default_mm = format!("{} × {} × {} mm", mm[0], mm[1], mm[2]);
+        let old_default =
+            toml::Value::Array(OLD_PHASE_OFFSET_SIGMA.iter().map(|&x| x.into()).collect());
+        if full && same(&v, &old_default) {
+            out.notes.push(format!(
+                "field_mapping.phase_offset_sigma = {v} (voxels) was QSMxT's default when this file was \
+                 written; using today's default, field_mapping.phase_offset_sigma_mm = {default_mm}"));
+        } else if mcpc {
+            return Err(ConfigError::Parse(format!(
+                "field_mapping.phase_offset_sigma = {v} is in voxels, and the phase-offset smoothing is \
+                 now set in mm as field_mapping.phase_offset_sigma_mm (the same width at every \
+                 resolution). Replace it with phase_offset_sigma_mm, the sigma in voxels times the \
+                 voxel size, or remove it to use the default ({default_mm})")));
+        } else {
+            out.notes.push(format!(
+                "field_mapping.phase_offset_sigma = {v} is ignored: it is in voxels, the setting is now \
+                 phase_offset_sigma_mm (mm), and this configuration does not remove phase offsets"));
+        }
+    }
+    Ok(())
+}
+
+fn qsmart_vessel_sizes(value: &mut toml::Table, today: &toml::Table, full: bool, out: &mut Migration) {
+    // QSMART's vessel sizes were in mm before `vessel_size_units` (now voxels by default, as
+    // QSMART gives them). A full file at the earlier defaults takes today's; any other sizes keep
+    // their meaning, in mm.
+    let sizes: Vec<(String, toml::Value)> = crate::config::QSMART_VESSEL_SIZE_KEYS
+        .iter()
+        .filter_map(|k| {
+            let path = format!("inversion.qsmart.{k}");
+            get(value, &path).cloned().map(|v| (path, v))
+        })
+        .collect();
+    if !sizes.is_empty() && get(value, "inversion.qsmart.vessel_size_units").is_none() {
+        let at_old_defaults = crate::config::QSMART_VESSEL_SIZE_KEYS
+            .iter()
+            .zip(OLD_QSMART_VESSEL_SIZES)
+            .all(|(k, old)| {
+                get(value, &format!("inversion.qsmart.{k}"))
+                    .is_some_and(|v| same(v, &toml::Value::Float(old)))
+            });
+        if full && at_old_defaults {
+            for (path, _) in &sizes {
+                take(value, path);
+            }
+            out.notes.push(
+                "inversion.qsmart's vessel sizes (8 mm bottom-hat radius, Frangi scales 0.5 to 6 mm \
+                 in steps of 0.5 mm) were QSMxT's defaults when this file was written; using \
+                 today's defaults, in voxels as QSMART gives them"
+                    .into(),
+            );
+        } else {
+            set(
+                value,
+                "inversion.qsmart.vessel_size_units",
+                toml::Value::String("mm".into()),
+            );
+            let s = |p: &str| {
+                get(value, p)
+                    .or_else(|| get(today, p))
+                    .and_then(|v| v.as_str().map(str::to_owned))
+            };
+            if s("inversion.algorithm").as_deref() == Some("qsmart") {
+                out.warnings.push(
+                    "inversion.qsmart gives vessel sizes without vessel_size_units: read in mm; add \
+                     vessel_size_units = \"voxels\" to read them in voxels"
+                        .into(),
+                );
+            }
+        }
+    }
 }
 
 /// Whether `changed`'s method runs with this file's settings (today's defaults where it says

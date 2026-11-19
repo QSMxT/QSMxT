@@ -1,12 +1,43 @@
-//! The methods paragraph in the order the pipeline runs: [`draft`] calls each stage's prose and
-//! still words the later stages (segmentation, SWI/SMWI, relaxometry, separation,
-//! multi-orientation, DICOM export) inline.
+//! The methods paragraph in the order the pipeline runs: [`draft`] calls each stage's prose; the
+//! later stages (segmentation, SWI/SMWI, relaxometry, separation, multi-orientation, DICOM export)
+//! are worded here.
 
 use super::*;
 
 pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
     let mut doc = Draft::default();
 
+    describe_intro(config, tool, &mut doc);
+
+    // Masking (inhomogeneity correction is described inline)
+    describe_masking(config, ran, &mut doc);
+
+    // QSM-specific pipeline
+    if config.pipeline.do_qsm {
+        describe_reconstruction_grid(config, ran, &mut doc);
+        describe_qsm_inversion(config, ran, &mut doc);
+
+        // Two-pass wraps background removal and inversion, so it is described after both and
+        // before referencing, which runs on the combined map.
+        describe_two_pass(config, ran, &mut doc);
+        // HEIDI after the inversion, and after two-pass on the combined map.
+        describe_heidi(config, ran, &mut doc);
+
+        describe_referencing(config, &mut doc);
+    }
+
+    describe_segmentation(config, ran, &mut doc);
+    describe_swi(config, ran, &mut doc);
+    describe_relaxometry(config, ran, &mut doc);
+    describe_chi_separation(config, ran, &mut doc);
+    describe_multi_orientation(config, ran, &mut doc);
+    describe_dicom_export(config, ran, &mut doc);
+
+    doc
+}
+
+/// The software, the toolbox pipeline the settings were chosen from, and the k-space Tukey window.
+fn describe_intro(config: &PipelineConfig, tool: &str, doc: &mut Draft) {
     let cite = match tool {
         "QSMbly" | "qsmbly" => &CITE_QSMBLY,
         _ => &CITE_QSMXT,
@@ -38,195 +69,198 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             "Before any other processing, each echo's complex image was multiplied in k-space by a Tukey \
              window with a taper ratio of {}.", config.pipeline.tukey_window));
     }
+}
 
-    // Masking (inhomogeneity correction is described inline)
-    describe_masking(config, ran, &mut doc);
-
-    // QSM-specific pipeline
-    if config.pipeline.do_qsm {
-        describe_reconstruction_grid(config, ran, &mut doc);
-        match config.inversion.algorithm {
-            QsmAlgorithm::Tgv => {
-                // Routed by QSM.rs's `InversionInput`: one echo goes in as wrapped phase (TGV
-                // unwraps it itself), several are field-mapped first and go in as the total field.
-                // Neither route runs a separate background-removal stage.
-                doc.cite_method(MethodStage::Inversion, "tgv");
-                doc.say(&both(Stage::Tgv), format!(
-                    "QSM was computed using the Total Generalized Variation (TGV) algorithm \
-                     (Langkammer et al., 2015), with background field removal and dipole inversion \
-                     performed jointly. For single-echo data TGV was applied to the wrapped phase of \
-                     the echo and also performed the phase unwrapping; for multi-echo data TGV was \
-                     applied to the B0 field map, computed as described below, expressed as phase at \
-                     {}. The regularisation weights are in radians at that echo time \
-                     and the field strength, and the susceptibility was converted to ppm with them.",
-                    echo_time_prose(config.inversion.tgv.te)));
-                let changed = inversion_changes(config, QsmAlgorithm::Tgv);
-                if !changed.is_empty() {
-                    doc.say(&both(Stage::Tgv), format!("TGV was run{}.", changed.with()));
-                }
-                describe_field_mapping(config, ran, &mut doc);
+/// How QSM was reconstructed, by the route QSM.rs takes for the inversion.
+fn describe_qsm_inversion(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
+    match config.inversion.algorithm {
+        QsmAlgorithm::Tgv => {
+            // Routed by QSM.rs's `InversionInput`: one echo goes in as wrapped phase (TGV
+            // unwraps it itself), several are field-mapped first and go in as the total field.
+            // Neither route runs a separate background-removal stage.
+            doc.cite_method(MethodStage::Inversion, "tgv");
+            doc.say(&both(Stage::Tgv), format!(
+                "QSM was computed using the Total Generalized Variation (TGV) algorithm \
+                 (Langkammer et al., 2015), with background field removal and dipole inversion \
+                 performed jointly. For single-echo data TGV was applied to the wrapped phase of \
+                 the echo and also performed the phase unwrapping; for multi-echo data TGV was \
+                 applied to the B0 field map, computed as described below, expressed as phase at \
+                 {}. The regularisation weights are in radians at that echo time \
+                 and the field strength, and the susceptibility was converted to ppm with them.",
+                echo_time_prose(config.inversion.tgv.te)));
+            let changed = inversion_changes(config, QsmAlgorithm::Tgv);
+            if !changed.is_empty() {
+                doc.say(&both(Stage::Tgv), format!("TGV was run{}.", changed.with()));
             }
-            QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {
-                // `InversionInput::WrappedPhase`: no field mapping and no background removal ran.
-                let (name, cite) = inversion_name_cite(config.inversion.algorithm);
-                doc.cite_all(&cite);
-                doc.say(&both(Stage::Inversion), format!(
-                    "QSM was reconstructed with {} ({}) from the wrapped phase of each echo, with \
-                     phase unwrapping, background field removal and dipole inversion performed by the \
-                     network.",
-                    name, cite_inline(&cite),
-                ));
-                say_tiling(config, Stage::Inversion, &mut doc);
-            }
-            QsmAlgorithm::Qsmart => {
-                // QSMART consumes a pre-computed total field, so the field-mapping
-                // stage (phase offset, unwrapping, B0 estimation) still runs and must
-                // be described.
-                describe_field_mapping(config, ran, &mut doc);
-                let (inv_name, inv_cite) = inversion_name_cite(config.inversion.qsmart.inversion);
-                doc.cite_method(MethodStage::Inversion, "qsmart");
-                doc.cite_all(&inv_cite);
-                doc.say(&both(Stage::Qsmart), format!(
-                    "QSM was computed using QSMART (Yaghmaie et al., 2021), with spatially dependent \
-                     filtering for background field removal, {} dipole inversion ({}), and Frangi \
-                     vesselness-based tissue/vasculature separation{}.",
-                    inv_name, cite_inline(&inv_cite), qsmart_changes(config).comma_with(),
-                ));
-                // The magnitude vessels were detected on.
-                match config.inversion.qsmart.vessel_magnitude {
-                    QsmartVesselMagnitude::MeanN4 => {
-                        doc.cite_method(MethodStage::InhomogeneityCorrection, "n4");
-                        doc.say(&both(Stage::Qsmart), "Vessels were detected on the mean magnitude over echoes, \
-                            bias-corrected with N4 (Tustison et al., 2010).".to_string());
-                    }
-                    QsmartVesselMagnitude::Combined => {
-                        doc.say(&both(Stage::Qsmart), format!("Vessels were detected on the {}RSS-combined magnitude.",
-                            if config.masking.inhomogeneity_correction { "inhomogeneity-corrected " } else { "" }));
-                    }
+            describe_field_mapping(config, ran, doc);
+        }
+        QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {
+            // `InversionInput::WrappedPhase`: no field mapping and no background removal ran.
+            let (name, cite) = inversion_name_cite(config.inversion.algorithm);
+            doc.cite_all(&cite);
+            doc.say(&both(Stage::Inversion), format!(
+                "QSM was reconstructed with {} ({}) from the wrapped phase of each echo, with \
+                 phase unwrapping, background field removal and dipole inversion performed by the \
+                 network.",
+                name, cite_inline(&cite),
+            ));
+            say_tiling(config, Stage::Inversion, doc);
+        }
+        QsmAlgorithm::Qsmart => {
+            // QSMART consumes a pre-computed total field, so the field-mapping
+            // stage (phase offset, unwrapping, B0 estimation) still runs and must
+            // be described.
+            describe_field_mapping(config, ran, doc);
+            let (inv_name, inv_cite) = inversion_name_cite(config.inversion.qsmart.inversion);
+            doc.cite_method(MethodStage::Inversion, "qsmart");
+            doc.cite_all(&inv_cite);
+            doc.say(&both(Stage::Qsmart), format!(
+                "QSM was computed using QSMART (Yaghmaie et al., 2021), with spatially dependent \
+                 filtering for background field removal, {} dipole inversion ({}), and Frangi \
+                 vesselness-based tissue/vasculature separation{}.",
+                inv_name, cite_inline(&inv_cite), qsmart_changes(config).comma_with(),
+            ));
+            // The magnitude vessels were detected on.
+            match config.inversion.qsmart.vessel_magnitude {
+                QsmartVesselMagnitude::MeanN4 => {
+                    doc.cite_method(MethodStage::InhomogeneityCorrection, "n4");
+                    doc.say(&both(Stage::Qsmart), "Vessels were detected on the mean magnitude over echoes, \
+                        bias-corrected with N4 (Tustison et al., 2010).".to_string());
                 }
-            }
-            _ => {
-                describe_field_mapping(config, ran, &mut doc);
-
-                // Background removal — only in front of a local-field inversion (QSM.rs
-                // `InversionInput`); the total-field methods remove or model it themselves.
-                let total_field = !crate::bridge::inversion_input(config, 2).needs_bg_removal();
-                if !total_field {
-                    let alg = &config.bg_removal.algorithm;
-                    let (name, cite) = bg_removal_name_cite(*alg);
-                    doc.cite_all(&cite);
-                    let erode = config.bg_removal.erode_voxels;
-                    if erode > 0 {
-                        doc.say(&both(Stage::BackgroundRemoval), format!(
-                            "Before background field removal, the brain mask was eroded by {erode} voxel{}.",
-                            if erode == 1 { "" } else { "s" }));
-                    }
-                    if config.bg_removal.ukb_mask_trim {
-                        let ukb = doc.cite_method(MethodStage::Masking, "phase-reliability-trim");
-                        doc.say(&both(Stage::BackgroundRemoval), format!(
-                            "Before and after background field removal, the mask was trimmed of voxels with \
-                             unreliable phase as in the UK Biobank pipeline ({}): phase-reliability maps of the \
-                             first and last echoes (the magnitude of the unit phasor averaged over a 2 mm ball) \
-                             were thresholded at 0.6 and 0.5 before background removal and at 0.7 and 0.6 after \
-                             it, then in each slice components smaller than 300 (after: 200) voxels were removed \
-                             and holes smaller than 50 (after: 30) voxels filled, and enclosed holes were filled.",
-                            cite_inline(&ukb)));
-                    }
-                    if config.bg_removal.polish_mask {
-                        doc.say(&both(Stage::BackgroundRemoval),
-                            "After background field removal, the mask was reduced to its largest connected \
-                             component with its holes filled, and the local field was set to zero outside it."
-                                .to_string());
-                    }
-                    if *alg == BfAlgorithm::Vsharp {
-                        let (v, d) = (&config.bg_removal.vsharp, VsharpConfig::default());
-                        let mut changed = Changed::default();
-                        changed.add(differs(v.max_radius, d.max_radius) || differs(v.min_radius, d.min_radius)
-                            || differs(v.radius_step, d.radius_step),
-                            || format!("SMV kernel radii from {} to {} mm in {} mm steps", v.max_radius, v.min_radius, v.radius_step));
-                        changed.add(v.deconvolve != d.deconvolve, || format!(
-                            "truncated-SVD deconvolution {}",
-                            if v.deconvolve { "enabled" } else { "disabled" }));
-                        // The threshold only exists for the deconvolution.
-                        changed.add(v.deconvolve && differs(v.threshold, d.threshold),
-                            || format!("a deconvolution threshold of {}", v.threshold));
-                        doc.say(&both(Stage::BackgroundRemoval), format!("Background field removal was performed using {} ({}){}.",
-                            name, cite_inline(&cite), changed.with()));
-                        let resample = "the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution";
-                        match v.grid {
-                            VsharpGrid::Finest => doc.say(&both(Stage::BackgroundRemoval), format!(
-                                "For anisotropic voxels the V-SHARP background was estimated on an isotropic grid at the smallest acquired voxel dimension: {resample}. Isotropic acquisitions were processed on their acquired grid.")),
-                            VsharpGrid::Isotropic if !differs(v.grid_spacing, d.grid_spacing) => doc.say(&both(Stage::BackgroundRemoval), format!(
-                                "The V-SHARP background was estimated on an isotropic grid: {resample}.")),
-                            VsharpGrid::Isotropic => doc.say(&both(Stage::BackgroundRemoval), format!(
-                                "The V-SHARP background was estimated on a {} mm isotropic grid: {resample}.", v.grid_spacing)),
-                            VsharpGrid::Native => {}
-                        }
-                    } else {
-                        doc.say(&both(Stage::BackgroundRemoval), format!("Background field removal was performed using {} ({}){}.",
-                            name, cite_inline(&cite), bg_removal_changes(config).with()));
-                    }
-
-                }
-
-                // Dipole inversion
-                let (name, cite) = inversion_name_cite(config.inversion.algorithm);
-                let target = if total_field { " on the total field within the brain mask" } else { "" };
-                doc.cite_all(&cite);
-                let msmv = medi_msmv(config, &mut doc) + &medi_smv(config);
-                let changes = inversion_changes(config, config.inversion.algorithm);
-                doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){msmv}{}.",
-                    target, name, cite_inline(&cite),
-                    if msmv.is_empty() { changes.with() } else { changes.comma_with() }));
-                describe_medi_csf(config, ran, &mut doc);
-                // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
-                // for the tileable networks (a stray --tile-size on a classical algorithm is ignored).
-                if config.inversion.algorithm.tileable() {
-                    say_tiling(config, Stage::Inversion, &mut doc);
-                } else if config.runs_a_tileable_network() {
-                    say_tiling(config, Stage::BackgroundRemoval, &mut doc);
+                QsmartVesselMagnitude::Combined => {
+                    doc.say(&both(Stage::Qsmart), format!("Vessels were detected on the {}RSS-combined magnitude.",
+                        if config.masking.inhomogeneity_correction { "inhomogeneity-corrected " } else { "" }));
                 }
             }
         }
+        _ => describe_local_field_inversion(config, ran, doc),
+    }
+}
 
-        // Two-pass wraps background removal and inversion, so it is described after both and
-        // before referencing, which runs on the combined map.
-        describe_two_pass(config, ran, &mut doc);
-        // HEIDI after the inversion, and after two-pass on the combined map.
-        describe_heidi(config, ran, &mut doc);
+/// A local-field inversion: the field map, background removal in front of the inversion where it
+/// runs, and the inversion.
+fn describe_local_field_inversion(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
+    describe_field_mapping(config, ran, doc);
 
-        // Referencing
-        match config.qsm.reference {
-            QsmReference::Mean => {
-                doc.say(&[Stage::Reference, Stage::SinglePassReference], format!(
-                    "Susceptibility values were referenced to the mean susceptibility within \
-                     {RECON_MASK}."));
-            }
-            QsmReference::None => {
-                doc.say(&[Stage::Reference, Stage::SinglePassReference], "No susceptibility referencing was applied.".to_string());
-            }
-            QsmReference::Region => {
-                let region = config.qsm.reference_region.as_deref().unwrap_or("");
-                let pretty = region.replace('-', " ").replace(',', ", ");
-                let plural = if region.contains(',') { "s" } else { "" };
-                let labels = match config.segmentation.custom_dseg_tool.as_deref() {
-                    Some(tool) => format!("'{tool}' segmentation label{plural}"),
-                    None => format!("SynthSeg label{plural}"),
-                };
-                doc.say(&[Stage::Reference, Stage::SinglePassReference], format!(
-                    "Susceptibility values were referenced to the mean susceptibility in the \
-                     {pretty} ({labels}), computed within {RECON_MASK}."
-                ));
-            }
-        }
-        if says_per_echo(config) {
-            doc.say(&[Stage::Reference],
-                "For multi-echo data, the susceptibility map reported is the mean across echoes of the \
-                 echoes' maps, over the voxels where every echo's map was defined; each echo's map is \
-                 reported too.".to_string());
-        }
+    // Background removal — only in front of a local-field inversion (QSM.rs
+    // `InversionInput`); the total-field methods remove or model it themselves.
+    let total_field = !crate::bridge::inversion_input(config, 2).needs_bg_removal();
+    if !total_field {
+        describe_bg_removal(config, doc);
     }
 
+    // Dipole inversion
+    let (name, cite) = inversion_name_cite(config.inversion.algorithm);
+    let target = if total_field { " on the total field within the brain mask" } else { "" };
+    doc.cite_all(&cite);
+    let msmv = medi_msmv(config, doc) + &medi_smv(config);
+    let changes = inversion_changes(config, config.inversion.algorithm);
+    doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){msmv}{}.",
+        target, name, cite_inline(&cite),
+        if msmv.is_empty() { changes.with() } else { changes.comma_with() }));
+    describe_medi_csf(config, ran, doc);
+    // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
+    // for the tileable networks (a stray --tile-size on a classical algorithm is ignored).
+    if config.inversion.algorithm.tileable() {
+        say_tiling(config, Stage::Inversion, doc);
+    } else if config.runs_a_tileable_network() {
+        say_tiling(config, Stage::BackgroundRemoval, doc);
+    }
+}
+
+/// The background-field removal in front of a local-field inversion.
+fn describe_bg_removal(config: &PipelineConfig, doc: &mut Draft) {
+    let alg = &config.bg_removal.algorithm;
+    let (name, cite) = bg_removal_name_cite(*alg);
+    doc.cite_all(&cite);
+    let erode = config.bg_removal.erode_voxels;
+    if erode > 0 {
+        doc.say(&both(Stage::BackgroundRemoval), format!(
+            "Before background field removal, the brain mask was eroded by {erode} voxel{}.",
+            if erode == 1 { "" } else { "s" }));
+    }
+    if config.bg_removal.ukb_mask_trim {
+        let ukb = doc.cite_method(MethodStage::Masking, "phase-reliability-trim");
+        doc.say(&both(Stage::BackgroundRemoval), format!(
+            "Before and after background field removal, the mask was trimmed of voxels with \
+             unreliable phase as in the UK Biobank pipeline ({}): phase-reliability maps of the \
+             first and last echoes (the magnitude of the unit phasor averaged over a 2 mm ball) \
+             were thresholded at 0.6 and 0.5 before background removal and at 0.7 and 0.6 after \
+             it, then in each slice components smaller than 300 (after: 200) voxels were removed \
+             and holes smaller than 50 (after: 30) voxels filled, and enclosed holes were filled.",
+            cite_inline(&ukb)));
+    }
+    if config.bg_removal.polish_mask {
+        doc.say(&both(Stage::BackgroundRemoval),
+            "After background field removal, the mask was reduced to its largest connected \
+             component with its holes filled, and the local field was set to zero outside it."
+                .to_string());
+    }
+    if *alg == BfAlgorithm::Vsharp {
+        let (v, d) = (&config.bg_removal.vsharp, VsharpConfig::default());
+        let mut changed = Changed::default();
+        changed.add(differs(v.max_radius, d.max_radius) || differs(v.min_radius, d.min_radius)
+            || differs(v.radius_step, d.radius_step),
+            || format!("SMV kernel radii from {} to {} mm in {} mm steps", v.max_radius, v.min_radius, v.radius_step));
+        changed.add(v.deconvolve != d.deconvolve, || format!(
+            "truncated-SVD deconvolution {}",
+            if v.deconvolve { "enabled" } else { "disabled" }));
+        // The threshold only exists for the deconvolution.
+        changed.add(v.deconvolve && differs(v.threshold, d.threshold),
+            || format!("a deconvolution threshold of {}", v.threshold));
+        doc.say(&both(Stage::BackgroundRemoval), format!("Background field removal was performed using {} ({}){}.",
+            name, cite_inline(&cite), changed.with()));
+        let resample = "the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution";
+        match v.grid {
+            VsharpGrid::Finest => doc.say(&both(Stage::BackgroundRemoval), format!(
+                "For anisotropic voxels the V-SHARP background was estimated on an isotropic grid at the smallest acquired voxel dimension: {resample}. Isotropic acquisitions were processed on their acquired grid.")),
+            VsharpGrid::Isotropic if !differs(v.grid_spacing, d.grid_spacing) => doc.say(&both(Stage::BackgroundRemoval), format!(
+                "The V-SHARP background was estimated on an isotropic grid: {resample}.")),
+            VsharpGrid::Isotropic => doc.say(&both(Stage::BackgroundRemoval), format!(
+                "The V-SHARP background was estimated on a {} mm isotropic grid: {resample}.", v.grid_spacing)),
+            VsharpGrid::Native => {}
+        }
+    } else {
+        doc.say(&both(Stage::BackgroundRemoval), format!("Background field removal was performed using {} ({}){}.",
+            name, cite_inline(&cite), bg_removal_changes(config).with()));
+    }
+}
+
+/// How the susceptibility values were referenced.
+fn describe_referencing(config: &PipelineConfig, doc: &mut Draft) {
+    match config.qsm.reference {
+        QsmReference::Mean => {
+            doc.say(&[Stage::Reference, Stage::SinglePassReference], format!(
+                "Susceptibility values were referenced to the mean susceptibility within \
+                 {RECON_MASK}."));
+        }
+        QsmReference::None => {
+            doc.say(&[Stage::Reference, Stage::SinglePassReference], "No susceptibility referencing was applied.".to_string());
+        }
+        QsmReference::Region => {
+            let region = config.qsm.reference_region.as_deref().unwrap_or("");
+            let pretty = region.replace('-', " ").replace(',', ", ");
+            let plural = if region.contains(',') { "s" } else { "" };
+            let labels = match config.segmentation.custom_dseg_tool.as_deref() {
+                Some(tool) => format!("'{tool}' segmentation label{plural}"),
+                None => format!("SynthSeg label{plural}"),
+            };
+            doc.say(&[Stage::Reference, Stage::SinglePassReference], format!(
+                "Susceptibility values were referenced to the mean susceptibility in the \
+                 {pretty} ({labels}), computed within {RECON_MASK}."
+            ));
+        }
+    }
+    if says_per_echo(config) {
+        doc.say(&[Stage::Reference],
+            "For multi-echo data, the susceptibility map reported is the mean across echoes of the \
+             echoes' maps, over the voxels where every echo's map was defined; each echo's map is \
+             reported too.".to_string());
+    }
+}
+
+/// The segmentation, supplied or from SynthSeg, and the statistics within it.
+fn describe_segmentation(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     // A supplied segmentation, every run's or some runs'.
     let dseg_tool = config.segmentation.custom_dseg_tool.as_deref();
     let dseg_supplied = ran.count(Topic::SegmentationSource, Choice::Supplied) > 0;
@@ -272,7 +306,10 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
              standard deviation, median, minimum, maximum and 5th/95th percentiles over the \
              structure's voxels), excluding voxels the map does not cover.".to_string());
     }
+}
 
+/// SMWI and SWI.
+fn describe_swi(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     if config.pipeline.do_smwi && !ran.none_ran(Stage::Smwi) {
         doc.cite_method(MethodStage::Swi, "smwi");
         let (s, d) = (&config.smwi, SmwiConfig::default());
@@ -336,7 +373,10 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             "Susceptibility-weighted images were computed with CLEAR-SWI (Eckstein et al., 2021){using}. {mip}{phase}"
         ));
     }
+}
 
+/// T2*, R2*, R2 and R2' maps.
+fn describe_relaxometry(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     // T2*/R2*
     if config.pipeline.do_t2starmap && config.pipeline.do_r2starmap {
         doc.cite_method(MethodStage::Relaxometry, "arlo");
@@ -428,7 +468,9 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             }
         }
     }
+}
 
+fn describe_chi_separation(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     // Chi-separation (susceptibility source separation)
     if config.pipeline.do_chi_separation {
         let (sep_name, sep_cite) = separation_name_cite(config.separation.algorithm);
@@ -478,7 +520,7 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             doc.say(&[Stage::ChiSeparation], "Negative χ+ and |χ−| values were set to zero.".to_string());
         }
         if crate::config::chisepnet_route_can_estimate_r2prime(config) {
-            chisepnet_r2prime_sentences(&mut doc, config, ran);
+            chisepnet_r2prime_sentences(doc, config, ran);
         }
         if crate::stages::separation::reconstructs_qsm(config) {
             let mut q = Changed::default();
@@ -494,7 +536,9 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
                 cite_inline(&ilsqr), q.with()));
         }
     }
+}
 
+fn describe_multi_orientation(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     // Multi-orientation. Described after the per-orientation pipeline because that is the
     // order it runs in: each orientation is unwrapped and background-corrected on its own,
     // and only the local fields are combined. Whether a group forms depends on the runs, so the
@@ -576,7 +620,9 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             );
         }
     }
+}
 
+fn describe_dicom_export(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     // DICOM export. It is the front end's, after the run, and can fail without failing the run, so
     // the setting alone says nothing happened: the record does ([`RunRecord::dicom_exported`]).
     // Before any run the setting is described, as a native run exports; a browser run never does
@@ -589,6 +635,4 @@ pub(super) fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             "For some of the runs, final maps were additionally exported as DICOM series.".to_string()
         });
     }
-
-    doc
 }
