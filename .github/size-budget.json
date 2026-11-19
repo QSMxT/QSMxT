@@ -13,7 +13,6 @@
   "crates/qsmxt-io/src/dicom/export.rs": 830,
   "crates/qsmxt-io/src/pipeline/multiorient.rs": 950,
   "crates/qsmxt-io/src/pipeline/runner.rs": 1171,
-  "src/cli.rs": 3535,
   "src/commands/invert.rs": 917
  },
  "functions": {

@@ -27,7 +27,7 @@ fn struct_fields(cli_src: &str, name: &str) -> Vec<String> {
 
 #[test]
 fn every_run_arg_is_consumed() {
-    let cli_src = include_str!("../src/cli.rs");
+    let cli_src = include_str!("../src/cli/pipeline.rs");
     let consumer = include_str!("../src/commands/run.rs");
     let missing: Vec<_> = struct_fields(cli_src, "RunArgs")
         .into_iter()
@@ -45,7 +45,7 @@ fn every_run_arg_is_consumed() {
 /// wrote a default pipeline_config.toml regardless of the chosen settings).
 #[test]
 fn slurm_flattens_and_applies_pipeline_args() {
-    let cli_src = include_str!("../src/cli.rs");
+    let cli_src = include_str!("../src/cli/pipeline.rs");
     let slurm_start = cli_src.find("pub struct SlurmArgs {").expect("SlurmArgs not found");
     let slurm_body = &cli_src[slurm_start..];
     let slurm_body = &slurm_body[..slurm_body.find("\n}").expect("SlurmArgs end not found")];
@@ -72,7 +72,7 @@ fn slurm_flattens_and_applies_pipeline_args() {
 /// used, or the aggregation could see other runs or another configuration than the workers did.
 #[test]
 fn every_aggregate_arg_is_consumed() {
-    let cli_src = include_str!("../src/cli.rs");
+    let cli_src = include_str!("../src/cli/pipeline.rs");
     let consumer = include_str!("../src/commands/aggregate.rs");
     let missing: Vec<_> = struct_fields(cli_src, "AggregateArgs")
         .into_iter()
