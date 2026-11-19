@@ -14,7 +14,6 @@
  "functions": {
   "crates/qsmxt-engine/src/graph.rs::downstream_steps": 165,
   "crates/qsmxt-engine/src/masking.rs::parse_mask_op": 144,
-  "crates/qsmxt-engine/src/methods/field_map.rs::describe_field_mapping": 184,
   "crates/qsmxt-engine/src/methods/masking.rs::describe_masking": 135,
   "crates/qsmxt-engine/src/methods/structured_tests.rs::configs": 192,
   "crates/qsmxt-engine/src/migrate.rs::from_v1": 161,
