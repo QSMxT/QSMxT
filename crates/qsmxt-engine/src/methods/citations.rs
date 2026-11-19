@@ -37,12 +37,12 @@ pub(super) const CITE_VSHARP: Citation = Citation {
 
 pub(super) const CITE_SHARP: Citation = Citation {
     key: "schweser2011",
-    text: "Schweser, F., et al. (2011). \"Quantitative imaging of intrinsic magnetic tissue properties using MRI signal phase.\" *NeuroImage*, 54(4):2789-2807. https://doi.org/10.1016/j.neuroimage.2010.10.070",
+    text: "Schweser, F., et al. (2011). \"Quantitative imaging of intrinsic magnetic tissue properties using MRI signal phase: An approach to in vivo brain iron metabolism?\" *NeuroImage*, 54(4):2789-2807. https://doi.org/10.1016/j.neuroimage.2010.10.070",
 };
 
 pub(super) const CITE_PDF: Citation = Citation {
     key: "liu2011pdf",
-    text: "Liu, T., et al. (2011). \"A novel background field removal method for MRI using projection onto dipole fields.\" *NMR in Biomedicine*, 24(9):1129-1136. https://doi.org/10.1002/nbm.1670",
+    text: "Liu, T., et al. (2011). \"A novel background field removal method for MRI using projection onto dipole fields (PDF).\" *NMR in Biomedicine*, 24(9):1129-1136. https://doi.org/10.1002/nbm.1670",
 };
 
 pub(super) const CITE_ISMV: Citation = Citation {
@@ -142,7 +142,7 @@ pub(super) const CITE_HCCHISEP: Citation = Citation {
 
 pub(super) const CITE_MEDI: Citation = Citation {
     key: "liu2011medi",
-    text: "Liu, T., et al. (2011). \"Morphology enabled dipole inversion (MEDI) from a single-angle acquisition.\" *Magnetic Resonance in Medicine*, 66(3):777-783. https://doi.org/10.1002/mrm.22816",
+    text: "Liu, T., et al. (2011). \"Morphology enabled dipole inversion (MEDI) from a single-angle acquisition: Comparison with COSMOS in human brain imaging.\" *Magnetic Resonance in Medicine*, 66(3):777-783. https://doi.org/10.1002/mrm.22816",
 };
 
 pub(super) const CITE_MEDI0: Citation = Citation {
@@ -217,7 +217,7 @@ pub(super) const CITE_QSMNET_PLUS: Citation = Citation {
 
 pub(super) const CITE_AUTOQSM: Citation = Citation {
     key: "wei2019autoqsm",
-    text: "Wei, H., et al. (2019). \"Learning-based single-step quantitative susceptibility mapping reconstruction without brain extraction (AutoQSM).\" *NeuroImage*, 202:116064. https://doi.org/10.1016/j.neuroimage.2019.116064",
+    text: "Wei, H., et al. (2019). \"Learning-based single-step quantitative susceptibility mapping reconstruction without brain extraction.\" *NeuroImage*, 202:116064. https://doi.org/10.1016/j.neuroimage.2019.116064",
 };
 
 pub(super) const CITE_BFRNET: Citation = Citation {
@@ -242,12 +242,12 @@ pub(super) const CITE_QSMGAN: Citation = Citation {
 
 pub(super) const CITE_LPCNN: Citation = Citation {
     key: "lai2020lpcnn",
-    text: "Lai, K.-W., et al. (2020). \"Learned proximal networks for quantitative susceptibility mapping (LPCNN).\" *MICCAI 2020*, LNCS 12262:125-135. https://doi.org/10.1007/978-3-030-59713-9_13",
+    text: "Lai, K.-W., et al. (2020). \"Learned proximal networks for quantitative susceptibility mapping.\" *MICCAI 2020*, LNCS 12262:125-135. https://doi.org/10.1007/978-3-030-59713-9_13",
 };
 
 pub(super) const CITE_IR2QSM: Citation = Citation {
     key: "li2025ir2qsm",
-    text: "Li, M., et al. (2025). \"IR2QSM: quantitative susceptibility mapping via deep neural networks with iterative reverse concatenations and recurrent modules.\" *Medical Physics*. https://doi.org/10.1002/mp.17747",
+    text: "Li, M., et al. (2025). \"Quantitative susceptibility mapping via deep neural networks with iterative reverse concatenations and recurrent modules.\" *Medical Physics*, 52(6):4341-4354. https://doi.org/10.1002/mp.17747",
 };
 
 pub(super) const CITE_MODLQSM: Citation = Citation {
@@ -262,17 +262,17 @@ pub(super) const CITE_NEXTQSM: Citation = Citation {
 
 pub(super) const CITE_IQSM: Citation = Citation {
     key: "gao2022iqsm",
-    text: "Gao, Y., et al. (2022). \"Instant tissue field and magnetic susceptibility mapping from MRI raw phase using Laplacian-enhanced deep neural networks (iQSM/iQFM).\" *NeuroImage*, 259:119410. https://doi.org/10.1016/j.neuroimage.2022.119410",
+    text: "Gao, Y., et al. (2022). \"Instant tissue field and magnetic susceptibility mapping from MRI raw phase using Laplacian enhanced deep neural networks.\" *NeuroImage*, 259:119410. https://doi.org/10.1016/j.neuroimage.2022.119410",
 };
 
 pub(super) const CITE_IQSM_PLUS: Citation = Citation {
     key: "gao2024iqsmplus",
-    text: "Gao, Y., et al. (2024). \"Plug-and-play latent feature editing for orientation-adaptive quantitative susceptibility mapping (iQSM+).\" *Medical Image Analysis*, 94:103160. https://doi.org/10.1016/j.media.2024.103160",
+    text: "Gao, Y., et al. (2024). \"Plug-and-play latent feature editing for orientation-adaptive quantitative susceptibility mapping neural networks.\" *Medical Image Analysis*, 94:103160. https://doi.org/10.1016/j.media.2024.103160",
 };
 
 pub(super) const CITE_MSMV: Citation = Citation {
     key: "roberts2024",
-    text: "Roberts, A.G., et al. (2024). \"Maximum spherical mean value (mSMV) filtering for whole-brain quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 91(4):1586-1597. https://doi.org/10.1002/mrm.29963",
+    text: "Roberts, A.G., et al. (2024). \"Maximum spherical mean value filtering for whole-brain QSM.\" *Magnetic Resonance in Medicine*, 91(4):1586-1597. https://doi.org/10.1002/mrm.29963",
 };
 
 pub(super) const CITE_CLEARSWI: Citation = Citation {
