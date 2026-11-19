@@ -13,7 +13,11 @@ use qsm_core::pipeline::{
     SeparationInputs, SeparationConfig, SeparationAlgorithm, SeparationResult, ScanMetadata, run_separation,
 };
 use super::common::{load_nifti, load_mask, save_nifti, load_echo_stack, load_multiecho_voxel_major};
-use crate::cli::{SeparateCommand, SeparateCommonArgs};
+use crate::cli::{
+    SeparateCommand, SeparateCommonArgs, SeparateChiSepIlsqrArgs, SeparateChiSepMediArgs,
+    SeparateChiSepNetArgs, SeparateDecomposeArgs, SeparateHcChisepArgs, SeparateR2starQsmArgs,
+    SeparateSusepNetArgs, SeparateWavesepArgs,
+};
 use crate::error::QsmxtError;
 
 /// Write the three chi-separation maps under the output prefix.
@@ -60,335 +64,354 @@ fn check_echoes(n_echoes: usize, metadata: &ScanMetadata, method: &str) -> crate
     Ok(())
 }
 
+/// What a separation gives back: the output prefix, the reference NIfTI, and the result.
+type Separated = (std::path::PathBuf, NiftiData, SeparationResult);
+
 pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
     // Each arm loads its inputs, runs the method, and yields (output prefix, reference NIfTI,
     // result); the three maps are written once at the end (mirrors `invert`'s single-save tail).
     let (output, reference, result) = match cmd {
-        SeparateCommand::R2starQsm(args) => {
-            let c = &args.common;
-            let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
-            info!("Chi-separation (r2star-qsm, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-            let d = qsm_core::separation::R2starQsmParams::default();
-            let r2star = args.r2star.as_ref().map(|p| load_nifti(p)).transpose()?;
-            let mag = if args.magnitude.is_empty() {
-                None
-            } else {
-                let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
-                check_echoes(ne, &metadata, "r2star-qsm (R2* fit)")?;
-                Some(multi)
-            };
-            if r2star.is_none() && mag.is_none() {
-                return Err(QsmxtError::Config("r2star-qsm needs --r2star or --magnitude".into()));
-            }
-            let cfg = SeparationConfig {
-                algorithm: SeparationAlgorithm::R2starQsm,
-                r2star_qsm: qsm_core::separation::R2starQsmParams {
-                    r_const_3t: args.r_const_3t.unwrap_or(d.r_const_3t), ..d
-                },
-                ..Default::default()
-            };
-            let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
-                r2prime: None, r2star: r2star.as_ref().map(|n| n.data.as_slice()),
-                magnitude_rss: None, magnitude_multi: mag.as_deref(), se_magnitude_multi: None,
-                n_std: None, mask_csf: None,
-            };
-            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
-                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
-        }
-        SeparateCommand::Decompose(args) => {
-            let c = &args.common;
-            let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
-            info!("Chi-separation (decompose, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-            let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
-            check_echoes(ne, &metadata, "decompose")?;
-            let (qsm_per_echo, ne_qsm) = load_multiecho_voxel_major(&args.qsm_per_echo, n)?;
-            if ne_qsm != ne {
-                return Err(QsmxtError::Config(format!(
-                    "decompose: --qsm-per-echo has {ne_qsm} echoes but the magnitude has {ne}")));
-            }
-            let d = match args.fit {
-                Some(crate::cli::DecomposeFitArg::Paper) => qsm_core::separation::DecomposeParams::paper(),
-                _ => qsm_core::separation::DecomposeParams::default(),
-            };
-            let cfg = SeparationConfig {
-                algorithm: SeparationAlgorithm::Decompose,
-                decompose: qsm_core::separation::DecomposeParams {
-                    n_inner: args.n_inner.unwrap_or(d.n_inner),
-                    chi_bound: args.chi_bound.map(Into::into).unwrap_or(d.chi_bound),
-                    unwrap_phase: args.unwrap_phase.unwrap_or(d.unwrap_phase),
-                    lsqcurvefit: qsm_core::solvers::LsqTrrOptions {
-                        max_iterations: args.max_iterations.unwrap_or(d.lsqcurvefit.max_iterations),
-                        max_function_evaluations: args.max_function_evaluations.or(d.lsqcurvefit.max_function_evaluations),
-                        function_tolerance: args.function_tolerance.unwrap_or(d.lsqcurvefit.function_tolerance),
-                        step_tolerance: args.step_tolerance.unwrap_or(d.lsqcurvefit.step_tolerance),
-                        optimality_tolerance: args.optimality_tolerance.unwrap_or(d.lsqcurvefit.optimality_tolerance),
-                        finite_difference_step: args.finite_difference_step.unwrap_or(d.lsqcurvefit.finite_difference_step),
-                        typical_x: args.typical_x.unwrap_or(d.lsqcurvefit.typical_x),
-                    },
-                    ..d
-                },
-                ..Default::default()
-            };
-            let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: Some(&qsm_per_echo), mask: &mask,
-                r2prime: None, r2star: None, magnitude_rss: None,
-                magnitude_multi: Some(&multi), se_magnitude_multi: None, n_std: None, mask_csf: None,
-            };
-            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
-                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
-        }
-        SeparateCommand::ChiSepIlsqr(args) => {
-            let c = &args.common;
-            let (qsm, mask, metadata, _) = load_common(c, &[])?;
-            info!("Chi-separation (chi-sep-ilsqr, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-            let local_field = load_nifti(&args.local_field)?;
-            let r2prime = load_nifti(&args.r2prime)?;
-            let d = qsm_core::separation::ChiSepIlsqrParams::default();
-            let pad = match args.pad.as_deref() {
-                Some(&[x, y, z]) => [x, y, z],
-                _ => d.pad,
-            };
-            let cfg = SeparationConfig {
-                algorithm: SeparationAlgorithm::ChiSepIlsqr,
-                chi_sep_ilsqr: qsm_core::separation::ChiSepIlsqrParams {
-                    dr_pos: args.dr_pos.or(d.dr_pos),
-                    dr_neg: args.dr_neg.or(d.dr_neg),
-                    pad,
-                    cg_max_iter_lsqr: args.cg_max_iter_lsqr.unwrap_or(d.cg_max_iter_lsqr),
-                    cg_tol_lsqr: args.cg_tol_lsqr.unwrap_or(d.cg_tol_lsqr),
-                    cg_max_iter_sa: args.cg_max_iter_sa.unwrap_or(d.cg_max_iter_sa),
-                    cg_tol_sa: args.cg_tol_sa.unwrap_or(d.cg_tol_sa),
-                    d2_thr: args.d2_thr.unwrap_or(d.d2_thr),
-                    prc_w_i: (args.prc_w_i_min.unwrap_or(d.prc_w_i.0), args.prc_w_i_max.unwrap_or(d.prc_w_i.1)),
-                    prc_w_g: (args.prc_w_g_min.unwrap_or(d.prc_w_g.0), args.prc_w_g_max.unwrap_or(d.prc_w_g.1)),
-                    ..d
-                },
-                ..Default::default()
-            };
-            let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
-                r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
-            };
-            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
-                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
-        }
-        SeparateCommand::ChiSepMedi(args) => {
-            let c = &args.common;
-            let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
-            info!("Chi-separation (chi-sep-medi, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-            let local_field = load_nifti(&args.local_field)?;
-            let r2prime = load_nifti(&args.r2prime)?;
-            let (echo_major, ne) = load_echo_stack(&args.magnitude, n)?;
-            check_echoes(ne, &metadata, "chi-sep-medi")?;
-            let mag_rss: Vec<f64> = (0..n)
-                .map(|v| (0..ne).map(|e| echo_major[e * n + v].powi(2)).sum::<f64>().sqrt())
-                .collect();
-            let (n_std, mask_csf) = match args.csf_mask.as_deref() {
-                None => {
-                    let method = args.csf_r2star.unwrap_or_default();
-                    let (n_std, csf) = qsmxt_engine::stages::separation::chi_sep_medi_inputs(
-                        &echo_major, &args.echo_times, &mask, qsm.dims, qsm.voxel_size, method,
-                    ).map_err(|e| QsmxtError::Config(e.to_string()))?;
-                    info!("CSF mask of {} voxels from {} R2*", csf.iter().filter(|&&m| m != 0).count(), method.label());
-                    (n_std, csf)
-                }
-                Some(p) => {
-                    let n_std = qsm_core::utils::fit_ppm_complex_noise(&echo_major, ne);
-                    // An all-zero CSF mask turns the CSF term off in qsm-core, as the toolbox's
-                    // `mask_CSF = []` does.
-                    let csf = if p.as_os_str() == "none" {
-                        info!("No CSF mask: no CSF term");
-                        vec![0u8; n]
-                    } else {
-                        let (csf, _) = load_mask(p)?;
-                        if csf.len() != n {
-                            return Err(QsmxtError::Config(format!(
-                                "chi-sep-medi: the CSF mask has {} voxels, the QSM {}", csf.len(), n)));
-                        }
-                        info!("CSF mask of {} voxels from {}", csf.iter().filter(|&&m| m != 0).count(), p.display());
-                        csf
-                    };
-                    (n_std, csf)
-                }
-            };
-            let d = qsm_core::separation::ChiSepMediParams::default();
-            let cfg = SeparationConfig {
-                algorithm: SeparationAlgorithm::ChiSepMedi,
-                chi_sep_medi: qsm_core::separation::ChiSepMediParams {
-                    lambda: args.lambda.unwrap_or(d.lambda),
-                    lambda_csf: args.lambda_csf.unwrap_or(d.lambda_csf),
-                    dr_pos: args.dr_pos.or(d.dr_pos),
-                    dr_neg: args.dr_neg.or(d.dr_neg),
-                    pad: args.pad.unwrap_or(d.pad),
-                    tol: args.tol.unwrap_or(d.tol),
-                    max_iter: args.max_iter.unwrap_or(d.max_iter),
-                    cg_tol: args.cg_tol.unwrap_or(d.cg_tol),
-                    cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
-                    ..d
-                },
-                ..Default::default()
-            };
-            let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
-                r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: Some(&mag_rss), magnitude_multi: None, se_magnitude_multi: None,
-                n_std: Some(&n_std), mask_csf: Some(&mask_csf),
-            };
-            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
-                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
-        }
-        SeparateCommand::Wavesep(args) => {
-            let c = &args.common;
-            let (qsm, mask, metadata, _) = load_common(c, &[])?;
-            info!("Chi-separation (wavesep, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-            let r2prime = load_nifti(&args.r2prime)?;
-            let d = qsm_core::separation::WaveSepParams::default();
-            let cfg = SeparationConfig {
-                algorithm: SeparationAlgorithm::WaveSep,
-                wavesep: qsm_core::separation::WaveSepParams {
-                    dr_pos: args.dr_pos.unwrap_or(d.dr_pos),
-                    dr_neg: args.dr_neg.unwrap_or(d.dr_neg),
-                    alpha: args.alpha.unwrap_or(d.alpha),
-                    lambda: args.lambda.unwrap_or(d.lambda),
-                    wavelet_order: args.wavelet_order.unwrap_or(d.wavelet_order),
-                    max_iter: args.max_iter.unwrap_or(d.max_iter),
-                    tol: args.tol.unwrap_or(d.tol),
-                },
-                ..Default::default()
-            };
-            let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
-                r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
-            };
-            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
-                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
-        }
-        SeparateCommand::HcChisep(args) => {
-            let c = &args.common;
-            let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
-            info!("Chi-separation (hc-chisep, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-            let r2prime = load_nifti(&args.r2prime)?;
-            let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
-            check_echoes(ne, &metadata, "hc-chisep")?;
-            let se_multi = if args.se_magnitude.is_empty() {
-                None
-            } else {
-                Some(load_multiecho_voxel_major(&args.se_magnitude, n)?.0)
-            };
-            let se_echo_times = args.se_echo_times.clone();
-            let d = qsm_core::separation::HcChisepParams::default();
-            let cfg = SeparationConfig {
-                algorithm: SeparationAlgorithm::HcChisep,
-                hc_chisep: qsm_core::separation::HcChisepParams {
-                    se_echo_times,
-                    dr_pos_3t: args.dr_pos_3t.unwrap_or(d.dr_pos_3t),
-                    bin_hz: args.bin_hz.unwrap_or(d.bin_hz),
-                    ..d
-                },
-                ..Default::default()
-            };
-            let inputs = SeparationInputs {
-                local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
-                r2prime: Some(&r2prime.data), r2star: None, magnitude_rss: None,
-                magnitude_multi: Some(&multi), se_magnitude_multi: se_multi.as_deref(), n_std: None, mask_csf: None,
-            };
-            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
-                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
-        }
-        SeparateCommand::SusepNet(args) => {
-            let c = &args.common;
-            let (qsm, mask, metadata, _) = load_common(c, &[])?;
-            info!("Chi-separation (susep-net, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-            crate::pipeline::runner::prefetch_weights("susep-net", "susep-net")?;
-            let local_field = load_nifti(&args.local_field)?;
-            let r2prime = load_nifti(&args.r2prime)?;
-            // Weights download on first use.
-            let cfg = SeparationConfig {
-                algorithm: SeparationAlgorithm::SusepNet,
-                susep_net: qsm_core::separation::SusepNetParams { patch: patch3(&args.patch) },
-                ..Default::default()
-            };
-            let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
-                r2prime: Some(&r2prime.data), r2star: None,
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
-            };
-            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
-                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (c.output.clone(), qsm, result)
-        }
-        SeparateCommand::ChiSepNet(args) => {
-            use qsm_core::separation::ChiSepNetRoute;
-            let route = match args.route {
-                crate::cli::ChiSepNetRouteArg::Toolbox => ChiSepNetRoute::Toolbox,
-                crate::cli::ChiSepNetRouteArg::Native => ChiSepNetRoute::Native,
-            };
-            let chi_sepnet = qsm_core::separation::ChiSepNetParams {
-                route,
-                patch: patch3(&args.patch).unwrap_or(qsm_core::separation::ChiSepNetParams::default().patch),
-                frame_patch: patch3(&args.frame_patch),
-                ignore_field_mismatch: args.ignore_field_mismatch,
-            };
-            // Before the weights download and the images load.
-            chi_sepnet.validate().map_err(QsmxtError::Config)?;
-            // The local field is the reference grid: the toolbox route reads no QSM.
-            let local_field = load_nifti(&args.local_field)?;
-            let (mask, _) = load_mask(&args.mask)?;
-            let bdir = (args.b0_direction[0], args.b0_direction[1], args.b0_direction[2]);
-            let metadata = qsmxt_engine::bridge::to_scan_metadata(
-                local_field.dims, local_field.voxel_size, &[], args.field_strength, bdir, Some(local_field.affine),
-            );
-            info!("Chi-separation (chi-sepnet, {} route, {}x{}x{})", match route {
-                ChiSepNetRoute::Toolbox => "toolbox", ChiSepNetRoute::Native => "native" },
-                local_field.dims.0, local_field.dims.1, local_field.dims.2);
-            let qsm = match (&args.qsm, route) {
-                (Some(p), _) => Some(load_nifti(p)?),
-                (None, ChiSepNetRoute::Native) => {
-                    return Err(QsmxtError::Config("chi-sepnet --route native needs --qsm".into()));
-                }
-                (None, ChiSepNetRoute::Toolbox) => None,
-            };
-            if route == ChiSepNetRoute::Native && args.r2prime.is_none() {
-                return Err(QsmxtError::Config("chi-sepnet --route native needs --r2prime".into()));
-            }
-            let r2prime = args.r2prime.as_ref().map(|p| load_nifti(p)).transpose()?;
-            let r2star = args.r2star.as_ref().map(|p| load_nifti(p)).transpose()?;
-            crate::pipeline::runner::prefetch_weights("chi-sepnet", "chi-sepnet")?;
-            if route == ChiSepNetRoute::Toolbox {
-                crate::pipeline::runner::prefetch_weights("qsmnetme", "QSMnetME")?;
-                if r2prime.is_none() {
-                    crate::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
-                }
-            }
-            let cfg = SeparationConfig {
-                algorithm: SeparationAlgorithm::ChiSepNet,
-                chi_sepnet,
-                ..Default::default()
-            };
-            // The toolbox route does not read the QSM; the dispatcher takes one of the grid's size.
-            let zeros = vec![0.0; local_field.data.len()];
-            let inputs = SeparationInputs {
-                local_field_ppm: &local_field.data, qsm: qsm.as_ref().map_or(&zeros, |q| &q.data),
-                qsm_per_echo: None, mask: &mask,
-                r2prime: r2prime.as_ref().map(|m| m.data.as_slice()), r2star: r2star.as_ref().map(|m| m.data.as_slice()),
-                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
-            };
-            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
-                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-            (args.output.clone(), local_field, result)
-        }
+        SeparateCommand::R2starQsm(args) => r2star_qsm(args)?,
+        SeparateCommand::Decompose(args) => decompose(args)?,
+        SeparateCommand::ChiSepIlsqr(args) => chi_sep_ilsqr(args)?,
+        SeparateCommand::ChiSepMedi(args) => chi_sep_medi(args)?,
+        SeparateCommand::Wavesep(args) => wavesep(args)?,
+        SeparateCommand::HcChisep(args) => hc_chisep(args)?,
+        SeparateCommand::SusepNet(args) => susep_net(args)?,
+        SeparateCommand::ChiSepNet(args) => chi_sep_net(args)?,
     };
     save_result(&output, &result, &reference)?;
     Ok(())
+}
+
+fn r2star_qsm(args: SeparateR2starQsmArgs) -> crate::Result<Separated> {
+    let c = &args.common;
+    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
+    info!("Chi-separation (r2star-qsm, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+    let d = qsm_core::separation::R2starQsmParams::default();
+    let r2star = args.r2star.as_ref().map(|p| load_nifti(p)).transpose()?;
+    let mag = if args.magnitude.is_empty() {
+        None
+    } else {
+        let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
+        check_echoes(ne, &metadata, "r2star-qsm (R2* fit)")?;
+        Some(multi)
+    };
+    if r2star.is_none() && mag.is_none() {
+        return Err(QsmxtError::Config("r2star-qsm needs --r2star or --magnitude".into()));
+    }
+    let cfg = SeparationConfig {
+        algorithm: SeparationAlgorithm::R2starQsm,
+        r2star_qsm: qsm_core::separation::R2starQsmParams {
+            r_const_3t: args.r_const_3t.unwrap_or(d.r_const_3t), ..d
+        },
+        ..Default::default()
+    };
+    let inputs = SeparationInputs {
+        local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
+        r2prime: None, r2star: r2star.as_ref().map(|n| n.data.as_slice()),
+        magnitude_rss: None, magnitude_multi: mag.as_deref(), se_magnitude_multi: None,
+        n_std: None, mask_csf: None,
+    };
+    let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    Ok((c.output.clone(), qsm, result))
+}
+
+fn decompose(args: SeparateDecomposeArgs) -> crate::Result<Separated> {
+    let c = &args.common;
+    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
+    info!("Chi-separation (decompose, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+    let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
+    check_echoes(ne, &metadata, "decompose")?;
+    let (qsm_per_echo, ne_qsm) = load_multiecho_voxel_major(&args.qsm_per_echo, n)?;
+    if ne_qsm != ne {
+        return Err(QsmxtError::Config(format!(
+            "decompose: --qsm-per-echo has {ne_qsm} echoes but the magnitude has {ne}")));
+    }
+    let d = match args.fit {
+        Some(crate::cli::DecomposeFitArg::Paper) => qsm_core::separation::DecomposeParams::paper(),
+        _ => qsm_core::separation::DecomposeParams::default(),
+    };
+    let cfg = SeparationConfig {
+        algorithm: SeparationAlgorithm::Decompose,
+        decompose: qsm_core::separation::DecomposeParams {
+            n_inner: args.n_inner.unwrap_or(d.n_inner),
+            chi_bound: args.chi_bound.map(Into::into).unwrap_or(d.chi_bound),
+            unwrap_phase: args.unwrap_phase.unwrap_or(d.unwrap_phase),
+            lsqcurvefit: qsm_core::solvers::LsqTrrOptions {
+                max_iterations: args.max_iterations.unwrap_or(d.lsqcurvefit.max_iterations),
+                max_function_evaluations: args.max_function_evaluations.or(d.lsqcurvefit.max_function_evaluations),
+                function_tolerance: args.function_tolerance.unwrap_or(d.lsqcurvefit.function_tolerance),
+                step_tolerance: args.step_tolerance.unwrap_or(d.lsqcurvefit.step_tolerance),
+                optimality_tolerance: args.optimality_tolerance.unwrap_or(d.lsqcurvefit.optimality_tolerance),
+                finite_difference_step: args.finite_difference_step.unwrap_or(d.lsqcurvefit.finite_difference_step),
+                typical_x: args.typical_x.unwrap_or(d.lsqcurvefit.typical_x),
+            },
+            ..d
+        },
+        ..Default::default()
+    };
+    let inputs = SeparationInputs {
+        local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: Some(&qsm_per_echo), mask: &mask,
+        r2prime: None, r2star: None, magnitude_rss: None,
+        magnitude_multi: Some(&multi), se_magnitude_multi: None, n_std: None, mask_csf: None,
+    };
+    let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    Ok((c.output.clone(), qsm, result))
+}
+
+fn chi_sep_ilsqr(args: SeparateChiSepIlsqrArgs) -> crate::Result<Separated> {
+    let c = &args.common;
+    let (qsm, mask, metadata, _) = load_common(c, &[])?;
+    info!("Chi-separation (chi-sep-ilsqr, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+    let local_field = load_nifti(&args.local_field)?;
+    let r2prime = load_nifti(&args.r2prime)?;
+    let d = qsm_core::separation::ChiSepIlsqrParams::default();
+    let pad = match args.pad.as_deref() {
+        Some(&[x, y, z]) => [x, y, z],
+        _ => d.pad,
+    };
+    let cfg = SeparationConfig {
+        algorithm: SeparationAlgorithm::ChiSepIlsqr,
+        chi_sep_ilsqr: qsm_core::separation::ChiSepIlsqrParams {
+            dr_pos: args.dr_pos.or(d.dr_pos),
+            dr_neg: args.dr_neg.or(d.dr_neg),
+            pad,
+            cg_max_iter_lsqr: args.cg_max_iter_lsqr.unwrap_or(d.cg_max_iter_lsqr),
+            cg_tol_lsqr: args.cg_tol_lsqr.unwrap_or(d.cg_tol_lsqr),
+            cg_max_iter_sa: args.cg_max_iter_sa.unwrap_or(d.cg_max_iter_sa),
+            cg_tol_sa: args.cg_tol_sa.unwrap_or(d.cg_tol_sa),
+            d2_thr: args.d2_thr.unwrap_or(d.d2_thr),
+            prc_w_i: (args.prc_w_i_min.unwrap_or(d.prc_w_i.0), args.prc_w_i_max.unwrap_or(d.prc_w_i.1)),
+            prc_w_g: (args.prc_w_g_min.unwrap_or(d.prc_w_g.0), args.prc_w_g_max.unwrap_or(d.prc_w_g.1)),
+            ..d
+        },
+        ..Default::default()
+    };
+    let inputs = SeparationInputs {
+        local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
+        r2prime: Some(&r2prime.data), r2star: None,
+        magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
+    };
+    let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    Ok((c.output.clone(), qsm, result))
+}
+
+fn chi_sep_medi(args: SeparateChiSepMediArgs) -> crate::Result<Separated> {
+    let c = &args.common;
+    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
+    info!("Chi-separation (chi-sep-medi, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+    let local_field = load_nifti(&args.local_field)?;
+    let r2prime = load_nifti(&args.r2prime)?;
+    let (echo_major, ne) = load_echo_stack(&args.magnitude, n)?;
+    check_echoes(ne, &metadata, "chi-sep-medi")?;
+    let mag_rss: Vec<f64> = (0..n)
+        .map(|v| (0..ne).map(|e| echo_major[e * n + v].powi(2)).sum::<f64>().sqrt())
+        .collect();
+    let (n_std, mask_csf) = match args.csf_mask.as_deref() {
+        None => {
+            let method = args.csf_r2star.unwrap_or_default();
+            let (n_std, csf) = qsmxt_engine::stages::separation::chi_sep_medi_inputs(
+                &echo_major, &args.echo_times, &mask, qsm.dims, qsm.voxel_size, method,
+            ).map_err(|e| QsmxtError::Config(e.to_string()))?;
+            info!("CSF mask of {} voxels from {} R2*", csf.iter().filter(|&&m| m != 0).count(), method.label());
+            (n_std, csf)
+        }
+        Some(p) => {
+            let n_std = qsm_core::utils::fit_ppm_complex_noise(&echo_major, ne);
+            // An all-zero CSF mask turns the CSF term off in qsm-core, as the toolbox's
+            // `mask_CSF = []` does.
+            let csf = if p.as_os_str() == "none" {
+                info!("No CSF mask: no CSF term");
+                vec![0u8; n]
+            } else {
+                let (csf, _) = load_mask(p)?;
+                if csf.len() != n {
+                    return Err(QsmxtError::Config(format!(
+                        "chi-sep-medi: the CSF mask has {} voxels, the QSM {}", csf.len(), n)));
+                }
+                info!("CSF mask of {} voxels from {}", csf.iter().filter(|&&m| m != 0).count(), p.display());
+                csf
+            };
+            (n_std, csf)
+        }
+    };
+    let d = qsm_core::separation::ChiSepMediParams::default();
+    let cfg = SeparationConfig {
+        algorithm: SeparationAlgorithm::ChiSepMedi,
+        chi_sep_medi: qsm_core::separation::ChiSepMediParams {
+            lambda: args.lambda.unwrap_or(d.lambda),
+            lambda_csf: args.lambda_csf.unwrap_or(d.lambda_csf),
+            dr_pos: args.dr_pos.or(d.dr_pos),
+            dr_neg: args.dr_neg.or(d.dr_neg),
+            pad: args.pad.unwrap_or(d.pad),
+            tol: args.tol.unwrap_or(d.tol),
+            max_iter: args.max_iter.unwrap_or(d.max_iter),
+            cg_tol: args.cg_tol.unwrap_or(d.cg_tol),
+            cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
+            ..d
+        },
+        ..Default::default()
+    };
+    let inputs = SeparationInputs {
+        local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
+        r2prime: Some(&r2prime.data), r2star: None,
+        magnitude_rss: Some(&mag_rss), magnitude_multi: None, se_magnitude_multi: None,
+        n_std: Some(&n_std), mask_csf: Some(&mask_csf),
+    };
+    let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    Ok((c.output.clone(), qsm, result))
+}
+
+fn wavesep(args: SeparateWavesepArgs) -> crate::Result<Separated> {
+    let c = &args.common;
+    let (qsm, mask, metadata, _) = load_common(c, &[])?;
+    info!("Chi-separation (wavesep, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+    let r2prime = load_nifti(&args.r2prime)?;
+    let d = qsm_core::separation::WaveSepParams::default();
+    let cfg = SeparationConfig {
+        algorithm: SeparationAlgorithm::WaveSep,
+        wavesep: qsm_core::separation::WaveSepParams {
+            dr_pos: args.dr_pos.unwrap_or(d.dr_pos),
+            dr_neg: args.dr_neg.unwrap_or(d.dr_neg),
+            alpha: args.alpha.unwrap_or(d.alpha),
+            lambda: args.lambda.unwrap_or(d.lambda),
+            wavelet_order: args.wavelet_order.unwrap_or(d.wavelet_order),
+            max_iter: args.max_iter.unwrap_or(d.max_iter),
+            tol: args.tol.unwrap_or(d.tol),
+        },
+        ..Default::default()
+    };
+    let inputs = SeparationInputs {
+        local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
+        r2prime: Some(&r2prime.data), r2star: None,
+        magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
+    };
+    let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    Ok((c.output.clone(), qsm, result))
+}
+
+fn hc_chisep(args: SeparateHcChisepArgs) -> crate::Result<Separated> {
+    let c = &args.common;
+    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
+    info!("Chi-separation (hc-chisep, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+    let r2prime = load_nifti(&args.r2prime)?;
+    let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
+    check_echoes(ne, &metadata, "hc-chisep")?;
+    let se_multi = if args.se_magnitude.is_empty() {
+        None
+    } else {
+        Some(load_multiecho_voxel_major(&args.se_magnitude, n)?.0)
+    };
+    let se_echo_times = args.se_echo_times.clone();
+    let d = qsm_core::separation::HcChisepParams::default();
+    let cfg = SeparationConfig {
+        algorithm: SeparationAlgorithm::HcChisep,
+        hc_chisep: qsm_core::separation::HcChisepParams {
+            se_echo_times,
+            dr_pos_3t: args.dr_pos_3t.unwrap_or(d.dr_pos_3t),
+            bin_hz: args.bin_hz.unwrap_or(d.bin_hz),
+            ..d
+        },
+        ..Default::default()
+    };
+    let inputs = SeparationInputs {
+        local_field_ppm: &[], qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
+        r2prime: Some(&r2prime.data), r2star: None, magnitude_rss: None,
+        magnitude_multi: Some(&multi), se_magnitude_multi: se_multi.as_deref(), n_std: None, mask_csf: None,
+    };
+    let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    Ok((c.output.clone(), qsm, result))
+}
+
+fn susep_net(args: SeparateSusepNetArgs) -> crate::Result<Separated> {
+    let c = &args.common;
+    let (qsm, mask, metadata, _) = load_common(c, &[])?;
+    info!("Chi-separation (susep-net, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+    crate::pipeline::runner::prefetch_weights("susep-net", "susep-net")?;
+    let local_field = load_nifti(&args.local_field)?;
+    let r2prime = load_nifti(&args.r2prime)?;
+    // Weights download on first use.
+    let cfg = SeparationConfig {
+        algorithm: SeparationAlgorithm::SusepNet,
+        susep_net: qsm_core::separation::SusepNetParams { patch: patch3(&args.patch) },
+        ..Default::default()
+    };
+    let inputs = SeparationInputs {
+        local_field_ppm: &local_field.data, qsm: &qsm.data, qsm_per_echo: None, mask: &mask,
+        r2prime: Some(&r2prime.data), r2star: None,
+        magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
+    };
+    let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    Ok((c.output.clone(), qsm, result))
+}
+
+fn chi_sep_net(args: SeparateChiSepNetArgs) -> crate::Result<Separated> {
+    use qsm_core::separation::ChiSepNetRoute;
+    let route = match args.route {
+        crate::cli::ChiSepNetRouteArg::Toolbox => ChiSepNetRoute::Toolbox,
+        crate::cli::ChiSepNetRouteArg::Native => ChiSepNetRoute::Native,
+    };
+    let chi_sepnet = qsm_core::separation::ChiSepNetParams {
+        route,
+        patch: patch3(&args.patch).unwrap_or(qsm_core::separation::ChiSepNetParams::default().patch),
+        frame_patch: patch3(&args.frame_patch),
+        ignore_field_mismatch: args.ignore_field_mismatch,
+    };
+    // Before the weights download and the images load.
+    chi_sepnet.validate().map_err(QsmxtError::Config)?;
+    // The local field is the reference grid: the toolbox route reads no QSM.
+    let local_field = load_nifti(&args.local_field)?;
+    let (mask, _) = load_mask(&args.mask)?;
+    let bdir = (args.b0_direction[0], args.b0_direction[1], args.b0_direction[2]);
+    let metadata = qsmxt_engine::bridge::to_scan_metadata(
+        local_field.dims, local_field.voxel_size, &[], args.field_strength, bdir, Some(local_field.affine),
+    );
+    info!("Chi-separation (chi-sepnet, {} route, {}x{}x{})", match route {
+        ChiSepNetRoute::Toolbox => "toolbox", ChiSepNetRoute::Native => "native" },
+        local_field.dims.0, local_field.dims.1, local_field.dims.2);
+    let qsm = match (&args.qsm, route) {
+        (Some(p), _) => Some(load_nifti(p)?),
+        (None, ChiSepNetRoute::Native) => {
+            return Err(QsmxtError::Config("chi-sepnet --route native needs --qsm".into()));
+        }
+        (None, ChiSepNetRoute::Toolbox) => None,
+    };
+    if route == ChiSepNetRoute::Native && args.r2prime.is_none() {
+        return Err(QsmxtError::Config("chi-sepnet --route native needs --r2prime".into()));
+    }
+    let r2prime = args.r2prime.as_ref().map(|p| load_nifti(p)).transpose()?;
+    let r2star = args.r2star.as_ref().map(|p| load_nifti(p)).transpose()?;
+    crate::pipeline::runner::prefetch_weights("chi-sepnet", "chi-sepnet")?;
+    if route == ChiSepNetRoute::Toolbox {
+        crate::pipeline::runner::prefetch_weights("qsmnetme", "QSMnetME")?;
+        if r2prime.is_none() {
+            crate::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
+        }
+    }
+    let cfg = SeparationConfig {
+        algorithm: SeparationAlgorithm::ChiSepNet,
+        chi_sepnet,
+        ..Default::default()
+    };
+    // The toolbox route does not read the QSM; the dispatcher takes one of the grid's size.
+    let zeros = vec![0.0; local_field.data.len()];
+    let inputs = SeparationInputs {
+        local_field_ppm: &local_field.data, qsm: qsm.as_ref().map_or(&zeros, |q| &q.data),
+        qsm_per_echo: None, mask: &mask,
+        r2prime: r2prime.as_ref().map(|m| m.data.as_slice()), r2star: r2star.as_ref().map(|m| m.data.as_slice()),
+        magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None, n_std: None, mask_csf: None,
+    };
+    let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    Ok((args.output.clone(), local_field, result))
 }
 
 /// A `--patch D H W` as qsm-core's `(D, H, W)`.

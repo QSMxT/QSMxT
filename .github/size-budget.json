@@ -7,9 +7,7 @@
   "crates/qsmxt-io/src/bids/discovery.rs": 811,
   "crates/qsmxt-io/src/dicom/export.rs": 830,
   "crates/qsmxt-io/src/pipeline/multiorient.rs": 950,
-  "crates/qsmxt-io/src/pipeline/runner.rs": 1171,
-  "src/cli.rs": 3535,
-  "src/commands/invert.rs": 917
+  "crates/qsmxt-io/src/pipeline/runner.rs": 1171
  },
  "functions": {
   "crates/qsmxt-engine/src/graph.rs::downstream_steps": 165,
@@ -38,18 +36,9 @@
   "crates/qsmxt-tui/src/ui/input/mod.rs::draw_input_tab": 497,
   "crates/qsmxt-tui/src/ui/input/nifti_to_bids.rs::draw_nifti_section": 181,
   "crates/qsmxt-tui/src/ui/modals.rs::draw_checklist_modal": 174,
-  "crates/qsmxt-tui/src/ui/rows.rs::draw_rows_tab": 548,
-  "src/commands/bgremove.rs::execute": 153,
-  "src/commands/fieldmap.rs::run_field_mapping": 125,
-  "src/commands/integration_tests.rs::bids_validator_fixture": 152,
-  "src/commands/invert.rs::execute": 388,
-  "src/commands/run.rs::execute": 237,
-  "src/commands/separate.rs::execute": 330,
-  "src/commands/update.rs::install_binary": 123,
-  "src/commands/validate.rs::execute": 121
+  "crates/qsmxt-tui/src/ui/rows.rs::draw_rows_tab": 548
  },
  "test_files": {
-  "crates/qsmxt-io/src/pipeline/runner.rs": 2505,
-  "src/commands/integration_tests.rs": 3230
+  "crates/qsmxt-io/src/pipeline/runner.rs": 2505
  }
 }
