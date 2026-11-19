@@ -37,13 +37,13 @@ pub struct ExampleState {
 
 impl Default for ExampleState {
     fn default() -> Self {
-        let mut selected = vec![false; crate::example::EXAMPLES.len()];
+        let mut selected = vec![false; qsmxt_io::example::EXAMPLES.len()];
         // Tick the default acquisition and start on the Download button: the common
         // case is "just give me an example dataset", which is then a single Enter.
         // Arrowing down from the button walks into the list to pick something else.
-        let default_idx = crate::example::EXAMPLES
+        let default_idx = qsmxt_io::example::EXAMPLES
             .iter()
-            .position(|e| e.id == crate::example::DEFAULT_ID)
+            .position(|e| e.id == qsmxt_io::example::DEFAULT_ID)
             .unwrap_or(0);
         selected[default_idx] = true;
         Self {
@@ -65,10 +65,10 @@ impl ExampleState {
 
     /// The last place in the focus order: the last acquisition.
     pub fn last_row() -> usize {
-        crate::example::EXAMPLES.len()
+        qsmxt_io::example::EXAMPLES.len()
     }
 
-    /// The acquisition the cursor is on, as an index into [`crate::example::EXAMPLES`]; `None`
+    /// The acquisition the cursor is on, as an index into [`qsmxt_io::example::EXAMPLES`]; `None`
     /// on the button.
     pub fn acquisition(&self) -> Option<usize> {
         self.cursor.checked_sub(1)
@@ -81,8 +81,8 @@ impl ExampleState {
         expand_tilde(raw)
     }
 
-    pub fn selected_examples(&self) -> Vec<&'static crate::example::Example> {
-        crate::example::EXAMPLES
+    pub fn selected_examples(&self) -> Vec<&'static qsmxt_io::example::Example> {
+        qsmxt_io::example::EXAMPLES
             .iter()
             .enumerate()
             .filter(|(i, _)| self.selected.get(*i).copied().unwrap_or(false))
@@ -149,7 +149,7 @@ impl ExampleState {
                 progress.0.store(0, Ordering::Relaxed);
                 progress.1.store(example.bytes, Ordering::Relaxed);
 
-                let zip = match crate::example::download::ensure(example, &mut |done, total| {
+                let zip = match qsmxt_io::example::download::ensure(example, &mut |done, total| {
                     progress.0.store(done, Ordering::Relaxed);
                     progress.1.store(total.max(1), Ordering::Relaxed);
                 }) {
@@ -162,16 +162,16 @@ impl ExampleState {
                 progress.1.store(0, Ordering::Relaxed);
 
                 let tx_step = tx.clone();
-                match crate::example::materialize::materialize(example, &zip, &dir, false, &mut |s| {
+                match qsmxt_io::example::materialize::materialize(example, &zip, &dir, false, &mut |s| {
                     let _ = tx_step.send(ExampleMessage::Log(s));
                 }) {
-                    Ok(crate::example::materialize::Outcome::Written(n)) => {
+                    Ok(qsmxt_io::example::materialize::Outcome::Written(n)) => {
                         let _ = tx.send(ExampleMessage::Log(format!(
                             "Added {} (ses-{}, acq-{}, run-{}, {n} echoes)",
                             example.id, example.scanner, example.acq, example.run
                         )));
                     }
-                    Ok(crate::example::materialize::Outcome::Skipped) => {
+                    Ok(qsmxt_io::example::materialize::Outcome::Skipped) => {
                         let _ = tx.send(ExampleMessage::Log(format!(
                             "{} is already in this dataset — skipped",
                             example.id

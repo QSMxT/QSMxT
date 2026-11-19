@@ -36,7 +36,7 @@ pub(super) fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
 
     let mut lines = Vec::new();
 
-    let listed = crate::bids::orientation::listed_groups(&fs.orientation_group).filter(|_| !fs.orientation_editing);
+    let listed = qsmxt_io::bids::orientation::listed_groups(&fs.orientation_group).filter(|_| !fs.orientation_editing);
     let value = if fs.orientation_group.is_empty() && !fs.orientation_editing {
         Span::styled("(off: type a pattern, or ←/→ on runs below)", Style::default().fg(Color::DarkGray))
     } else if listed.is_some() {

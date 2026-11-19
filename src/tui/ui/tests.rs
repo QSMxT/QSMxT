@@ -204,7 +204,7 @@ fn example_picker_tracks_the_cursor_without_panicking() {
             assert!(text.contains("Output directory") || height < 24, "{height}, {cursor}:\n{text}");
             assert!(text.contains("[ Download ]") || height < 24, "{height}, {cursor}:\n{text}");
             if let Some(i) = app.example_state.acquisition() {
-                let id = crate::example::EXAMPLES[i].id;
+                let id = qsmxt_io::example::EXAMPLES[i].id;
                 assert!(text.contains(id), "{height}, {id}:\n{text}");
             }
         }

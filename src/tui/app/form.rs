@@ -190,7 +190,7 @@ impl App {
     /// The config the form builds, or why it builds none: the frame's ([`Self::config`]) while a
     /// frame is prepared or drawn, else built now, as a key handler that has just changed the
     /// form needs it.
-    pub fn current_config(&self) -> std::borrow::Cow<'_, Result<crate::pipeline::config::PipelineConfig, String>> {
+    pub fn current_config(&self) -> std::borrow::Cow<'_, Result<qsmxt_engine::PipelineConfig, String>> {
         match &self.config {
             Some(c) if self.in_frame => std::borrow::Cow::Borrowed(c),
             _ => std::borrow::Cow::Owned(crate::tui::command::config_from_app(self).map_err(|e| e.to_string())),
@@ -218,7 +218,7 @@ impl App {
     }
 
     /// [`Self::row_context`], for the config the form builds now.
-    pub(super) fn row_context_with(&self, config: Option<&crate::pipeline::config::PipelineConfig>) -> RowContext {
+    pub(super) fn row_context_with(&self, config: Option<&qsmxt_engine::PipelineConfig>) -> RowContext {
         let group = self.filter_state.orientation_group_by();
         let algorithm = self.field_select("orientation_algorithm");
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.

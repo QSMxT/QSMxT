@@ -10,7 +10,7 @@
 use qsmxt_engine::schema::{self, Section};
 use qsmxt_engine::PipelineConfig;
 
-use crate::pipeline::config::{MaskCombine, MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+use qsmxt_engine::{MaskCombine, MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
 
 use super::app::*;
 use super::settings_rows::{depth_of, setting, SettingsStore};
@@ -253,7 +253,7 @@ impl MaskRecipe {
             MaskOp::Threshold { method: MaskThresholdMethod::StiGui, .. } =>
                 ("threshold", "sti-gui".to_string()),
             MaskOp::Bet { fractional_intensity, voxel_scale } => ("bet", format!("{}{}", fractional_intensity,
-                if (*voxel_scale - crate::pipeline::config::bet_default_voxel_scale()).abs() > f64::EPSILON {
+                if (*voxel_scale - qsmxt_engine::bet_default_voxel_scale()).abs() > f64::EPSILON {
                     format!(" scale={voxel_scale}")
                 } else {
                     String::new()
@@ -269,7 +269,7 @@ impl MaskRecipe {
             MaskOp::GaussianSmooth { sigma_mm } => ("gaussian", format!("{}", sigma_mm)),
             MaskOp::HdBet { patch, tta, tile_step } => {
                 let step = if patch.is_some()
-                    && (*tile_step - crate::pipeline::config::hd_bet_default_tile_step()).abs() > f64::EPSILON {
+                    && (*tile_step - qsmxt_engine::hd_bet_default_tile_step()).abs() > f64::EPSILON {
                     format!(" step={tile_step}")
                 } else {
                     String::new()
@@ -281,7 +281,7 @@ impl MaskRecipe {
                 ("hd-bet", format!("{inference}{step}{}", if *tta { " tta" } else { "" }))
             }
             MaskOp::Rs2Net { tta, tile_step } => {
-                let step = if (*tile_step - crate::pipeline::config::rs2_net_default_tile_step()).abs() > f64::EPSILON {
+                let step = if (*tile_step - qsmxt_engine::rs2_net_default_tile_step()).abs() > f64::EPSILON {
                     format!(" step={tile_step}")
                 } else {
                     String::new()
@@ -351,7 +351,7 @@ impl MaskRecipe {
     pub fn hd_bet_step_choices(&self, section: usize) -> (Vec<f64>, usize) {
         let current = match self.mask_section(section).map(|s| &s.generator) {
             Some(MaskOp::HdBet { tile_step, .. }) => *tile_step,
-            _ => crate::pipeline::config::hd_bet_default_tile_step(),
+            _ => qsmxt_engine::hd_bet_default_tile_step(),
         };
         Self::value_choices(&Self::HD_BET_STEPS, current)
     }
@@ -367,7 +367,7 @@ impl MaskRecipe {
     pub fn bet_voxel_scale_choices(&self, section: usize) -> (Vec<f64>, usize) {
         let current = match self.mask_section(section).map(|s| &s.generator) {
             Some(MaskOp::Bet { voxel_scale, .. }) => *voxel_scale,
-            _ => crate::pipeline::config::bet_default_voxel_scale(),
+            _ => qsmxt_engine::bet_default_voxel_scale(),
         };
         Self::value_choices(&Self::BET_VOXEL_SCALES, current)
     }
@@ -382,7 +382,7 @@ impl MaskRecipe {
     /// HD-BET's inference choices (whole volume, native sliding window, low-memory window), in
     /// the order of the mask schema's `hd_bet_inference`.
     pub fn hd_bet_inference_patches() -> [Option<[usize; 3]>; 3] {
-        [None, Some(MaskOp::hd_bet_default_patch()), Some(crate::pipeline::config::hd_bet_low_memory_patch())]
+        [None, Some(MaskOp::hd_bet_default_patch()), Some(qsmxt_engine::hd_bet_low_memory_patch())]
     }
 
     /// The index of a section's HD-BET inference in [`Self::hd_bet_inference_patches`].
@@ -698,7 +698,7 @@ impl App {
     /// the refinements that run on the combined mask). The trailing "custom" entry leaves the
     /// recipe alone.
     pub fn apply_mask_preset(&mut self, preset: usize) {
-        let Some((_, recipe)) = crate::pipeline::config::mask_presets().into_iter().nth(preset) else { return };
+        let Some((_, recipe)) = qsmxt_engine::mask_presets().into_iter().nth(preset) else { return };
         let mut m = self.mask();
         m.sections = recipe.sections;
         m.combine = recipe.combine;

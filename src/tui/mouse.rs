@@ -591,7 +591,7 @@ mod tests {
     fn the_input_page_answers_clicks() {
         use crate::tui::app::{FilterFocus, InputMode, TreeRow, TAB_INPUT};
         let dir = tempfile::tempdir().unwrap();
-        crate::testutils::create_multi_orientation_bids(dir.path());
+        qsmxt_io::testutils::create_multi_orientation_bids(dir.path());
         let mut app = App::new_for_trial();
         assert_eq!(app.active_tab, TAB_INPUT);
         click(&mut app, "Input mode:");
@@ -626,7 +626,7 @@ mod tests {
         // The example page: an acquisition ticks; the Download button is focused, not pressed.
         app.filter_state.include_editing = false;
         app.input_mode = InputMode::Example;
-        let example = crate::example::EXAMPLES[1].id;
+        let example = qsmxt_io::example::EXAMPLES[1].id;
         let ticked = app.example_state.selected[1];
         click(&mut app, example);
         assert_eq!(app.example_state.selected[1], !ticked);

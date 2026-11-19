@@ -40,7 +40,7 @@ pub(super) fn draw_nifti_section(
 
     // Add magnitude button
     let add_mag_focus = crate::tui::app::NiftiFocus::AddMagnitude;
-    if ns.editing && ns.adding_to == Some(crate::nifti::convert::NiftiPartType::Magnitude) {
+    if ns.editing && ns.adding_to == Some(qsmxt_io::nifti::convert::NiftiPartType::Magnitude) {
         lines.push(Line::from(vec![
             Span::styled("  [+] ", label_style(&add_mag_focus)),
             Span::styled(ns.add_pattern.clone(), Style::default().fg(Color::Cyan)),
@@ -77,7 +77,7 @@ pub(super) fn draw_nifti_section(
 
     // Add phase button
     let add_phase_focus = crate::tui::app::NiftiFocus::AddPhase;
-    if ns.editing && ns.adding_to == Some(crate::nifti::convert::NiftiPartType::Phase) {
+    if ns.editing && ns.adding_to == Some(qsmxt_io::nifti::convert::NiftiPartType::Phase) {
         lines.push(Line::from(vec![
             Span::styled("  [+] ", label_style(&add_phase_focus)),
             Span::styled(ns.add_pattern.clone(), Style::default().fg(Color::Cyan)),

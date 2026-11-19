@@ -74,13 +74,13 @@ pub(super) fn draw_example_picker(
 fn example_targets(button_line: usize, first_row: usize) -> impl Iterator<Item = (usize, crate::tui::mouse::InputTarget)> {
     use crate::tui::{app::ExampleState, mouse::InputTarget};
     let io = (0..crate::tui::app::App::INPUT_IO_FIELDS).map(|i| (i, InputTarget::Io(i)));
-    let rows = (0..crate::example::EXAMPLES.len()).map(move |r| (first_row + r, InputTarget::Example(r + 1)));
+    let rows = (0..qsmxt_io::example::EXAMPLES.len()).map(move |r| (first_row + r, InputTarget::Example(r + 1)));
     io.chain(std::iter::once((button_line, InputTarget::Example(ExampleState::BUTTON)))).chain(rows)
 }
 
 /// One row for each acquisition, ticked or not.
 fn example_rows(state: &crate::tui::app::ExampleState, in_io: bool) -> Vec<Line<'static>> {
-    crate::example::EXAMPLES.iter().enumerate().map(|(i, example)| {
+    qsmxt_io::example::EXAMPLES.iter().enumerate().map(|(i, example)| {
         let ticked = state.selected.get(i).copied().unwrap_or(false);
         let focused = !in_io && state.acquisition() == Some(i);
         let name_style = if focused {

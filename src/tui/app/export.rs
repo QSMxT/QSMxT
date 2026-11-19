@@ -11,7 +11,7 @@ pub struct DicomMap {
     pub group: &'static str,
 }
 
-/// Every map DICOM export writes, in series order ([`crate::dicom::export`]).
+/// Every map DICOM export writes, in series order ([`qsmxt_io::dicom::export`]).
 pub const DICOM_MAPS: [DicomMap; 17] = [
     DicomMap { field: "dicom_out_magnitude", suffix: "magnitude", label: "  Magnitude", group: "magnitude" },
     DicomMap { field: "dicom_out_chimap", suffix: "Chimap", label: "  χ (QSM)", group: "χ" },
@@ -62,7 +62,7 @@ impl App {
             // map): the run refuses a selection that leaves it none, and the checklist says so.
             let seg = dicom_map("dicom_out_dseg").expect("in the table");
             let reference_ticked = DICOM_MAPS.iter().any(|m| self.dicom_map_made(m) && self.field_toggle(m.field)
-                && crate::dicom::export::SEG_REFERENCES.iter().any(|r| r.eq_ignore_ascii_case(m.suffix)));
+                && qsmxt_io::dicom::export::SEG_REFERENCES.iter().any(|r| r.eq_ignore_ascii_case(m.suffix)));
             if self.dicom_map_made(seg) && self.field_toggle(seg.field) && !reference_ticked {
                 rows.push(Note { text: "The segmentation needs a map to be drawn on: tick the".into() });
                 rows.push(Note { text: "magnitude, χ or another map, or the run is refused.".into() });

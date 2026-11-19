@@ -1,7 +1,7 @@
 //! DICOM to BIDS: the scan and conversion state, and the series tree's keys.
 
 use super::*;
-use crate::dicom;
+use qsmxt_io::dicom;
 
 // ─── DICOM conversion state ───
 

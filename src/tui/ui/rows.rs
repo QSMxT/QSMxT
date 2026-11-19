@@ -246,11 +246,11 @@ pub(super) fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout:
             PipelineRow::MaskOpGenerator { section } => {
                 let Some(gen) = mask.mask_section(*section).map(|s| &s.generator) else { continue };
                 let algo_name = match gen {
-                    crate::pipeline::config::MaskOp::Threshold { .. } => "threshold",
-                    crate::pipeline::config::MaskOp::Bet { .. } => "bet",
-                    crate::pipeline::config::MaskOp::HdBet { .. } => "hd-bet",
-                    crate::pipeline::config::MaskOp::Rs2Net { .. } => "rs2-net",
-                    crate::pipeline::config::MaskOp::MindGrab { .. } => "mindgrab",
+                    qsmxt_engine::MaskOp::Threshold { .. } => "threshold",
+                    qsmxt_engine::MaskOp::Bet { .. } => "bet",
+                    qsmxt_engine::MaskOp::HdBet { .. } => "hd-bet",
+                    qsmxt_engine::MaskOp::Rs2Net { .. } => "rs2-net",
+                    qsmxt_engine::MaskOp::MindGrab { .. } => "mindgrab",
                     _ => "?",
                 };
                 let label_style = if focused {
@@ -276,33 +276,33 @@ pub(super) fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout:
                 // How the value is set: chosen from a list, typed, switched, or fixed.
                 enum Kind { Choice, Number, Switch, Fixed }
                 let (label, val, help, kind) = match gen {
-                    crate::pipeline::config::MaskOp::Threshold { method, .. } => {
+                    qsmxt_engine::MaskOp::Threshold { method, .. } => {
                         let method_name = match method {
-                            crate::pipeline::config::MaskThresholdMethod::Otsu => "otsu",
-                            crate::pipeline::config::MaskThresholdMethod::Fixed => "fixed",
-                            crate::pipeline::config::MaskThresholdMethod::Percentile => "percentile",
-                            crate::pipeline::config::MaskThresholdMethod::StiGui => "sti-gui",
+                            qsmxt_engine::MaskThresholdMethod::Otsu => "otsu",
+                            qsmxt_engine::MaskThresholdMethod::Fixed => "fixed",
+                            qsmxt_engine::MaskThresholdMethod::Percentile => "percentile",
+                            qsmxt_engine::MaskThresholdMethod::StiGui => "sti-gui",
                         };
                         ("Method:", method_name.to_string(), format!("{} — Enter: choose method", crate::tui::app::mask_step_of(gen).help), Kind::Choice)
                     }
-                    crate::pipeline::config::MaskOp::Bet { fractional_intensity, .. } => {
+                    qsmxt_engine::MaskOp::Bet { fractional_intensity, .. } => {
                         let p = crate::tui::app::mask_param("bet", "fractional_intensity");
                         ("Frac. Intensity:", format!("{:.2}", fractional_intensity), format!("{}: {}, from 0 to 1 (Enter to edit, +/- to nudge)", p.label, p.help), Kind::Number)
                     }
-                    crate::pipeline::config::MaskOp::HdBet { patch, .. } => {
+                    qsmxt_engine::MaskOp::HdBet { patch, .. } => {
                         let val = match patch {
                             None => "whole volume".to_string(),
                             Some(p) => format!("{}x{}x{} window{}", p[0], p[1], p[2],
-                                if *p == crate::pipeline::config::hd_bet_low_memory_patch() { " (low memory)" } else { "" }),
+                                if *p == qsmxt_engine::hd_bet_low_memory_patch() { " (low memory)" } else { "" }),
                         };
                         ("Inference:", val, hd_bet_inference_help(), Kind::Choice)
                     }
                     // RS2-Net's graph is traced at one fixed patch, so there is nothing to choose.
-                    crate::pipeline::config::MaskOp::Rs2Net { tta, .. } => {
+                    qsmxt_engine::MaskOp::Rs2Net { tta, .. } => {
                         ("Augmentation:", if *tta { "mirroring TTA".to_string() } else { "none".to_string() },
                          crate::tui::app::mask_step("rs2-net").help.to_string(), Kind::Fixed)
                     }
-                    crate::pipeline::config::MaskOp::MindGrab { tta } => {
+                    qsmxt_engine::MaskOp::MindGrab { tta } => {
                         ("Augmentation:", format!("[{}] left-right flip TTA", if *tta { "x" } else { " " }),
                          format!("{} (Space or Enter to switch)", crate::tui::app::mask_param("mindgrab", "tta").help), Kind::Switch)
                     }
@@ -327,9 +327,9 @@ pub(super) fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout:
                     Style::default().fg(Color::White)
                 };
                 let (label, val) = match gen {
-                    crate::pipeline::config::MaskOp::Threshold { method: crate::pipeline::config::MaskThresholdMethod::Fixed, value } =>
+                    qsmxt_engine::MaskOp::Threshold { method: qsmxt_engine::MaskThresholdMethod::Fixed, value } =>
                         ("Value:", value.map(|v| format!("{}", v)).unwrap_or("0.5".to_string())),
-                    crate::pipeline::config::MaskOp::Threshold { method: crate::pipeline::config::MaskThresholdMethod::Percentile, value } =>
+                    qsmxt_engine::MaskOp::Threshold { method: qsmxt_engine::MaskThresholdMethod::Percentile, value } =>
                         ("Percentile:", value.map(|v| format!("{}", v)).unwrap_or("75".to_string())),
                     _ => ("Value:", "?".to_string()),
                 };
@@ -351,14 +351,14 @@ pub(super) fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout:
                     Style::default().fg(Color::White)
                 };
                 let step = match gen {
-                    crate::pipeline::config::MaskOp::HdBet { tile_step, .. } => *tile_step,
-                    _ => crate::pipeline::config::hd_bet_default_tile_step(),
+                    qsmxt_engine::MaskOp::HdBet { tile_step, .. } => *tile_step,
+                    _ => qsmxt_engine::hd_bet_default_tile_step(),
                 };
                 // Named and valued as the stride throughout — same word and same number as
                 // qsm-core's `tile_step`, the `step=` in the op string, and nnU-Net's
                 // `tile_step_size`. No translation for a reader to undo.
                 let val = format!("{:.3}{}", step,
-                    if (step - crate::pipeline::config::hd_bet_default_tile_step()).abs() < f64::EPSILON { " (default)" } else { "" });
+                    if (step - qsmxt_engine::hd_bet_default_tile_step()).abs() < f64::EPSILON { " (default)" } else { "" });
                 if focused && focused_help.is_none() {
                     focused_help = Some(format!("{} — Enter: choose", crate::tui::app::mask_param("hd-bet", "tile_step").help));
                 }
@@ -374,10 +374,10 @@ pub(super) fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout:
                     Style::default().fg(Color::White)
                 };
                 let scale = match gen {
-                    crate::pipeline::config::MaskOp::Bet { voxel_scale, .. } => *voxel_scale,
-                    _ => crate::pipeline::config::bet_default_voxel_scale(),
+                    qsmxt_engine::MaskOp::Bet { voxel_scale, .. } => *voxel_scale,
+                    _ => qsmxt_engine::bet_default_voxel_scale(),
                 };
-                let default = (scale - crate::pipeline::config::bet_default_voxel_scale()).abs() < f64::EPSILON;
+                let default = (scale - qsmxt_engine::bet_default_voxel_scale()).abs() < f64::EPSILON;
                 let val = format!("{}x{}", scale, if default { " (acquired geometry)" } else { "" });
                 if focused && focused_help.is_none() {
                     focused_help = Some(format!("{} — Enter: choose", crate::tui::app::mask_param("bet", "voxel_scale").help));
@@ -405,7 +405,7 @@ pub(super) fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout:
                     Span::styled(format!("  {:3}", format!("{}.", index + 1)), number_style),
                     Span::styled(format!("{:19}", format!("{}:", op_type)), label_style),
                 ];
-                if matches!(op, crate::pipeline::config::MaskOp::Threshold { .. }) {
+                if matches!(op, qsmxt_engine::MaskOp::Threshold { .. }) {
                     spans.extend(picker_button(&op_val, focused));
                 } else {
                     spans.push(mask_number(app, op_val, focused));

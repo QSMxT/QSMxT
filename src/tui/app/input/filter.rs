@@ -30,7 +30,7 @@ pub enum OrientationSlot {
 }
 
 /// A run's subject and session, which an orientation group stays within.
-fn session_of(key: &crate::bids::entities::AcquisitionKey) -> String {
+fn session_of(key: &qsmxt_io::bids::entities::AcquisitionKey) -> String {
     format!("{}/{}", key.subject, key.session.as_deref().unwrap_or(""))
 }
 
@@ -219,7 +219,7 @@ impl FilterTreeState {
         if !self.multi_orientation_on() {
             return OrientationPreview::default();
         }
-        let pattern = match crate::bids::orientation::parse_pattern(&self.orientation_group) {
+        let pattern = match qsmxt_io::bids::orientation::parse_pattern(&self.orientation_group) {
             Ok(Some(p)) => p,
             Ok(None) => return OrientationPreview::default(),
             Err(e) => return OrientationPreview { error: Some(e), ..Default::default() },
@@ -237,12 +237,12 @@ impl FilterTreeState {
             }
         });
 
-        let mut groups = crate::bids::orientation::group_keys(&keys, &pattern);
+        let mut groups = qsmxt_io::bids::orientation::group_keys(&keys, &pattern);
         let grouped: usize = groups.iter().map(|g| g.members.len()).sum();
         // The reference is listed first, as the run will use it; one that does not resolve is
         // shown as the error the run would refuse with.
         let strings: Vec<String> = keys.iter().map(|(_, s)| s.clone()).collect();
-        let error = crate::bids::orientation::apply_reference(
+        let error = qsmxt_io::bids::orientation::apply_reference(
             &mut groups, &strings, reference).err();
         let resolved = error.is_none();
         let member_of = groups.iter().enumerate()
@@ -252,7 +252,7 @@ impl FilterTreeState {
             .collect();
         let error = error.or_else(|| {
             let run_keys: Vec<_> = keys.iter().map(|(k, _)| k.clone()).collect();
-            crate::bids::orientation::distinct_outputs(&groups, &run_keys).err()
+            qsmxt_io::bids::orientation::distinct_outputs(&groups, &run_keys).err()
         });
         OrientationPreview {
             member_of,
@@ -311,7 +311,7 @@ impl FilterTreeState {
 
     /// Apply include/exclude patterns to update tree checkbox state.
     pub fn apply_include_exclude(&mut self) {
-        use crate::bids::discovery::passes_include_exclude;
+        use qsmxt_io::bids::discovery::passes_include_exclude;
         let Some(ref mut tree) = self.tree else { return };
 
         let include = if self.include_pattern.trim().is_empty() {
@@ -365,7 +365,7 @@ impl FilterTreeState {
     }
 
     /// The focused run of the tree, if a run is focused.
-    fn focused_run(&mut self) -> Option<&mut crate::bids::discovery::BidsRunLeaf> {
+    fn focused_run(&mut self) -> Option<&mut qsmxt_io::bids::discovery::BidsRunLeaf> {
         let FilterFocus::TreeNode(idx) = self.focus else { return None };
         let row = self.visible_rows().get(idx).cloned()?;
         let tree = self.tree.as_mut()?;
@@ -379,7 +379,7 @@ impl FilterTreeState {
     /// The orientation groups as run keys, each with its reference first: as listed (`runs:`),
     /// or as a typed pattern groups the selected runs now.
     pub fn orientation_groups(&self, reference: &str) -> Vec<Vec<String>> {
-        if let Some(groups) = crate::bids::orientation::listed_groups(&self.orientation_group) {
+        if let Some(groups) = qsmxt_io::bids::orientation::listed_groups(&self.orientation_group) {
             return groups;
         }
         let preview = self.orientation_preview(reference);
@@ -453,7 +453,7 @@ impl FilterTreeState {
             OrientationSlot::Reference(g) => groups[g].insert(0, key),
             OrientationSlot::New => groups.push(vec![key]),
         }
-        self.orientation_group = crate::bids::orientation::runs_pattern(&groups);
+        self.orientation_group = qsmxt_io::bids::orientation::runs_pattern(&groups);
         self.orientation_cursor = self.orientation_group.len();
     }
 

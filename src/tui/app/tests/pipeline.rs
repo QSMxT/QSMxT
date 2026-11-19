@@ -409,8 +409,8 @@ fn test_pipeline_threshold_value_editing() {
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     // Set generator to Fixed threshold to make MaskOpThresholdValue visible
-    app.mask_mut().sections[0].generator = crate::pipeline::config::MaskOp::Threshold {
-        method: crate::pipeline::config::MaskThresholdMethod::Fixed,
+    app.mask_mut().sections[0].generator = qsmxt_engine::MaskOp::Threshold {
+        method: qsmxt_engine::MaskThresholdMethod::Fixed,
         value: Some(0.5),
     };
     app.mark_mask_custom(0);
@@ -444,7 +444,7 @@ fn test_pipeline_threshold_value_editing() {
     // Enter saves
     app.handle_key(key(KeyCode::Enter));
     assert!(!app.pipeline_state.mask_value_editing);
-    if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &app.mask().sections[0].generator {
+    if let qsmxt_engine::MaskOp::Threshold { value, .. } = &app.mask().sections[0].generator {
         assert!((value.unwrap() - 0.7).abs() < 0.001);
     }
 }
@@ -453,7 +453,7 @@ fn test_pipeline_threshold_value_editing() {
 /// there must not index the main mask's sections (it used to panic).
 #[test]
 fn test_reliable_mask_threshold_value_editing() {
-    use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+    use qsmxt_engine::{MaskOp, MaskThresholdMethod};
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.form.settings.set("masking.two_pass", true);
@@ -488,7 +488,7 @@ fn test_reliable_mask_threshold_value_editing() {
 
 #[test]
 fn test_pipeline_bet_voxel_scale_row() {
-    use crate::pipeline::config::MaskOp;
+    use qsmxt_engine::MaskOp;
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.mask_mut().sections[0].generator = MaskOp::bet(0.5);
@@ -506,7 +506,7 @@ fn test_pipeline_bet_voxel_scale_row() {
         MaskOp::Bet { voxel_scale, .. } => *voxel_scale,
         other => panic!("expected bet, got {other:?}"),
     };
-    assert_eq!(scale_of(&app), crate::pipeline::config::bet_default_voxel_scale());
+    assert_eq!(scale_of(&app), qsmxt_engine::bet_default_voxel_scale());
 
     // Enter lists the scales with the current one highlighted; the mouse setting is the last.
     app.handle_key(key(KeyCode::Enter));
@@ -531,7 +531,7 @@ fn test_pipeline_bet_voxel_scale_row() {
 /// intensity and voxel scale, then the run-wide surface settings.
 #[test]
 fn bet_settings_are_listed_together_under_the_bet_step() {
-    use crate::pipeline::config::MaskOp;
+    use qsmxt_engine::MaskOp;
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.mask_mut().sections[0].generator = MaskOp::bet(0.5);
@@ -557,8 +557,8 @@ fn bet_settings_are_listed_together_under_the_bet_step() {
     assert!(app.mask().sections.len() > 1);
     assert_eq!(count(&app), 1);
     // Not shown without BET.
-    app.mask_mut().sections = vec![crate::pipeline::config::MaskSection {
-        input: crate::pipeline::config::MaskingInput::Magnitude,
+    app.mask_mut().sections = vec![qsmxt_engine::MaskSection {
+        input: qsmxt_engine::MaskingInput::Magnitude,
         generator: MaskOp::hd_bet_default(),
         refinements: vec![],
     }];
@@ -568,7 +568,7 @@ fn bet_settings_are_listed_together_under_the_bet_step() {
 
 #[test]
 fn test_pipeline_hd_bet_step_row() {
-    use crate::pipeline::config::MaskOp;
+    use qsmxt_engine::MaskOp;
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.mask_mut().sections[0].generator = MaskOp::hd_bet_default();
@@ -578,7 +578,7 @@ fn test_pipeline_hd_bet_step_row() {
             "whole-volume HD-BET has no window step");
     app.mask_mut().sections[0].generator =
         MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: false,
-                        tile_step: crate::pipeline::config::hd_bet_default_tile_step() };
+                        tile_step: qsmxt_engine::hd_bet_default_tile_step() };
 
     let find_step_row = |app: &App| {
         let rows = app.rows();
@@ -592,7 +592,7 @@ fn test_pipeline_hd_bet_step_row() {
         MaskOp::HdBet { tile_step, .. } => *tile_step,
         other => panic!("expected hd-bet, got {other:?}"),
     };
-    assert_eq!(step_of(&app), crate::pipeline::config::hd_bet_default_tile_step());
+    assert_eq!(step_of(&app), qsmxt_engine::hd_bet_default_tile_step());
 
     // Chosen from a list: a coarser stride, then back.
     app.handle_key(key(KeyCode::Right));
@@ -611,8 +611,8 @@ fn test_pipeline_hd_bet_step_row() {
 fn test_pipeline_threshold_value_esc_cancels() {
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
-    app.mask_mut().sections[0].generator = crate::pipeline::config::MaskOp::Threshold {
-        method: crate::pipeline::config::MaskThresholdMethod::Fixed,
+    app.mask_mut().sections[0].generator = qsmxt_engine::MaskOp::Threshold {
+        method: qsmxt_engine::MaskThresholdMethod::Fixed,
         value: Some(0.5),
     };
     app.mark_mask_custom(0);
@@ -632,7 +632,7 @@ fn test_pipeline_threshold_value_esc_cancels() {
     app.handle_key(key(KeyCode::Esc));
     assert!(!app.pipeline_state.mask_value_editing);
     // Value should be unchanged
-    if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &app.mask().sections[0].generator {
+    if let qsmxt_engine::MaskOp::Threshold { value, .. } = &app.mask().sections[0].generator {
         assert!((value.unwrap() - 0.5).abs() < 0.001);
     }
 }

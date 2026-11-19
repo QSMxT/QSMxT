@@ -290,7 +290,7 @@ fn test_mask_input_modal_opens_and_sets() {
     assert!(app.algo_modal.is_none());
     assert_eq!(
         app.mask().sections[0].input,
-        crate::pipeline::config::MaskingInput::PhaseQuality
+        qsmxt_engine::MaskingInput::PhaseQuality
     );
 }
 

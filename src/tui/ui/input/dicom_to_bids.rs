@@ -49,7 +49,7 @@ pub(super) fn draw_dicom_series_section(
 
     // One row per UNIQUE series (shared across subjects), not per per-subject instance.
     let groups = session.unique_series();
-    let plans = crate::dicom::plan_session(session);
+    let plans = qsmxt_io::dicom::plan_session(session);
     let mut acq_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for g in &groups {
         *acq_counts.entry(g.acq_name.as_str()).or_default() += 1;
@@ -80,7 +80,7 @@ pub(super) fn draw_dicom_series_section(
             [te] => format!(" TE={:.1}ms", te),
             tes => format!(" {}×TEs=[{:.1}…{:.1}]ms", tes.len(), tes[0], tes[tes.len() - 1]),
         };
-        let echo_info = if series.coil_type == crate::dicom::CoilType::Uncombined {
+        let echo_info = if series.coil_type == qsmxt_io::dicom::CoilType::Uncombined {
             format!("{} [uncombined ×{}]", echo_info, series.coil_groups.len())
         } else {
             echo_info
@@ -88,7 +88,7 @@ pub(super) fn draw_dicom_series_section(
         let target = plans
             .iter()
             .find(|p| p.r == g.refs[0])
-            .map(|p| format!("  → {}", crate::commands::dicom::unique_target_label(g, &p.target)))
+            .map(|p| format!("  → {}", qsmxt_io::dicom::unique_target_label(g, &p.target)))
             .unwrap_or_default();
         let files_label = if n_subjects > 1 {
             format!("  ({} files × {} subjects)", series.num_files, n_subjects)
@@ -103,12 +103,12 @@ pub(super) fn draw_dicom_series_section(
         };
 
         let type_style = match series.series_type {
-            crate::dicom::SeriesType::Skip => Style::default().fg(Color::DarkGray),
-            crate::dicom::SeriesType::Phase => Style::default().fg(Color::Cyan),
-            crate::dicom::SeriesType::Magnitude => Style::default().fg(Color::Green),
-            crate::dicom::SeriesType::T1w | crate::dicom::SeriesType::Inversion | crate::dicom::SeriesType::T1map => Style::default().fg(Color::Magenta),
-            crate::dicom::SeriesType::Real | crate::dicom::SeriesType::Imaginary => Style::default().fg(Color::Cyan),
-            crate::dicom::SeriesType::Extra => Style::default().fg(Color::DarkGray),
+            qsmxt_io::dicom::SeriesType::Skip => Style::default().fg(Color::DarkGray),
+            qsmxt_io::dicom::SeriesType::Phase => Style::default().fg(Color::Cyan),
+            qsmxt_io::dicom::SeriesType::Magnitude => Style::default().fg(Color::Green),
+            qsmxt_io::dicom::SeriesType::T1w | qsmxt_io::dicom::SeriesType::Inversion | qsmxt_io::dicom::SeriesType::T1map => Style::default().fg(Color::Magenta),
+            qsmxt_io::dicom::SeriesType::Real | qsmxt_io::dicom::SeriesType::Imaginary => Style::default().fg(Color::Cyan),
+            qsmxt_io::dicom::SeriesType::Extra => Style::default().fg(Color::DarkGray),
             _ => Style::default().fg(Color::Blue),
         };
 
@@ -171,12 +171,12 @@ pub(super) fn draw_dicom_series_section(
     lines.push(Line::from(""));
     match ds.dcm2niix_path() {
         Some(path) => {
-            let is_bundled = crate::dicom::convert::qsmxt_bin_dir()
+            let is_bundled = qsmxt_io::dicom::convert::qsmxt_bin_dir()
                 .map(|dir| path.starts_with(&dir))
                 .unwrap_or(false);
             let (label, color) = if is_bundled {
                 (
-                    format!("  dcm2niix: bundled {}", crate::dicom::convert::DCM2NIIX_BUNDLED_VERSION),
+                    format!("  dcm2niix: bundled {}", qsmxt_io::dicom::convert::DCM2NIIX_BUNDLED_VERSION),
                     Color::Green,
                 )
             } else {

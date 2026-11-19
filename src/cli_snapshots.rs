@@ -163,23 +163,6 @@ fn try_flag(cmd: &mut Command, flag: &str, values: &[String]) -> (String, Result
     (shown, config.map_err(first_line))
 }
 
-/// Every leaf of `value` that differs from `base`, as `/json/pointer: before -> after`.
-pub(crate) fn changes(base: &serde_json::Value, value: &serde_json::Value, path: &str, out: &mut Vec<String>) {
-    use serde_json::Value::Object;
-    match (base, value) {
-        (Object(b), Object(v)) => {
-            for (k, vv) in v {
-                changes(b.get(k).unwrap_or(&serde_json::Value::Null), vv, &format!("{path}/{k}"), out);
-            }
-            for (k, bv) in b.iter().filter(|(k, _)| !v.contains_key(*k)) {
-                changes(bv, &serde_json::Value::Null, &format!("{path}/{k}"), out);
-            }
-        }
-        (b, v) if b != v => out.push(format!("{path}: {b} -> {v}")),
-        _ => {}
-    }
-}
-
 /// Values to try on a flag that has no list of values and no default, in order.
 const SAMPLES: [&str; 8] = ["2", "0.5", "magnitude,threshold:otsu", "erode:1", "*", "sub-1", "x", "1,1,1"];
 
@@ -234,7 +217,7 @@ fn flag_lines(cmd: &mut Command, base: &serde_json::Value, arg: &Arg) -> String 
         match config {
             Ok(config) => {
                 let mut lines = Vec::new();
-                changes(base, &config, "", &mut lines);
+                crate::snapshot::changes(base, &config, "", &mut lines);
                 if lines.is_empty() {
                     out.push_str("    (no change)\n");
                 }

@@ -836,33 +836,3 @@ fn the_segmentation_needs_a_map_to_be_drawn_on() {
     assert_eq!(app.dicom_outputs(), Some(vec!["dseg".to_string()]));
 }
 
-/// The checklist's maps are the ones `--dicom-outputs` accepts.
-#[test]
-fn the_checklist_and_the_cli_name_the_same_maps() {
-    let mut ours: Vec<String> = DICOM_MAPS.iter().map(|m| m.suffix.to_lowercase()).collect();
-    let mut cli: Vec<String> = crate::cli::DICOM_OUTPUT_TOKENS.iter().map(|t| t.to_string()).collect();
-    ours.sort();
-    cli.sort();
-    assert_eq!(ours, cli);
-}
-
-/// `--dicom-outputs` takes one map per use or a comma list, and refuses unknown names.
-#[test]
-fn dicom_outputs_repeat_or_comma_separate() {
-    use clap::Parser;
-    let parse = |extra: &[&str]| {
-        let mut argv = vec!["qsmxt", "run", "bids", "--export-dicom"];
-        argv.extend_from_slice(extra);
-        crate::cli::Cli::try_parse_from(argv)
-    };
-    for args in [&["--dicom-outputs", "chimap,swi"][..], &["--dicom-outputs", "Chimap", "--dicom-outputs", "SWI"][..]] {
-        let crate::cli::Command::Run(r) = parse(args).unwrap().command else { panic!() };
-        let got: Vec<String> = r.dicom_outputs.unwrap().iter().map(|s| s.to_lowercase()).collect();
-        assert_eq!(got, ["chimap", "swi"], "{args:?}");
-    }
-    assert!(parse(&["--dicom-outputs", "chimapp"]).is_err(), "an unknown map is refused");
-    // A space-separated list no longer swallows the BIDS directory.
-    let argv = ["qsmxt", "run", "--export-dicom", "--dicom-outputs", "chimap", "bids"];
-    let crate::cli::Command::Run(r) = crate::cli::Cli::try_parse_from(argv).unwrap().command else { panic!() };
-    assert_eq!(r.bids_dir, std::path::PathBuf::from("bids"));
-}

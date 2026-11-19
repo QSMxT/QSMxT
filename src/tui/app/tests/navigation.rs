@@ -93,7 +93,7 @@ fn right_on_a_row_changes_nothing_and_left_returns_to_the_sidebar() {
 
 /// Everything on, so every section has its full rows (and the mask has every kind of row).
 fn app_with_every_row() -> App {
-    use crate::pipeline::config::{MaskOp, MaskSection, MaskingInput};
+    use qsmxt_engine::{MaskOp, MaskSection, MaskingInput};
     let mut app = App::new();
     app.form.settings.set("pipeline.do_swi", true);
     app.form.settings.set("pipeline.do_smwi", true);
@@ -104,7 +104,7 @@ fn app_with_every_row() -> App {
     app.apply_mask_preset(2); // hd-bet + signal-erode
     let mut m = app.mask_mut();
     m.sections[0].generator = MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: false,
-        tile_step: crate::pipeline::config::hd_bet_default_tile_step() };
+        tile_step: qsmxt_engine::hd_bet_default_tile_step() };
     m.sections.push(MaskSection { input: MaskingInput::Magnitude, generator: MaskOp::bet(0.5), refinements: vec![
         MaskOp::Erode { iterations: 1 }, MaskOp::FillHoles { max_size: 0 }, MaskOp::GaussianSmooth { sigma_mm: 1.0 },
         MaskOp::MinIntensity { value: 100.0 },
@@ -245,7 +245,7 @@ fn every_choice_opens_a_list_that_commits_or_cancels() {
 /// any other row.
 #[test]
 fn plus_and_minus_nudge_mask_numbers() {
-    use crate::pipeline::config::MaskOp;
+    use qsmxt_engine::MaskOp;
     let mut app = app_with_every_row();
     goto_page(&mut app, Page::Masking);
     let focus = |app: &mut App, want: PipelineRow| {
@@ -281,7 +281,7 @@ fn plus_and_minus_nudge_mask_numbers() {
 /// A DICOM series' type is chosen from a list (Enter), current type highlighted; ←/→ leave it.
 #[test]
 fn a_dicom_series_type_is_chosen_from_a_list() {
-    use crate::dicom::{DicomAcquisition, DicomSeries, DicomSession, DicomStudy, DicomSubject, SeriesType};
+    use qsmxt_io::dicom::{DicomAcquisition, DicomSeries, DicomSession, DicomStudy, DicomSubject, SeriesType};
     let mut app = App::new();
     app.input_mode = InputMode::DicomToBids;
     app.active_tab = TAB_INPUT;
@@ -313,7 +313,7 @@ fn a_dicom_series_type_is_chosen_from_a_list() {
 /// from a list.
 #[test]
 fn a_threshold_method_is_chosen_from_a_list() {
-    use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+    use qsmxt_engine::{MaskOp, MaskThresholdMethod};
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.mask_mut().sections[0].refinements.push(MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None });
@@ -342,7 +342,7 @@ fn a_threshold_method_is_chosen_from_a_list() {
 /// augmentation is a switch.
 #[test]
 fn mask_numbers_are_typed_and_mindgrab_tta_is_a_switch() {
-    use crate::pipeline::config::MaskOp;
+    use qsmxt_engine::MaskOp;
     let mut app = app_with_every_row();
     goto_page(&mut app, Page::Masking);
     let focus = |app: &mut App, pred: &dyn Fn(&PipelineRow, &App) -> bool| {

@@ -25,29 +25,29 @@ fn test_pipeline_mask_preset_switch() {
     assert_eq!(app.pipeline_state.mask_preset, 1); // BET
     step(&mut app, 1);
     assert_eq!(app.pipeline_state.mask_preset, 2); // HD-BET + signal-gated erosion
-    assert_eq!(app.mask().sections, crate::pipeline::config::hd_bet_mask_sections());
+    assert_eq!(app.mask().sections, qsmxt_engine::hd_bet_mask_sections());
     step(&mut app, 1);
     assert_eq!(app.pipeline_state.mask_preset, 3); // BET AND phase quality
-    let recipe = crate::pipeline::config::bet_and_phase_mask_recipe();
+    let recipe = qsmxt_engine::bet_and_phase_mask_recipe();
     assert_eq!(app.mask().sections, recipe.sections);
     assert_eq!(app.mask().combine, recipe.combine);
     assert_eq!(app.mask().refinements, recipe.refinements);
     step(&mut app, 1);
     assert_eq!(app.pipeline_state.mask_preset, 4); // RS2-Net (rodent)
-    assert_eq!(app.mask().sections, crate::pipeline::config::rs2_net_mask_sections());
+    assert_eq!(app.mask().sections, qsmxt_engine::rs2_net_mask_sections());
     // Leaving the two-section preset resets the combine mode and the combined-mask steps.
-    assert_eq!(app.mask().combine, crate::pipeline::config::MaskCombine::Or);
+    assert_eq!(app.mask().combine, qsmxt_engine::MaskCombine::Or);
     assert!(app.mask().refinements.is_empty());
     step(&mut app, 1);
     assert_eq!(app.pipeline_state.mask_preset, 5); // MindGrab
-    assert_eq!(app.mask().sections, crate::pipeline::config::mindgrab_mask_sections());
+    assert_eq!(app.mask().sections, qsmxt_engine::mindgrab_mask_sections());
     step(&mut app, 1);
     assert_eq!(app.pipeline_state.mask_preset, *MASK_PRESET_CUSTOM, "the picker lists 'custom' last");
 }
 
 #[test]
 fn test_mask_threshold_method_modal_opens_and_sets() {
-    use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+    use qsmxt_engine::{MaskOp, MaskThresholdMethod};
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.sync_pipeline_mode();
@@ -78,7 +78,7 @@ fn test_mask_threshold_method_modal_opens_and_sets() {
 
 #[test]
 fn test_mask_bet_frac_intensity_opens_no_modal() {
-    use crate::pipeline::config::MaskOp;
+    use qsmxt_engine::MaskOp;
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.sync_pipeline_mode();
@@ -94,27 +94,22 @@ fn test_mask_bet_frac_intensity_opens_no_modal() {
     assert!(app.algo_modal.is_none());
 }
 
-/// The preset row, the CLI's `--mask-preset` values and `mask_presets()` are three views of
-/// one list; `apply_mask_preset` indexes straight into it, so they have to stay aligned.
+/// The preset row and `mask_presets()` are two views of one list (the CLI's `--mask-preset`
+/// values are the third, checked in the binary); `apply_mask_preset` indexes straight into it,
+/// so they have to stay aligned.
 #[test]
 fn test_mask_preset_options_match_the_preset_list() {
-    use clap::ValueEnum;
-    let names: Vec<&str> = crate::pipeline::config::mask_presets().iter().map(|(n, _)| *n).collect();
+    let names: Vec<&str> = qsmxt_engine::mask_presets().iter().map(|(n, _)| *n).collect();
     assert_eq!(&MASK_PRESET_OPTIONS[..*MASK_PRESET_CUSTOM], &names[..]);
     assert_eq!(MASK_PRESET_OPTIONS[*MASK_PRESET_CUSTOM], "custom");
     assert_eq!(MASK_PRESET_OPTIONS.len(), mask_preset_help().len());
-
-    let cli_names: Vec<String> = crate::cli::MaskPresetArg::value_variants().iter()
-        .filter_map(|v| v.to_possible_value()).filter(|v| !v.is_hide_set())
-        .map(|v| v.get_name().to_string()).collect();
-    assert_eq!(cli_names, names, "--mask-preset values drifted from mask_presets()");
 }
 
 /// Every signal-erode parameter is reachable and typed (Enter) on the pipeline form,
 /// and what the CLI preview says is what the rows show.
 #[test]
 fn test_pipeline_signal_erode_params_are_editable() {
-    use crate::pipeline::config::MaskOp;
+    use qsmxt_engine::MaskOp;
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.apply_mask_preset(2); // hd-bet + signal-erode
@@ -532,7 +527,7 @@ fn every_tab_has_a_digit_and_nothing_else_does() {
 /// editor — input, generator and refinement rows — addressed at the two-pass index.
 #[test]
 fn two_pass_toggle_reveals_the_reliable_mask_editor() {
-    use crate::pipeline::config::{MaskOp, MaskThresholdMethod, MaskingInput};
+    use qsmxt_engine::{MaskOp, MaskThresholdMethod, MaskingInput};
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
 
@@ -575,7 +570,7 @@ fn two_pass_toggle_reveals_the_reliable_mask_editor() {
 /// it must edit the reliable mask, not the main one.
 #[test]
 fn editing_the_reliable_mask_leaves_the_main_preset_alone() {
-    use crate::pipeline::config::MaskingInput;
+    use qsmxt_engine::MaskingInput;
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.form.settings.set("masking.two_pass", true);
@@ -618,7 +613,7 @@ fn qsmart_keeps_the_mask() {
 /// on does not silently discard the recipe.
 #[test]
 fn two_pass_remembers_its_mask_while_off() {
-    use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+    use qsmxt_engine::{MaskOp, MaskThresholdMethod};
     let mut app = App::new();
     app.form.settings.set("masking.two_pass", true);
     app.mask_mut().two_pass_sections[0].generator =
@@ -639,7 +634,7 @@ fn two_pass_remembers_its_mask_while_off() {
 /// chosen from a list.
 #[test]
 fn test_pipeline_mask_combine_row_toggles() {
-    use crate::pipeline::config::MaskCombine;
+    use qsmxt_engine::MaskCombine;
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
 
@@ -680,7 +675,7 @@ fn test_pipeline_mask_combine_row_toggles() {
 /// mask (and its preset) alone. The run gets it as `--two-pass-mask-combine`.
 #[test]
 fn the_reliable_mask_has_its_own_combine_mode() {
-    use crate::pipeline::config::MaskCombine;
+    use qsmxt_engine::MaskCombine;
     let mut app = App::new();
     app.form.bids_dir = "/bids".into();
     goto_page(&mut app, Page::Masking);
@@ -721,14 +716,14 @@ fn the_reliable_mask_has_its_own_combine_mode() {
 /// section stays.
 #[test]
 fn d_removes_the_section_a_row_belongs_to() {
-    use crate::pipeline::config::{MaskOp, MaskingInput};
+    use qsmxt_engine::{MaskOp, MaskingInput};
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.form.settings.set("masking.two_pass", true);
     for two_pass in [false, true] {
         let base = if two_pass { MASK_TWO_PASS_BASE } else { 0 };
         let sections = |app: &App| if two_pass { app.mask().two_pass_sections.clone() } else { app.mask().sections.clone() };
-        let set = |app: &mut App, s: Vec<crate::pipeline::config::MaskSection>| {
+        let set = |app: &mut App, s: Vec<qsmxt_engine::MaskSection>| {
             if two_pass { app.mask_mut().two_pass_sections = s } else { app.mask_mut().sections = s }
         };
         let press_d_on = |app: &mut App, row: PipelineRow| {
@@ -780,7 +775,7 @@ fn test_pipeline_mask_combined_refinement_steps() {
     let mut app = App::new();
     goto_page(&mut app, Page::Masking);
     app.apply_mask_preset(3); // bet-and-phase: two sections
-    let recipe = crate::pipeline::config::bet_and_phase_mask_recipe();
+    let recipe = qsmxt_engine::bet_and_phase_mask_recipe();
     assert_eq!(app.mask().refinements, recipe.refinements);
 
     let section_refinements: usize = app.mask().sections.iter().map(|s| s.refinements.len()).sum();
@@ -953,33 +948,33 @@ fn test_pipeline_mask_generator_adjust() {
     step(&mut app, 1);
     assert!(matches!(
         app.mask().sections[0].generator,
-        crate::pipeline::config::MaskOp::Bet { .. }
+        qsmxt_engine::MaskOp::Bet { .. }
     ));
     step(&mut app, 1);
     assert!(matches!(
         app.mask().sections[0].generator,
-        crate::pipeline::config::MaskOp::HdBet { .. }
+        qsmxt_engine::MaskOp::HdBet { .. }
     ));
     step(&mut app, 1);
     assert!(matches!(
         app.mask().sections[0].generator,
-        crate::pipeline::config::MaskOp::MindGrab { tta: false }
+        qsmxt_engine::MaskOp::MindGrab { tta: false }
     ));
     step(&mut app, 1);
     assert!(matches!(
         app.mask().sections[0].generator,
-        crate::pipeline::config::MaskOp::Rs2Net { .. }
+        qsmxt_engine::MaskOp::Rs2Net { .. }
     ));
     // Wraps back round to the first generator.
     step(&mut app, 1);
     assert!(matches!(
         app.mask().sections[0].generator,
-        crate::pipeline::config::MaskOp::Threshold { .. }
+        qsmxt_engine::MaskOp::Threshold { .. }
     ));
     step(&mut app, -1);
     assert!(matches!(
         app.mask().sections[0].generator,
-        crate::pipeline::config::MaskOp::Rs2Net { .. }
+        qsmxt_engine::MaskOp::Rs2Net { .. }
     ));
 }
 
@@ -1002,8 +997,8 @@ fn test_pipeline_mask_generator_param_adjust() {
     // The threshold method, chosen from its list.
     step(&mut app, 1);
     // Verify the method changed (Otsu -> Fixed)
-    if let crate::pipeline::config::MaskOp::Threshold { method, .. } = &app.mask().sections[0].generator {
-        assert_eq!(*method, crate::pipeline::config::MaskThresholdMethod::Fixed);
+    if let qsmxt_engine::MaskOp::Threshold { method, .. } = &app.mask().sections[0].generator {
+        assert_eq!(*method, qsmxt_engine::MaskThresholdMethod::Fixed);
     }
 }
 

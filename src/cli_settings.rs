@@ -5,7 +5,9 @@ use clap::builder::{PossibleValue, PossibleValuesParser};
 use clap::{Arg, ArgAction, Command};
 use qsmxt_engine::schema::cli::{Flag, FlagAction, FlagParse, PIPELINE_FLAGS};
 use qsmxt_engine::schema::cli_apply::Given;
-pub use qsmxt_io::settings::{apply, apply_normalised, build_config, RunSettings};
+pub use qsmxt_io::settings::{build_config, RunSettings};
+#[cfg(test)]
+pub use qsmxt_io::settings::{apply, apply_normalised};
 
 /// One flag as a clap argument.
 pub fn arg(f: &Flag) -> Arg {

@@ -53,3 +53,20 @@ fn first_difference(expected: &str, actual: &str) -> String {
     out.push_str(&format!("(snapshot {} lines, now {} lines)", e.len(), a.len()));
     out
 }
+
+/// Every leaf of `value` that differs from `base`, as `/json/pointer: before -> after`.
+pub fn changes(base: &serde_json::Value, value: &serde_json::Value, path: &str, out: &mut Vec<String>) {
+    use serde_json::Value::Object;
+    match (base, value) {
+        (Object(b), Object(v)) => {
+            for (k, vv) in v {
+                changes(b.get(k).unwrap_or(&serde_json::Value::Null), vv, &format!("{path}/{k}"), out);
+            }
+            for (k, bv) in b.iter().filter(|(k, _)| !v.contains_key(*k)) {
+                changes(bv, &serde_json::Value::Null, &format!("{path}/{k}"), out);
+            }
+        }
+        (b, v) if b != v => out.push(format!("{path}: {b} -> {v}")),
+        _ => {}
+    }
+}

@@ -331,6 +331,8 @@ pub struct TestDir {
 }
 
 #[cfg(any(test, feature = "testutils"))]
+// A guard taken on purpose, as `TestDir::new()`: not a value to default to.
+#[allow(clippy::new_without_default)]
 impl TestDir {
     pub fn new() -> Self {
         let guard = env_lock();

@@ -75,7 +75,7 @@ type RunId = (String, String, String);
 pub struct PipelineView {
     pub scroll: usize,
     /// The last run read, by dataset and run key, kept so the files are read once per run chosen.
-    run: Option<(RunId, Result<crate::bids::discovery::QsmRun, String>)>,
+    run: Option<(RunId, Result<qsmxt_io::bids::discovery::QsmRun, String>)>,
     /// Where the SVG is written.
     pub svg_dir: PathBuf,
     /// How the SVG is opened ([`open`]; tests put a stub here).
@@ -101,7 +101,7 @@ pub struct Planned {
 
 /// Each selected run of a scanned BIDS dataset with motion correction on: its key, echo count (as
 /// the echo limit leaves it) and whether it has magnitude, from its file names.
-fn motion_runs(app: &App, config: &crate::pipeline::config::PipelineConfig) -> Vec<(String, usize, bool)> {
+fn motion_runs(app: &App, config: &qsmxt_engine::PipelineConfig) -> Vec<(String, usize, bool)> {
     let mut runs = Vec::new();
     let Some(tree) = app.filter_state.tree.as_ref() else { return runs };
     if app.input_mode != InputMode::Bids || !config.motion_correction.enabled {
@@ -169,7 +169,7 @@ impl App {
                     self.pipeline_view.run = Some((id, read));
                 }
                 match &self.pipeline_view.run.as_ref().expect("just read").1 {
-                    Ok(run) => (ScanSource::Run { key, selected }, crate::pipeline::requirements::scan_facts(run, &config)),
+                    Ok(run) => (ScanSource::Run { key, selected }, qsmxt_io::pipeline::requirements::scan_facts(run, &config)),
                     Err(e) => (ScanSource::Typical { why: Some(format!("{key} cannot be read: {e}")) }, typical_scan()),
                 }
             }
@@ -204,13 +204,13 @@ impl App {
 }
 
 /// The run `key` of the dataset in `bids_dir`, its headers and sidecars read.
-fn read_run(bids_dir: &str, key: &str, num_echoes: &str) -> Result<crate::bids::discovery::QsmRun, String> {
-    let filter = crate::bids::discovery::DiscoveryFilter {
+fn read_run(bids_dir: &str, key: &str, num_echoes: &str) -> Result<qsmxt_io::bids::discovery::QsmRun, String> {
+    let filter = qsmxt_io::bids::discovery::DiscoveryFilter {
         include: Some(vec![key.to_string()]),
         exclude: None,
         num_echoes: num_echoes.trim().parse().ok(),
     };
-    crate::bids::discovery::discover_runs(&super::command::expand_tilde(bids_dir), &filter)
+    qsmxt_io::bids::discovery::discover_runs(&super::command::expand_tilde(bids_dir), &filter)
         .map_err(|e| e.to_string())?
         .into_iter()
         .find(|r| r.key.to_string() == key)
@@ -284,7 +284,7 @@ pub fn summary_lines(p: &Planned) -> Vec<Line<'static>> {
         head("Memory"),
         Span::raw(format!("peak about {}", qsmxt_engine::memory::format_bytes(p.plan.peak_memory_bytes))),
         Span::styled(
-            format!(" ({} available here)", qsmxt_engine::memory::format_bytes(crate::pipeline::memory::available_memory_bytes())),
+            format!(" ({} available here)", qsmxt_engine::memory::format_bytes(qsmxt_io::pipeline::memory::available_memory_bytes())),
             dim,
         ),
     ]));
@@ -505,7 +505,7 @@ mod tests {
     fn a_selected_run_is_planned_on_its_own_scan() {
         let dir = tempfile::tempdir().unwrap();
         let bids = tempfile::tempdir().unwrap();
-        crate::testutils::create_multi_echo_bids(bids.path());
+        qsmxt_io::testutils::create_multi_echo_bids(bids.path());
         let mut app = app(dir.path());
         app.form.bids_dir = bids.path().to_string_lossy().to_string();
         app.filter_state.maybe_rescan(&app.form.bids_dir.clone());
@@ -530,8 +530,8 @@ mod tests {
     fn motion_correction_is_counted_over_the_selected_runs() {
         let dir = tempfile::tempdir().unwrap();
         let bids = tempfile::tempdir().unwrap();
-        crate::testutils::create_multi_echo_bids(bids.path());
-        crate::testutils::create_single_echo_bids(bids.path());
+        qsmxt_io::testutils::create_multi_echo_bids(bids.path());
+        qsmxt_io::testutils::create_single_echo_bids(bids.path());
         let mut app = app(dir.path());
         app.form.bids_dir = bids.path().to_string_lossy().to_string();
         app.filter_state.maybe_rescan(&app.form.bids_dir.clone());

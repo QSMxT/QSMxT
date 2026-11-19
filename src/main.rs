@@ -10,6 +10,8 @@ mod snapshot;
 mod commands;
 mod pipeline;
 mod tui;
+#[cfg(test)]
+mod tui_cli_tests;
 
 // The file side lives in qsmxt-io; under the same paths here.
 use qsmxt_io::{bids, dicom, error, example, executor, multiorient, nifti};
@@ -58,7 +60,7 @@ fn main() {
         Command::Resample(args) => commands::resample::execute(args),
         Command::QualityMap(args) => commands::quality_map::execute(args),
         Command::Example(args) => commands::example::execute(args),
-        Command::Tui => tui::run_tui(),
+        Command::Tui => commands::tui::execute(),
         Command::Update(args) => commands::update::execute(args),
         Command::News => commands::news::execute(),
     };

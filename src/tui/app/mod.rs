@@ -37,9 +37,9 @@ use std::sync::LazyLock;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::bids::discovery::{self, BidsTree};
-use crate::dicom;
-use crate::nifti;
+use qsmxt_io::bids::discovery::{self, BidsTree};
+use qsmxt_io::dicom;
+use qsmxt_io::nifti;
 
 use super::mask_builder::MaskRecipe;
 use super::settings_rows::{stored_path, stored_placeholder};
@@ -137,7 +137,7 @@ pub struct App {
     /// The config the form builds ([`super::command::config_from_app`]), or why it builds none,
     /// as of the last [`App::prepare_frame`]: what the frame shows. Read through
     /// [`App::current_config`], which uses it only while the form cannot have changed since.
-    pub config: Option<Result<crate::pipeline::config::PipelineConfig, String>>,
+    pub config: Option<Result<qsmxt_engine::PipelineConfig, String>>,
     /// Set while a frame is prepared and drawn, when [`Self::config`] is the form's: nothing
     /// changes the form then. At any other time the form may have changed since, so the config
     /// is built afresh.

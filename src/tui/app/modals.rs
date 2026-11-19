@@ -254,7 +254,7 @@ impl App {
             }
             AlgoModalTarget::InputMode => self.set_input_mode(m.cursor),
             AlgoModalTarget::MaskCombine(section) => {
-                use crate::pipeline::config::MaskCombine;
+                use qsmxt_engine::MaskCombine;
                 let mode = if m.cursor == 0 { MaskCombine::Or } else { MaskCombine::And };
                 self.set_combine(section, mode);
             }
@@ -285,7 +285,7 @@ impl App {
     /// current one highlighted. Enter (or Space) opens it; nothing is chosen until it is
     /// confirmed, and Esc leaves the setting as it was.
     pub fn selector_modal(&self, row: &PipelineRow) -> Option<AlgoModal> {
-        use crate::pipeline::config::{MaskCombine, MaskOp};
+        use qsmxt_engine::{MaskCombine, MaskOp};
         let ps = self.mask();
         let strings = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let modal = |target, title: &str, options: Vec<String>, help: Vec<String>, cursor| Some(AlgoModal {

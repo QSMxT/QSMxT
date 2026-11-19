@@ -161,7 +161,7 @@ impl NiftiState {
         let mut echo_times: Vec<(usize, f64)> = Vec::new();
 
         for (i, path) in self.magnitude_files.iter().enumerate() {
-            let json_path = crate::dicom::convert::nii_to_json_path(path);
+            let json_path = qsmxt_io::dicom::convert::nii_to_json_path(path);
             if let Some(info) = nifti::convert::read_nifti_sidecar(&json_path) {
                 if let Some(et) = info.echo_time {
                     echo_times.push((i, et));

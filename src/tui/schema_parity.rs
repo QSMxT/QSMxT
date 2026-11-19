@@ -3,8 +3,8 @@
 //! The rows come from the registry, so their labels, help and options are the schema's by
 //! construction. What is checked here is what the TUI still decides itself: which pages show
 //! (a stage that does not run says why), its own conditions on rows, Basic mode, the mask builder
-//! and the Input tab; and that the command it prints parses back to the run it makes. Each check
-//! goes over every form [`super::explore`] reaches.
+//! and the Input tab. Each check goes over every form [`super::explore`] reaches. That the command it
+//! prints parses back to the run it makes is checked in the binary, which has the command line.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -173,62 +173,6 @@ fn every_setting_has_a_row() {
     let missing: Vec<&str> = schema::settings().iter().map(|s| s.path)
         .filter(|p| !shown.contains(p) && !combine.contains(p)).collect();
     assert!(missing.is_empty(), "no TUI row shows {missing:?}");
-}
-
-/// What [`schema::get`] reads at `path`, from a config already serialised.
-fn value_at(config: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
-    let (parent, key) = path.rsplit_once('.').unwrap_or(("", path));
-    let obj = parent.split('.').filter(|k| !k.is_empty()).try_fold(config, |v, k| v.get(k))?;
-    obj.as_object().map(|o| o.get(key).cloned().unwrap_or(serde_json::Value::Null))
-}
-
-/// The command the TUI prints runs what the TUI runs: parsed back into a config, it agrees with
-/// the TUI's own config on every setting that applies. (Settings that do not apply are left out
-/// of the command; they do not change the run.)
-#[test]
-fn the_printed_command_reproduces_the_tuis_run() {
-    use clap::{CommandFactory, FromArgMatches};
-    // Built once: building clap's command is most of the cost of a parse.
-    let mut parser = crate::cli::Cli::command();
-    parser.build();
-    let settings = schema::schema();
-    let mut failures = Vec::new();
-    for (acts, app) in explore() {
-        // The config the TUI's run takes: the outputs other settings need turned on, as the run
-        // turns them on.
-        let config = config_from_app(&app).unwrap().normalised().0;
-        let cmd = qsmxt_engine::generate_command(&config);
-        let argv: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
-        let cli = parser.try_get_matches_from_mut(&argv).and_then(|m| crate::cli::Cli::from_arg_matches(&m))
-            .unwrap_or_else(|e| panic!("{e}\n{cmd}"));
-        let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
-        let mut rebuilt = crate::pipeline::config::PipelineConfig::default();
-        crate::cli_settings::apply_normalised(&mut rebuilt, &run.pipeline).unwrap();
-        let f = facts(&app);
-        let (mut a, mut b) = (schema::prune_hidden(&config, &f), schema::prune_hidden(&rebuilt, &f));
-        // An unset reliable mask means the main mask without its hole filling: compare the masks.
-        for c in [&mut a, &mut b] {
-            if c.masking.two_pass {
-                c.masking.two_pass_sections = Some(c.masking.resolved_two_pass_sections());
-            }
-        }
-        // `schema::get` of each setting, from one serialisation of each config.
-        let (a, b) = (serde_json::to_value(&a).unwrap(), serde_json::to_value(&b).unwrap());
-        let differ: Vec<_> = settings.iter()
-            .filter(|s| value_at(&a, s.path) != value_at(&b, s.path)).map(|s| s.path).collect();
-        if !differ.is_empty() {
-            failures.push(format!("{differ:?} after {acts:?}\n  {cmd}"));
-        }
-        // The two leaks this used to allow: the TUI no longer passes either while it is hidden.
-        let fm = &config.field_mapping;
-        if fm.b0_estimation != qsmxt_engine::B0Estimation::WeightedAvg {
-            assert_eq!(fm.b0_weight_type, qsmxt_engine::B0WeightType::PhaseSNR, "after {acts:?}");
-        }
-        if fm.unwrapping_algorithm != qsmxt_engine::UnwrappingAlgorithm::Romeo {
-            assert_eq!(fm.romeo.individual, qsmxt_engine::RomeoConfig::default().individual, "after {acts:?}");
-        }
-    }
-    assert!(failures.is_empty(), "{} forms, e.g.:\n{}", failures.len(), failures[..failures.len().min(4)].join("\n"));
 }
 
 /// The mask editor's step types are the mask schema's, and the ones it offers as a section's

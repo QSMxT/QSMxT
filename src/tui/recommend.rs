@@ -188,7 +188,7 @@ impl App {
             super::app::InputMode::NIfTI => (
                 self.nifti_state.field_strength.trim().parse().ok(),
                 self.nifti_state.phase_files.first()
-                    .and_then(|p| super::pipeline_view::sidecar_manufacturer(&crate::dicom::convert::nii_to_json_path(p))),
+                    .and_then(|p| super::pipeline_view::sidecar_manufacturer(&qsmxt_io::dicom::convert::nii_to_json_path(p))),
             ),
             super::app::InputMode::Bids => (self.pipeline_view.read_field_strength(), self.pipeline_view.read_manufacturer()),
             _ => (None, None),

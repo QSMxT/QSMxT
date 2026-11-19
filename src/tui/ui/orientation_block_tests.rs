@@ -8,7 +8,7 @@ use crate::tui::app::{App, TAB_INPUT};
 /// Build an app sitting on the Input tab with a scanned three-orientation dataset.
 fn app_with_orientations() -> (App, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_multi_orientation_bids(dir.path());
+    qsmxt_io::testutils::create_multi_orientation_bids(dir.path());
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.form.bids_dir = dir.path().to_string_lossy().into_owned();

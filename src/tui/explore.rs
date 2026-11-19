@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use super::app::*;
 
 /// Rows that edit no config setting of their own.
-pub(super) const NOT_CONFIG: &[&str] = &[
+pub const NOT_CONFIG: &[&str] = &[
     // Expands into the mask recipe (masking.sections and friends), which the recipe rows edit.
     "mask_preset",
     // Run options of `qsmxt run`, not settings of the config.
@@ -20,7 +20,7 @@ pub(super) const NOT_CONFIG: &[&str] = &[
 
 /// One change to a form.
 #[derive(Clone, Debug)]
-pub(super) enum Act {
+pub enum Act {
     Toggle(&'static str),
     Select(&'static str, usize),
     /// An orientation grouping on the Input tab.
@@ -29,7 +29,7 @@ pub(super) enum Act {
     Echoes(usize),
 }
 
-pub(super) fn build(acts: &[Act]) -> App {
+pub fn build(acts: &[Act]) -> App {
     let mut app = App::new();
     for a in acts {
         match a {
@@ -45,7 +45,7 @@ pub(super) fn build(acts: &[Act]) -> App {
 
 /// Every form reached from a fresh one by changing one thing at a time, as long as each change
 /// shows a row not seen before: the changes that make each (shortest first). Worked out once.
-pub(super) fn explored() -> &'static [Vec<Act>] {
+pub fn explored() -> &'static [Vec<Act>] {
     static FORMS: std::sync::OnceLock<Vec<Vec<Act>>> = std::sync::OnceLock::new();
     FORMS.get_or_init(explore_forms)
 }

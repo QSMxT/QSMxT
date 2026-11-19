@@ -133,7 +133,7 @@ fn every_reachable_form_builds_what_it_built() {
         match &b.config {
             Ok(config) => {
                 let mut changed = Vec::new();
-                crate::cli_snapshots::changes(base_config, config, "", &mut changed);
+                snapshot::changes(base_config, config, "", &mut changed);
                 if changed.is_empty() {
                     out.push_str("config: unchanged\n");
                 } else {

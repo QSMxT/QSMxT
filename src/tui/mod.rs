@@ -21,6 +21,14 @@ mod explore;
 #[cfg(test)]
 mod snapshot_tests;
 
+/// What the binary's tests of the TUI against the command line use.
+#[cfg(test)]
+pub mod testutils {
+    pub use super::app::{App, DICOM_MAPS};
+    pub use super::command::{build_command_string, build_slurm_args, config_from_app};
+    pub use super::explore::{build, explored, Act};
+}
+
 use std::io;
 
 use crossterm::{
@@ -52,7 +60,20 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
     let _ = terminal.show_cursor();
 }
 
-pub fn run_tui() -> crate::Result<()> {
+/// What the TUI was left to do: nothing, install the latest release, or start the run the form
+/// built. The binary does it, as the `qsmxt update`, `qsmxt run` or `qsmxt slurm` it stands for.
+#[derive(Debug)]
+pub enum Outcome {
+    Quit,
+    Update,
+    Run(command::RunOptions),
+    Slurm(command::SlurmOptions),
+}
+
+pub use command::{RunOptions, SlurmOptions};
+
+/// Run the TUI until it is quit, and say what is left to do ([`Outcome`]).
+pub fn run_tui() -> qsmxt_io::Result<Outcome> {
     // Install panic hook to restore terminal on panic
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic| {
@@ -140,7 +161,7 @@ pub fn run_tui() -> crate::Result<()> {
 
         if app.should_quit {
             restore_terminal(&mut terminal);
-            return Ok(());
+            return Ok(Outcome::Quit);
         }
 
         if app.should_update {
@@ -153,11 +174,7 @@ pub fn run_tui() -> crate::Result<()> {
                 .try_init()
                 .ok();
             println!();
-            let result = crate::commands::update::execute(crate::cli::UpdateArgs { yes: true, force: false, main: false });
-            if result.is_ok() {
-                println!("\nRestart qsmxt to use the new version.");
-            }
-            return result;
+            return Ok(Outcome::Update);
         }
 
         if app.should_run {
@@ -172,12 +189,10 @@ pub fn run_tui() -> crate::Result<()> {
                     .filter_level(log::LevelFilter::Info)
                     .format_timestamp(None)
                     .init();
-                let args = command::build_slurm_args(&app)?;
-                return crate::commands::slurm::execute(args);
+                return Ok(Outcome::Slurm(command::build_slurm_args(&app)?));
             } else {
                 // Local mode — run::execute sets up its own tee logger
-                let args = command::build_run_args(&app)?;
-                return crate::commands::run::execute(args);
+                return Ok(Outcome::Run(command::build_run_args(&app)?));
             }
         }
     }

@@ -2,9 +2,60 @@ use std::path::PathBuf;
 
 use qsmxt_engine::schema::cli_apply::Given;
 
-use crate::cli::{RunArgs, SlurmArgs};
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
+use qsmxt_io::settings::RunSettings;
 use super::app::App;
+
+/// A local run the form starts: `qsmxt run`'s options, as plain data. The binary turns it into
+/// its `qsmxt run` arguments and runs it.
+#[derive(Debug)]
+pub struct RunOptions {
+    pub accept_recommendations: bool,
+    pub accept_reference_settings: bool,
+    pub bids_dir: PathBuf,
+    pub output_dir: Option<PathBuf>,
+    pub config: Option<PathBuf>,
+    pub include: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
+    pub num_echoes: Option<usize>,
+    pub n_procs: Option<usize>,
+    pub source_dicom: Option<PathBuf>,
+    pub dicom_outputs: Option<Vec<String>>,
+    pub dry: bool,
+    pub debug: bool,
+    pub mem_limit_gb: Option<f64>,
+    pub no_mem_limit: bool,
+    pub force: bool,
+    pub clean_intermediates: bool,
+    pub no_dataset_steps: bool,
+    pub pipeline: RunSettings,
+}
+
+/// A SLURM run the form starts: `qsmxt slurm`'s options, as plain data. The binary turns it into
+/// its `qsmxt slurm` arguments and runs it.
+#[derive(Debug)]
+pub struct SlurmOptions {
+    pub accept_recommendations: bool,
+    pub accept_reference_settings: bool,
+    pub bids_dir: PathBuf,
+    pub output_dir: Option<PathBuf>,
+    pub account: String,
+    pub partition: Option<String>,
+    pub config: Option<PathBuf>,
+    pub time: String,
+    pub mem: Option<usize>,
+    pub cpus_per_task: usize,
+    pub submit: bool,
+    pub include: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
+    pub num_echoes: Option<usize>,
+    pub force: bool,
+    pub clean_intermediates: bool,
+    pub debug: bool,
+    pub source_dicom: Option<PathBuf>,
+    pub dicom_outputs: Option<Vec<String>>,
+    pub pipeline: RunSettings,
+}
 
 pub fn build_command_string(app: &App) -> String {
     let form = &app.form;
@@ -123,15 +174,15 @@ fn push_if_changed(parts: &mut Vec<String>, flag: &str, current: &str, default: 
     }
 }
 
-pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
+pub fn build_run_args(app: &App) -> qsmxt_io::Result<RunOptions> {
     let form = &app.form;
     if form.bids_dir.is_empty() {
-        return Err(crate::error::QsmxtError::Config(
+        return Err(qsmxt_io::error::QsmxtError::Config(
             "BIDS directory is required".to_string(),
         ));
     }
 
-    Ok(RunArgs {
+    Ok(RunOptions {
         // The TUI resolves recommendations in its pop-up; the run applies none of its own.
         accept_recommendations: false,
         accept_reference_settings: false,
@@ -237,12 +288,12 @@ fn parse_optional_string_vec(s: &str) -> Option<Vec<String>> {
 /// run's default, else what it reads as. Text that reads as nothing is an error naming the flag
 /// and the text, as the command line refuses it: the run never goes ahead with something other
 /// than what was typed.
-fn typed<T>(flag: &str, text: &str, what: &str, read: impl Fn(&str) -> Option<T>) -> crate::Result<Option<T>> {
+fn typed<T>(flag: &str, text: &str, what: &str, read: impl Fn(&str) -> Option<T>) -> qsmxt_io::Result<Option<T>> {
     let t = text.trim();
     if t.is_empty() {
         return Ok(None);
     }
-    read(t).map(Some).ok_or_else(|| crate::error::QsmxtError::Config(format!("{flag} {t}: not {what}")))
+    read(t).map(Some).ok_or_else(|| qsmxt_io::error::QsmxtError::Config(format!("{flag} {t}: not {what}")))
 }
 
 fn number(t: &str) -> Option<f64> {
@@ -253,22 +304,22 @@ fn count(t: &str) -> Option<usize> {
     t.parse().ok()
 }
 
-pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
+pub fn build_slurm_args(app: &App) -> qsmxt_io::Result<SlurmOptions> {
     let form = &app.form;
     if form.bids_dir.is_empty() {
-        return Err(crate::error::QsmxtError::Config(
+        return Err(qsmxt_io::error::QsmxtError::Config(
             "BIDS directory is required".to_string(),
         ));
     }
     if form.slurm_account.trim().is_empty() {
-        return Err(crate::error::QsmxtError::Config(
+        return Err(qsmxt_io::error::QsmxtError::Config(
             "SLURM account is required".to_string(),
         ));
     }
 
     let defaults = super::app::RunForm::default();
     let (include, exclude) = app.filter_state.get_include_exclude();
-    Ok(SlurmArgs {
+    Ok(SlurmOptions {
         accept_recommendations: false,
         accept_reference_settings: false,
         bids_dir: expand_tilde(&form.bids_dir),
@@ -295,13 +346,13 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
 
 /// The methods text (Markdown) for the current settings, or why the settings are invalid.
 pub fn methods_text(app: &App) -> Result<String, String> {
-    app.current_config().as_ref().as_ref().map(crate::pipeline::methods::generate_methods).map_err(|e| e.clone())
+    app.current_config().as_ref().as_ref().map(qsmxt_io::pipeline::methods::generate_methods).map_err(|e| e.clone())
 }
 
 /// The settings of the form's settings store the run takes: those changed from their defaults
 /// that apply. One left behind by an earlier choice (hidden now) is left at its default, so that
 /// it does not change the run.
-fn stored_values(app: &App, own: &[(&'static str, serde_json::Value)], given: &[Given]) -> crate::Result<Vec<(&'static str, serde_json::Value)>> {
+fn stored_values(app: &App, own: &[(&'static str, serde_json::Value)], given: &[Given]) -> qsmxt_io::Result<Vec<(&'static str, serde_json::Value)>> {
     let settings = &app.form.settings;
     let (changed, refused) = settings.changed_or_refused();
     if changed.is_empty() && refused.is_empty() {
@@ -319,7 +370,7 @@ fn stored_values(app: &App, own: &[(&'static str, serde_json::Value)], given: &[
     // Typed text the run cannot take is an error while its setting applies, as on the command
     // line: the run is refused rather than run with something else.
     if let Some((_, why)) = refused.iter().find(|(p, _)| visible.contains(p)) {
-        return Err(crate::error::QsmxtError::Config(why.clone()));
+        return Err(qsmxt_io::error::QsmxtError::Config(why.clone()));
     }
     changed.into_iter().filter(|(p, _)| visible.contains(p))
         .map(|(p, v)| Ok((p, as_spelled(p, v)?)))
@@ -328,11 +379,11 @@ fn stored_values(app: &App, own: &[(&'static str, serde_json::Value)], given: &[
 
 /// `config` with the form's own settings ([`form_values`]) and its flags, as given (no outputs
 /// turned on for other settings).
-fn with_form(mut config: PipelineConfig, own: &[(&'static str, serde_json::Value)], given: &[Given]) -> crate::Result<PipelineConfig> {
+fn with_form(mut config: PipelineConfig, own: &[(&'static str, serde_json::Value)], given: &[Given]) -> qsmxt_io::Result<PipelineConfig> {
     for (path, value) in own {
-        qsmxt_engine::schema::set(&mut config, path, value.clone()).map_err(crate::error::QsmxtError::Config)?;
+        qsmxt_engine::schema::set(&mut config, path, value.clone()).map_err(qsmxt_io::error::QsmxtError::Config)?;
     }
-    crate::cli_settings::apply(&mut config, given)?;
+    qsmxt_io::settings::apply(&mut config, given)?;
     Ok(config)
 }
 
@@ -342,9 +393,9 @@ fn with_form(mut config: PipelineConfig, own: &[(&'static str, serde_json::Value
 /// or percentile threshold without a value its default; a step the command line cannot take is
 /// refused as it would be there. Any other setting is as it is. Kept until the form's settings
 /// are all the config's.
-fn as_spelled(path: &str, value: serde_json::Value) -> crate::Result<serde_json::Value> {
-    use crate::pipeline::config::{hole_closing_warnings, parse_mask_sections, MaskOp, MaskSection};
-    let unreadable = |e: serde_json::Error| crate::error::QsmxtError::Config(format!("{path}: {e}"));
+fn as_spelled(path: &str, value: serde_json::Value) -> qsmxt_io::Result<serde_json::Value> {
+    use qsmxt_io::pipeline::config::{hole_closing_warnings, parse_mask_sections, MaskOp, MaskSection};
+    let unreadable = |e: serde_json::Error| qsmxt_io::error::QsmxtError::Config(format!("{path}: {e}"));
     let spell = |sections: &[MaskSection]| -> Vec<String> {
         sections.iter().map(|section| {
             std::iter::once(format!("{}", section.input))
@@ -374,9 +425,9 @@ fn as_spelled(path: &str, value: serde_json::Value) -> crate::Result<serde_json:
             for op in ops {
                 let s = format!("{op}");
                 let op = qsmxt_engine::masking::parse_mask_op(&s)
-                    .map_err(|e| crate::error::QsmxtError::Config(format!("--mask-refine {s}: {e}")))?;
+                    .map_err(|e| qsmxt_io::error::QsmxtError::Config(format!("--mask-refine {s}: {e}")))?;
                 if op.is_generator() {
-                    return Err(crate::error::QsmxtError::Config(format!(
+                    return Err(qsmxt_io::error::QsmxtError::Config(format!(
                         "--mask-refine {op}: it creates a mask rather than refining one; put it \
                          in a --mask section instead")));
                 }
@@ -390,10 +441,10 @@ fn as_spelled(path: &str, value: serde_json::Value) -> crate::Result<serde_json:
 
 /// The run's settings from the form: its own settings ([`form_values`]) and those it keeps in a
 /// config ([`stored_values`]), by path, and its dismissals as the flag.
-fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> {
+fn settings_args(app: &App) -> qsmxt_io::Result<RunSettings> {
     let (own, given) = (form_values(app), dismissals(app));
     let values = stored_values(app, &own, &given)?;
-    Ok(crate::cli_settings::SettingsArgs(crate::cli_settings::RunSettings { values: own.into_iter().chain(values).collect(), given }))
+    Ok(RunSettings { values: own.into_iter().chain(values).collect(), given })
 }
 
 /// The config the form builds (methods preview, generated command): the settings it keeps in a
@@ -405,7 +456,7 @@ fn settings_args(app: &App) -> crate::Result<crate::cli_settings::SettingsArgs> 
 /// output another setting needs and the form leaves off is a required change for the TUI to
 /// offer ([`qsmxt_engine::normalise::required_findings`]), which the run would otherwise make
 /// itself.
-pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
+pub fn config_from_app(app: &App) -> qsmxt_io::Result<PipelineConfig> {
     let (own, given) = (form_values(app), dismissals(app));
     let config = app.form.settings.config_of(&stored_values(app, &own, &given)?);
     let mut config = with_form(config, &own, &given)?;
@@ -421,13 +472,13 @@ mod tests {
     use super::super::app::App;
 
     /// The config a run gets from its arguments.
-    fn config(args: &RunArgs) -> PipelineConfig {
-        crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap()
+    fn config(args: &RunOptions) -> PipelineConfig {
+        qsmxt_io::settings::build_config(Default::default(), &args.pipeline).unwrap()
     }
 
     /// The value the form passes the run for the setting at `path`, if it passes one.
     fn passed(app: &App, path: &str) -> Option<serde_json::Value> {
-        settings_args(app).unwrap().0.values.into_iter().find(|(p, _)| *p == path).map(|(_, v)| v)
+        settings_args(app).unwrap().values.into_iter().find(|(p, _)| *p == path).map(|(_, v)| v)
     }
 
     /// Each entry of the SWI selects runs the unwrapping or scaling it shows (#266:
@@ -492,7 +543,7 @@ mod tests {
         assert!(c.separation.r2primenet.ignore_field_mismatch);
         assert_eq!(c.separation.r2primenet.patch, [128, 128, 64]);
         app.form.bids_dir = "/b".into();
-        let run = crate::cli_settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
+        let run = qsmxt_io::settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
         assert_eq!(run.separation.r2primenet, c.separation.r2primenet);
     }
 
@@ -780,7 +831,7 @@ mod tests {
         assert!(!config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
         app.toggle_field("ignore_slice_gap");
         assert!(config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
-        assert!(crate::cli_settings::build_config(Default::default(), &build_run_args(&{
+        assert!(qsmxt_io::settings::build_config(Default::default(), &build_run_args(&{
             let mut a = App::new(); a.form.bids_dir = "/b".into(); a.toggle_field("ignore_slice_gap"); a
         }).unwrap().pipeline).unwrap().pipeline.ignore_slice_gap);
         let mut c = config_from_app(&app).unwrap();
@@ -824,7 +875,7 @@ mod tests {
         let reg = config_from_app(&app).unwrap().registration;
         assert_eq!((m.min_ncc, reg.levels, reg.min_overlap), (0.9, 4, 0.5));
         app.form.bids_dir = "/b".into();
-        let run = crate::cli_settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
+        let run = qsmxt_io::settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
         assert_eq!((run.motion_correction, run.registration), (m, reg));
     }
 
@@ -838,7 +889,7 @@ mod tests {
         use crate::tui::app::{PipelineRow, QSM_ALGO_OPTIONS};
         // Every option parses as a config algorithm, or the check would silently say "needs BFR".
         for name in QSM_ALGO_OPTIONS {
-            assert!(serde_json::from_value::<crate::pipeline::config::QsmAlgorithm>(serde_json::json!(name)).is_ok(), "{name}");
+            assert!(serde_json::from_value::<qsmxt_engine::QsmAlgorithm>(serde_json::json!(name)).is_ok(), "{name}");
         }
         let mut app = default_app();
         let shows_bfr = |app: &App| app.pipeline_rows().iter().any(|r|
@@ -874,7 +925,7 @@ mod tests {
         let c = config_from_app(&app).unwrap();
         assert!(!c.multi_orientation.register && c.multi_orientation.force);
         app.form.bids_dir = "/b".into();
-        let run = crate::cli_settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
+        let run = qsmxt_io::settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
         assert!(!run.multi_orientation.register && run.multi_orientation.force);
         let shows_reg = |app: &App| app.pipeline_rows().iter().any(|r|
             matches!(r, crate::tui::app::PipelineRow::Param { field: "reg_levels", .. }));
@@ -915,7 +966,7 @@ mod tests {
     /// gives stays the file's.
     #[test]
     fn the_forms_settings_apply_on_top_of_a_config_file() {
-        use crate::pipeline::config::{BfAlgorithm, QsmAlgorithm};
+        use qsmxt_engine::{BfAlgorithm, QsmAlgorithm};
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("c.toml");
         let smv = !qsm_core::inversion::MediParams::default().smv;
@@ -928,7 +979,7 @@ mod tests {
         let run = |app: &App| {
             let args = build_run_args(app).unwrap();
             assert_eq!(args.config.as_deref(), Some(path.as_path()));
-            crate::commands::run::build_config(Some(&path), &args.pipeline).unwrap()
+            qsmxt_io::settings::build_config(qsmxt_io::pipeline::config::load_config(&path).unwrap(), &args.pipeline).unwrap()
         };
         let c = run(&app);
         assert_eq!(c.inversion.algorithm, QsmAlgorithm::Ilsqr, "the form's inversion, always");
@@ -1108,7 +1159,7 @@ mod tests {
         let args = build_run_args(&app).unwrap();
         assert_eq!(args.bids_dir, PathBuf::from("/bids"));
         assert_eq!(args.output_dir, Some(PathBuf::from("/out")));
-        assert_eq!(config(&args).inversion.algorithm, crate::pipeline::config::QsmAlgorithm::Ilsqr);
+        assert_eq!(config(&args).inversion.algorithm, qsmxt_engine::QsmAlgorithm::Ilsqr);
     }
 
     #[test]
@@ -1154,7 +1205,7 @@ mod tests {
         app.form.dry_run = true;
         app.form.debug = true;
         let args = build_run_args(&app).unwrap();
-        let config = |args: &RunArgs| crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap();
+        let config = |args: &RunOptions| qsmxt_io::settings::build_config(Default::default(), &args.pipeline).unwrap();
         assert!(config(&args).pipeline.do_swi);
         assert!(!config(&args).swi.filtered_phase);
         assert!(config(&args).pipeline.do_t2starmap);
@@ -1202,7 +1253,7 @@ mod tests {
         app.form.settings.set("pipeline.axial_resampling", true);
         *app.field_text_mut("obliquity_threshold").unwrap() = "5.0".into();
         let args = build_run_args(&app).unwrap();
-        let config = crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap();
+        let config = qsmxt_io::settings::build_config(Default::default(), &args.pipeline).unwrap();
         assert_eq!(config.pipeline.obliquity_threshold, 5.0);
     }
 
@@ -1338,7 +1389,7 @@ mod tests {
         *app.field_text_mut("bet_smoothness").unwrap() = "abc".into();
         assert!(config_from_app(&app).is_ok(), "no BET step: it does not apply");
         app.set_field_select("mask_preset", 1);
-        assert!(app.mask().sections.iter().any(|s| matches!(s.generator, crate::pipeline::config::MaskOp::Bet { .. })));
+        assert!(app.mask().sections.iter().any(|s| matches!(s.generator, qsmxt_engine::MaskOp::Bet { .. })));
         refused(&mut app, |_| {}, "--bet-smoothness abc: not a number");
         *app.field_text_mut("bet_smoothness").unwrap() = String::new();
         assert!(config_from_app(&app).is_ok(), "blank is the default");
@@ -1372,7 +1423,7 @@ mod tests {
     /// default.
     #[test]
     fn unreadable_run_options_are_refused() {
-        let err = |r: crate::Result<RunArgs>| r.expect_err("refused").to_string();
+        let err = |r: qsmxt_io::Result<RunOptions>| r.expect_err("refused").to_string();
         let mut app = default_app();
         app.form.bids_dir = "/bids".into();
         app.form.n_procs = "abc".into();
@@ -1444,68 +1495,6 @@ mod tests {
         assert_eq!(args.config, Some(PathBuf::from("config.toml")));
     }
 
-    /// The command the TUI prints in SLURM mode carries the pipeline flags, so
-    /// `qsmxt slurm` must actually accept them — a copy-pasted command has to run.
-    #[test]
-    fn test_slurm_command_string_parses() {
-        use clap::Parser;
-        let mut app = default_app();
-        app.form.bids_dir = "/bids".to_string();
-        app.form.execution_mode = 1;
-        app.form.slurm_account = "acct".to_string();
-        app.set_qsm_algorithm(4); // tgv
-        *app.field_text_mut("tgv_erosions").unwrap() = "2".into();
-
-        let cmd = build_command_string(&app);
-        let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
-        let cli = crate::cli::Cli::try_parse_from(&argv)
-            .unwrap_or_else(|e| panic!("TUI SLURM command did not parse: {}\ncmd: {}", e, cmd));
-        match cli.command {
-            crate::cli::Command::Slurm(args) => {
-                let algorithm = args.pipeline.given.iter().find(|g| g.flag.long == "qsm-algorithm").map(|g| g.values.clone());
-                assert_eq!(algorithm, Some(vec!["tgv".to_string()]));
-                assert_eq!(args.account, "acct");
-            }
-            _ => panic!("expected the slurm subcommand"),
-        }
-    }
-
-    /// Every execution setting that applies to a SLURM run reaches it: debug logging and DICOM
-    /// export's source directory and map list used to be local-only, dropped from the generated
-    /// jobs without a word. Checked on the arguments the TUI runs with and on the command it shows.
-    #[test]
-    fn slurm_mode_carries_debug_and_dicom_export() {
-        use clap::Parser;
-        let mut app = default_app();
-        app.form.bids_dir = "/bids".to_string();
-        app.form.execution_mode = 1;
-        app.form.slurm_account = "acct".to_string();
-        app.form.debug = true;
-        app.form.export_dicom = true;
-        app.form.source_dicom = "/dicom".to_string();
-        // SWI makes swi and minIP; unticking minIP exports the magnitude, χ and SWI only.
-        app.form.settings.set("pipeline.do_swi", true);
-        app.form.dicom_unticked = vec!["minip".to_string()];
-
-        let args = build_slurm_args(&app).unwrap();
-        assert!(args.debug);
-        assert_eq!(args.source_dicom, Some(PathBuf::from("/dicom")));
-        assert_eq!(args.dicom_outputs, Some(vec!["magnitude".to_string(), "Chimap".to_string(), "swi".to_string()]));
-        assert!(crate::cli_settings::build_config(Default::default(), &args.pipeline).unwrap().pipeline.export_dicom);
-
-        let cmd = build_command_string(&app);
-        let cli = crate::cli::Cli::try_parse_from(cmd.split_whitespace())
-            .unwrap_or_else(|e| panic!("{e}\ncmd: {cmd}"));
-        let crate::cli::Command::Slurm(shown) = cli.command else { panic!("not slurm: {cmd}") };
-        assert_eq!((shown.debug, shown.source_dicom, shown.dicom_outputs),
-                   (args.debug, args.source_dicom, args.dicom_outputs), "{cmd}");
-
-        // Without DICOM export its settings are not passed on.
-        app.form.export_dicom = false;
-        let args = build_slurm_args(&app).unwrap();
-        assert_eq!((args.source_dicom, args.dicom_outputs), (None, None));
-    }
-
     /// Regression: SLURM mode used to drop every pipeline setting, so the
     /// generated jobs ran the defaults (romeo/threshold/sharp/rts) instead of
     /// the configured pipeline. The SLURM args must carry the same pipeline
@@ -1524,9 +1513,9 @@ mod tests {
         app.form.settings.set("pipeline.do_swi", true);
 
         let slurm = build_slurm_args(&app).unwrap();
-        let config = crate::cli_settings::build_config(Default::default(), &slurm.pipeline).unwrap();
-        assert_eq!(config.inversion.algorithm, crate::pipeline::config::QsmAlgorithm::Tkd);
-        assert_eq!(config.bg_removal.algorithm, crate::pipeline::config::BfAlgorithm::Pdf);
+        let config = qsmxt_io::settings::build_config(Default::default(), &slurm.pipeline).unwrap();
+        assert_eq!(config.inversion.algorithm, qsmxt_engine::QsmAlgorithm::Tkd);
+        assert_eq!(config.bg_removal.algorithm, qsmxt_engine::BfAlgorithm::Pdf);
         assert_eq!(config.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::Laplacian);
         assert_eq!(config.pipeline.obliquity_threshold, 5.0);
         assert!(config.pipeline.do_swi);
@@ -1545,11 +1534,11 @@ mod tests {
         app.set_field_select("b0_weight_type", 5); // assumed-decay
         *app.field_text_mut("b0_weight_assumed_t2star_ms").unwrap() = "35".to_string();
         let mut cfg = PipelineConfig::default();
-        crate::cli_settings::apply_normalised(&mut cfg, &build_run_args(&app).unwrap().pipeline).unwrap();
-        assert_eq!(cfg.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
+        qsmxt_io::settings::apply_normalised(&mut cfg, &build_run_args(&app).unwrap().pipeline).unwrap();
+        assert_eq!(cfg.field_mapping.b0_weight_type, qsmxt_engine::B0WeightType::AssumedDecay);
         assert_eq!(cfg.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
         let c = config_from_app(&app).unwrap();
-        assert_eq!(c.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
+        assert_eq!(c.field_mapping.b0_weight_type, qsmxt_engine::B0WeightType::AssumedDecay);
         assert_eq!(c.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
         app.set_field_select("b0_estimation", 1);
         assert_eq!(config(&build_run_args(&app).unwrap()).field_mapping.b0_estimation, qsmxt_engine::B0Estimation::LinearFit);
@@ -1649,9 +1638,9 @@ mod tests {
         app.toggle_field("bipolar_correction");
 
         let mut local = PipelineConfig::default();
-        crate::cli_settings::apply_normalised(&mut local, &build_run_args(&app).unwrap().pipeline).unwrap();
+        qsmxt_io::settings::apply_normalised(&mut local, &build_run_args(&app).unwrap().pipeline).unwrap();
         let mut slurm = PipelineConfig::default();
-        crate::cli_settings::apply_normalised(&mut slurm, &build_slurm_args(&app).unwrap().pipeline).unwrap();
+        qsmxt_io::settings::apply_normalised(&mut slurm, &build_slurm_args(&app).unwrap().pipeline).unwrap();
 
         assert_eq!(slurm.to_toml().unwrap(), local.to_toml().unwrap());
         // ... and it is not merely the default pipeline.

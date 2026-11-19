@@ -19,7 +19,7 @@ fn example_state_starts_on_the_button_with_the_default_ticked() {
     assert_eq!(app.example_state.cursor, ExampleState::BUTTON);
     let picked = app.example_state.selected_examples();
     assert_eq!(picked.len(), 1);
-    assert_eq!(picked[0].id, crate::example::DEFAULT_ID);
+    assert_eq!(picked[0].id, qsmxt_io::example::DEFAULT_ID);
     assert_eq!(app.example_state.selected_bytes(), picked[0].bytes);
 }
 
@@ -55,7 +55,7 @@ fn example_picker_is_walked_in_the_order_it_is_drawn() {
     assert_eq!((app.active_field, app.example_state.cursor), (App::INPUT_IO_FIELDS, ExampleState::BUTTON));
     app.handle_key(key(KeyCode::Down));
     assert_eq!(app.example_state.acquisition(), Some(0));
-    assert_eq!(crate::example::EXAMPLES[0].id, "prisma-bridge-run1");
+    assert_eq!(qsmxt_io::example::EXAMPLES[0].id, "prisma-bridge-run1");
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn example_picker_returns_to_the_io_fields_from_the_top() {
 #[test]
 fn example_download_refuses_an_empty_selection() {
     let mut app = example_app();
-    app.example_state.selected = vec![false; crate::example::EXAMPLES.len()];
+    app.example_state.selected = vec![false; qsmxt_io::example::EXAMPLES.len()];
     app.handle_key(key(KeyCode::Enter)); // cursor starts on the button
     assert_eq!(app.example_state.status, ConvertStatus::Idle);
     assert!(
@@ -184,7 +184,7 @@ fn test_filter_state_default() {
 #[test]
 fn test_filter_scan_with_bids() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_multi_echo_bids(dir.path());
+    qsmxt_io::testutils::create_multi_echo_bids(dir.path());
     let mut fs = super::FilterTreeState::default();
     fs.maybe_rescan(dir.path().to_str().unwrap());
     assert!(fs.tree.is_some());
@@ -207,7 +207,7 @@ fn test_filter_scan_empty_dir() {
 #[test]
 fn test_filter_scan_caches() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut fs = super::FilterTreeState::default();
     let path = dir.path().to_str().unwrap();
     fs.maybe_rescan(path);
@@ -220,7 +220,7 @@ fn test_filter_scan_caches() {
 #[test]
 fn test_filter_navigation() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut fs = super::FilterTreeState::default();
     fs.maybe_rescan(dir.path().to_str().unwrap());
 
@@ -245,7 +245,7 @@ fn test_filter_navigation() {
 #[test]
 fn test_filter_toggle_run() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut fs = super::FilterTreeState::default();
     fs.maybe_rescan(dir.path().to_str().unwrap());
 
@@ -266,7 +266,7 @@ fn test_filter_toggle_run() {
 #[test]
 fn arrows_give_runs_their_orientation_groups() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_multi_orientation_bids(dir.path());
+    qsmxt_io::testutils::create_multi_orientation_bids(dir.path());
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.form.bids_dir = dir.path().to_string_lossy().into_owned();
@@ -315,7 +315,7 @@ fn arrows_give_runs_their_orientation_groups() {
     assert!(app.filter_state.orientation_group.starts_with("runs:"));
     let listed: usize = app.filter_state.orientation_groups("").iter().map(Vec::len).sum();
     assert_eq!(listed, grouped);
-    assert!(crate::bids::orientation::parse_pattern(&app.filter_state.orientation_group).unwrap().is_some());
+    assert!(qsmxt_io::bids::orientation::parse_pattern(&app.filter_state.orientation_group).unwrap().is_some());
 
     // ←/→ on a subject or session still collapses and expands it.
     let subject = (0..rows.len()).find(|&i| matches!(rows[i], TreeRow::Subject(_))).unwrap();
@@ -341,7 +341,7 @@ fn runs_order(app: &App, i: usize) -> usize {
 #[test]
 fn the_input_tab_has_only_the_orientation_pattern() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut fs = super::FilterTreeState::default();
     fs.maybe_rescan(dir.path().to_str().unwrap());
     for pattern in ["*acq-dir*", ""] {
@@ -388,7 +388,7 @@ fn the_orientation_grouping_is_none_until_a_pattern_is_set() {
 #[test]
 fn test_filter_select_all_none() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_multi_echo_bids(dir.path());
+    qsmxt_io::testutils::create_multi_echo_bids(dir.path());
     let mut fs = super::FilterTreeState::default();
     fs.maybe_rescan(dir.path().to_str().unwrap());
 
@@ -404,7 +404,7 @@ fn test_filter_select_all_none() {
 #[test]
 fn test_filter_collapse() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut fs = super::FilterTreeState::default();
     fs.maybe_rescan(dir.path().to_str().unwrap());
 
@@ -594,7 +594,7 @@ fn test_nifti_add_magnitude_editing() {
     assert!(app.nifti_state.editing);
     assert_eq!(
         app.nifti_state.adding_to,
-        Some(crate::nifti::convert::NiftiPartType::Magnitude)
+        Some(qsmxt_io::nifti::convert::NiftiPartType::Magnitude)
     );
 }
 
@@ -609,7 +609,7 @@ fn test_nifti_add_phase_editing() {
     assert!(app.nifti_state.editing);
     assert_eq!(
         app.nifti_state.adding_to,
-        Some(crate::nifti::convert::NiftiPartType::Phase)
+        Some(qsmxt_io::nifti::convert::NiftiPartType::Phase)
     );
 }
 
@@ -631,7 +631,7 @@ fn test_filter_enter_include_editing() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS; // in filter tree area
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.focus = FilterFocus::Include;
     app.handle_key(key(KeyCode::Enter));
     assert!(app.filter_state.include_editing);
@@ -642,7 +642,7 @@ fn test_filter_enter_exclude_editing() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.focus = FilterFocus::Exclude;
     app.handle_key(key(KeyCode::Enter));
     assert!(app.filter_state.exclude_editing);
@@ -653,7 +653,7 @@ fn test_filter_type_in_include() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.focus = FilterFocus::Include;
     app.filter_state.include_editing = true;
     app.filter_state.include_pattern.clear();
@@ -670,7 +670,7 @@ fn test_filter_esc_stops_include_editing() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.include_editing = true;
     app.handle_key(key(KeyCode::Esc));
     assert!(!app.filter_state.include_editing);
@@ -682,7 +682,7 @@ fn test_filter_enter_stops_include_editing_and_applies() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.include_editing = true;
     app.filter_state.include_pattern = "sub-1*".to_string();
     app.handle_key(key(KeyCode::Enter));
@@ -694,7 +694,7 @@ fn test_filter_type_in_exclude() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.focus = FilterFocus::Exclude;
     app.filter_state.exclude_editing = true;
     app.filter_state.exclude_cursor = 0;
@@ -707,7 +707,7 @@ fn test_filter_text_backspace() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.include_editing = true;
     app.filter_state.include_pattern = "abc".to_string();
     app.filter_state.include_cursor = 3;
@@ -721,7 +721,7 @@ fn test_filter_text_delete() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.include_editing = true;
     app.filter_state.include_pattern = "abc".to_string();
     app.filter_state.include_cursor = 0;
@@ -734,7 +734,7 @@ fn test_filter_text_home_end() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.include_editing = true;
     app.filter_state.include_pattern = "hello".to_string();
     app.filter_state.include_cursor = 3;
@@ -749,7 +749,7 @@ fn test_filter_text_left_right() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.include_editing = true;
     app.filter_state.include_pattern = "abc".to_string();
     app.filter_state.include_cursor = 2;
@@ -764,7 +764,7 @@ fn test_filter_num_echoes_editing() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.focus = FilterFocus::NumEchoes;
     app.handle_key(key(KeyCode::Enter));
     assert!(app.filter_state.num_echoes_editing);
@@ -793,7 +793,7 @@ fn test_filter_num_echoes_editing() {
 #[test]
 fn test_filter_select_all_via_key() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut app = App::new();
     app.filter_state.maybe_rescan(dir.path().to_str().unwrap());
     app.active_tab = TAB_INPUT;
@@ -813,7 +813,7 @@ fn test_filter_select_all_via_key() {
 #[test]
 fn test_filter_space_toggles_node() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut app = App::new();
     app.filter_state.maybe_rescan(dir.path().to_str().unwrap());
     app.active_tab = TAB_INPUT;
@@ -833,7 +833,7 @@ fn test_filter_space_toggles_node() {
 #[test]
 fn test_filter_left_right_collapse() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut app = App::new();
     app.filter_state.maybe_rescan(dir.path().to_str().unwrap());
     app.active_tab = TAB_INPUT;
@@ -851,7 +851,7 @@ fn test_filter_left_right_collapse() {
 #[test]
 fn test_filter_up_at_include_goes_to_io() {
     let dir = tempfile::tempdir().unwrap();
-    crate::testutils::create_single_echo_bids(dir.path());
+    qsmxt_io::testutils::create_single_echo_bids(dir.path());
     let mut app = App::new();
     app.filter_state.maybe_rescan(dir.path().to_str().unwrap());
     app.active_tab = TAB_INPUT;
@@ -866,7 +866,7 @@ fn test_filter_tab_switch() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.focus = FilterFocus::Exclude;
     app.handle_key(key(KeyCode::Tab));
     assert_eq!(app.active_tab, 1);
@@ -877,7 +877,7 @@ fn test_filter_f5() {
     let mut app = App::new();
     app.active_tab = TAB_INPUT;
     app.active_field = App::INPUT_IO_FIELDS;
-    app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
+    app.filter_state.tree = Some(qsmxt_io::bids::discovery::BidsTree { subjects: vec![] });
     app.filter_state.focus = FilterFocus::Include;
     app.form.bids_dir = "/tmp/bids".to_string();
     app.handle_key(key(KeyCode::F(5)));

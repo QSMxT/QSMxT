@@ -37,7 +37,7 @@ pub fn mask_param(kind: &str, key: &str) -> &'static qsmxt_engine::schema::mask:
 }
 
 /// The step type of `op`'s, from the mask schema.
-pub fn mask_step_of(op: &crate::pipeline::config::MaskOp) -> &'static qsmxt_engine::schema::mask::MaskStep {
+pub fn mask_step_of(op: &qsmxt_engine::MaskOp) -> &'static qsmxt_engine::schema::mask::MaskStep {
     mask_step(qsmxt_engine::schema::mask::step_kind(op))
 }
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and

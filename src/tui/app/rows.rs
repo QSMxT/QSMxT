@@ -123,9 +123,9 @@ impl App {
 
     /// The settings that decide which reconstruction stages run — the inversion (and MEDI's SMV
     /// mode) and the background removal — on an otherwise default config.
-    fn stage_config(&self) -> crate::pipeline::config::PipelineConfig {
+    fn stage_config(&self) -> qsmxt_engine::PipelineConfig {
         let st = &self.form.settings;
-        let mut config = crate::pipeline::config::PipelineConfig::default();
+        let mut config = qsmxt_engine::PipelineConfig::default();
         if let Ok(a) = serde_json::from_value(st.get("inversion.algorithm")) {
             config.inversion.algorithm = a;
         }
@@ -139,7 +139,7 @@ impl App {
     /// Whether field mapping runs in front of the inversion, for a run limited to `num_echoes`
     /// echoes (`None`: unknown): `(for some runs, for every run)`.
     ///
-    /// The runner's own rule ([`crate::pipeline::runner::field_mapping_runs`]), asked for the
+    /// The runner's own rule ([`qsmxt_io::pipeline::runner::field_mapping_runs`]), asked for the
     /// echo count the run is limited to, or for one and for several echoes when that is unknown —
     /// TGV maps the field of multi-echo data but reconstructs a single echo from its wrapped phase.
     pub fn field_mapping_runs_for(&self, num_echoes: Option<usize>) -> (bool, bool) {
@@ -367,14 +367,14 @@ impl App {
             .collect()
     }
 
-    fn page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&crate::pipeline::config::PipelineConfig>) -> Vec<PipelineRow> {
+    fn page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&qsmxt_engine::PipelineConfig>) -> Vec<PipelineRow> {
         let rows = self.all_page_rows_in(page, ctx, config);
         let rows = if self.advanced || !Page::RECONSTRUCTION.contains(&page) { rows } else { self.basic_rows(rows) };
         wrap_notes(rows, self.note_width.get().saturating_sub(2) as usize)
     }
 
     /// A page's rows with every setting shown (Advanced mode).
-    fn all_page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&crate::pipeline::config::PipelineConfig>) -> Vec<PipelineRow> {
+    fn all_page_rows_in(&self, page: Page, ctx: &RowContext, config: Option<&qsmxt_engine::PipelineConfig>) -> Vec<PipelineRow> {
         if page.is_pipeline() {
             // A stage that does not run says why, whoever builds its rows.
             if let Some(notes) = self.page_notes(page, ctx) {
