@@ -25,6 +25,10 @@
 //!   that matches a pipeline exactly follows it; any other is custom.
 //! - **The command line** of a config that follows a pipeline is `--pipeline <id>` plus the flags
 //!   it departs by ([`crate::command`]).
+//! - **A pipeline that cannot run on a config is not offered** ([`unavailable`]): HEIDI's while
+//!   orientations are grouped (decision 194). A front end shows it greyed out with the reason, and
+//!   [`choose`] refuses it with that reason. Grouping switched on after choosing it is refused by
+//!   the run's checks instead (`requirements::heidi_problem`).
 
 use serde::Serialize;
 use serde_json::Value;
@@ -90,6 +94,22 @@ pub fn pipeline(id: &str) -> Option<Pipeline> {
 /// The ids of every pipeline, for a CLI's choices.
 pub fn ids() -> Vec<&'static str> {
     pipelines().iter().map(|p| p.id).collect()
+}
+
+/// Why the HEIDI package's pipeline is not offered while orientations are grouped, as every front
+/// end says it.
+pub const HEIDI_MULTI_ORIENTATION: &str = "HEIDI doesn't run on multi-orientation data";
+
+/// Why pipeline `id` cannot be chosen for `config`, if it cannot: a pipeline that turns HEIDI on,
+/// while orientations are grouped. HEIDI fills the cone of one orientation's field, and a grouped
+/// reconstruction inverts several together (COSMOS, STI), so there is no single field for it to
+/// follow; the run refuses it too. An unknown id is not unavailable: [`choose`] names the choices.
+pub fn unavailable(config: &PipelineConfig, id: &str) -> Option<&'static str> {
+    let p = REFERENCE_PIPELINES.iter().find(|p| p.id == id)?;
+    let heidi = p.choose.iter().any(|(path, value)| {
+        rec::qsmxt_path(path) == Some("inversion.heidi.enabled") && rec::core_json(value) == Value::Bool(true)
+    });
+    (heidi && config.multi_orientation.enabled()).then_some(HEIDI_MULTI_ORIENTATION)
 }
 
 /// One setting a pipeline sets differently from a config.
@@ -290,8 +310,12 @@ pub fn changes(config: &PipelineConfig, id: &str, facts: &ViewFacts) -> Result<V
     Ok(differences(config, &a.config, &a, facts))
 }
 
-/// Choose pipeline `id`: set every setting [`changes`] lists, and remember the choice.
+/// Choose pipeline `id`: set every setting [`changes`] lists, and remember the choice. A pipeline
+/// [`unavailable`] for `config` is refused with the reason, and nothing changes.
 pub fn choose(config: &mut PipelineConfig, id: &str, facts: &ViewFacts) -> Result<(), String> {
+    if let Some(why) = unavailable(config, id) {
+        return Err(format!("{} is not available: {why}", pipeline(id).map_or(id, |p| p.name)));
+    }
     *config = target(config, id, facts)?;
     Ok(())
 }
@@ -839,6 +863,28 @@ mod tests {
         let mut c = PipelineConfig::default();
         choose(&mut c, "chi-sepnet", &facts()).unwrap();
         assert_eq!(c.separation.r2prime_strategy, R2PrimeStrategy::default());
+    }
+
+    /// Decision 194: while orientations are grouped, the HEIDI package's pipeline is unavailable,
+    /// with the reason, and choosing it is refused and changes nothing; without grouping it is
+    /// available. No other pipeline is affected.
+    #[test]
+    fn the_heidi_pipeline_is_unavailable_while_orientations_are_grouped() {
+        let plain = PipelineConfig::default();
+        assert_eq!(unavailable(&plain, "heidi"), None);
+        let mut grouped = PipelineConfig::default();
+        grouped.multi_orientation.group_by = "acq".into();
+        assert_eq!(unavailable(&grouped, "heidi"), Some("HEIDI doesn't run on multi-orientation data"));
+        for p in pipelines().into_iter().filter(|p| p.id != "heidi") {
+            assert_eq!(unavailable(&grouped, p.id), None, "{}", p.id);
+        }
+        let before = grouped.clone();
+        let e = choose(&mut grouped, "heidi", &facts()).unwrap_err();
+        assert_eq!(e, "HEIDI package is not available: HEIDI doesn't run on multi-orientation data");
+        assert_eq!(grouped, before, "nothing changes");
+        let mut c = plain.clone();
+        choose(&mut c, "heidi", &facts()).unwrap();
+        assert!(c.inversion.heidi.enabled);
     }
 
     #[test]

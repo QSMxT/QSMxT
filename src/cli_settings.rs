@@ -197,7 +197,8 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
 
     // A pipeline first, so that every other flag changes its settings.
     if let Some(id) = one("pipeline") {
-        qsmxt_engine::pipelines::choose(config, id, &qsmxt_engine::schema::ViewFacts::default()).map_err(err)?;
+        qsmxt_engine::pipelines::choose(config, id, &qsmxt_engine::schema::ViewFacts::default())
+            .map_err(|e| err(format!("--pipeline {id}: {e}")))?;
     }
     // `heidi` is LSQR with HEIDI on.
     match one("qsm-algorithm") {
@@ -215,6 +216,13 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
     let settings: Vec<Given> = given.iter().filter(|g| !APPLIED_HERE.contains(&g.flag.long)).cloned().collect();
     let rest = qsmxt_engine::schema::cli_apply::apply_settings(config, &settings).map_err(err)?;
     config.multi_orientation.validate().map_err(err)?;
+    // A pipeline that cannot run with the flags given after it (HEIDI's with --orientation-group)
+    // is refused with the reason, as the TUI's Pipeline tab does not offer it.
+    if let Some(id) = one("pipeline") {
+        if let Some(why) = qsmxt_engine::pipelines::unavailable(config, id) {
+            return Err(err(format!("--pipeline {id} is not available with --orientation-group: {why}")));
+        }
+    }
 
     if let Some(p) = all("laplacian-fft-pad") {
         let pad: Vec<usize> = p.iter().map(|v| v.parse()).collect::<Result<_, _>>().map_err(|e: std::num::ParseIntError| err(e.to_string()))?;
@@ -380,6 +388,8 @@ mod tests {
             ("--lbv-precision quad", "error: invalid value 'quad' for '--lbv-precision <PRECISION>': expected double or single, got 'quad'".into()),
             ("--mask-preset mouse-bet", format!("{config}the `mouse-bet` mask preset has been removed. For rodent data use `--mask-preset \
                 rs2-net`; BET on scaled voxel sizes is still available as a mask step, e.g. `--mask magnitude,bet:0.5:scale=10,erode:1`")),
+            ("--pipeline heidi --orientation-group acq", format!("{config}--pipeline heidi is not available with \
+                --orientation-group: HEIDI doesn't run on multi-orientation data")),
             ("--cosmos-tol 1", format!("{config}--cosmos-tol and --cosmos-max-iter set the conjugate gradient of magnitude-weighted COSMOS; \
                 without --cosmos-magnitude-weighting COSMOS is solved in closed form and they would be ignored")),
         ] {
