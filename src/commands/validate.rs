@@ -87,94 +87,99 @@ pub fn execute(args: ValidateArgs) -> crate::Result<()> {
     println!();
 
     for run in &runs {
-        let n_echoes = run.echoes.len();
-        let has_mag = run.has_magnitude;
-        let mese = run.mese.as_ref();
-        // One read of the first echo per run, shared by the grid line and the B0 block below.
-        // The volume itself is dropped immediately; only the geometry is kept.
-        //
-        // Voxel sizes are `pixdim`, via `NiftiData::voxel_size` — deliberately, because that is
-        // the field the pipeline carries into `RunMetadata` and builds the dipole kernel from on
-        // the acquired grid. Deriving them from the affine instead would read better but would
-        // report a number the reconstruction does not use when a header has the two disagreeing.
-        // (A run that gets resampled to axial reconstructs on `axial_grid_for`'s spacings, which
-        // *are* affine-derived; this line describes the data as acquired.)
-        let gre_geometry = qsm_core::io::read_nifti_file(&run.echoes[0].phase_nifti)
-            .map(|n| (n.voxel_size, n.affine))
-            .ok();
-
-        println!("  {}", run.key);
-        println!("    Echoes: {}", n_echoes);
-        println!("    Echo times: {:?} s", run.echo_times);
-        println!("    {}", volume_line(run.dims, gre_geometry.map(|(vs, _)| vs)));
-        println!("    Field strength: {:.1} T", run.magnetic_field_strength);
-        match run.b0_dir {
-            Some((x, y, z)) => println!("    B0 direction: ({x:.2}, {y:.2}, {z:.2}) (from sidecar)"),
-            None => {
-                let affine = gre_geometry.map(|(_, a)| a)
-                    .unwrap_or([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
-                let (x, y, z) = qsm_core::geometry::b0_direction_from_affine(&affine);
-                let obliquity = qsm_core::geometry::obliquity_from_affine(&affine);
-                let tilt = qsm_core::geometry::b0_angle_from_affine(&affine);
-                println!("    B0 direction: ({x:.2}, {y:.2}, {z:.2}) (from the affine)");
-                println!("    Obliquity:    {obliquity:.1}° (B0 {tilt:.1}° off the slice normal)");
-            }
-        }
-        println!("    Magnitude: {}", if has_mag { "present" } else { "MISSING (some algorithms may not work)" });
-        match mese {
-            Some(m) => println!("    MESE (spin-echo): present ({} echoes, {:?} s)", m.echo_times.len(), m.echo_times),
-            None => println!("    MESE (spin-echo): not found"),
-        }
-
-        // Bring-your-own inputs discoverable under derivatives/.
-        let custom_masks = deriv_tools_with(&args.bids_dir, run, "*_mask.nii*", false);
-        let custom_qsm = deriv_tools_with(&args.bids_dir, run, "*_Chimap.nii*", true);
-        let custom_r2 = deriv_tools_with(&args.bids_dir, run, "*_R2map.nii*", false);
-        let custom_r2prime = deriv_tools_with(&args.bids_dir, run, "*_R2primemap.nii*", false);
-
-        // Capability derivations: the same rules `qsmxt run` refuses requested outputs by.
-        let config = crate::pipeline::config::PipelineConfig::default();
-        let facts = crate::pipeline::requirements::scan_facts(run, &config);
-        let arlo = crate::pipeline::requirements::arlo_problem(&facts);
-        let r2star_ok = arlo.is_none();
-
-        println!("    Capabilities:");
-        println!("      QSM reconstruction:  yes");
-        println!("      R2*/T2* mapping:     {}", yes_no(r2star_ok, arlo.as_deref().unwrap_or("")));
-        if let (Some(_), Some(why)) = (mese, crate::pipeline::requirements::mese_problem(&facts)) {
-            println!("      R2 from the MESE:    no  — {why}");
-        }
-        println!("      SWI:                 {}", yes_no(has_mag, "needs magnitude"));
-        println!("      Susceptibility source separation:");
-        println!("        r2star-qsm (GRE):  {}", yes_no(r2star_ok, &format!("R2* {}", arlo.as_deref().unwrap_or(""))));
-        println!("        decompose  (GRE):  {}", yes_no(has_mag, "needs multi-echo magnitude"));
-        let r2prime_reason = if r2star_ok {
-            "no usable MESE acquisition and no custom R2'/R2 map"
-        } else {
-            "needs R2' (≥3-echo magnitude for R2*, plus MESE or a custom R2'/R2 map)"
-        };
-        let r2prime_how = if !custom_r2prime.is_empty() {
-            format!("yes (custom R2' map: {})", fmt_list(&custom_r2prime))
-        } else if mese.is_some() && r2star_ok
-            && crate::pipeline::requirements::mese_problem(&facts).is_none() {
-            "yes (R2' computed from MESE)".to_string()
-        } else if r2star_ok && !custom_r2.is_empty() {
-            format!("yes (R2* + custom R2 map: {})", fmt_list(&custom_r2))
-        } else {
-            format!("no  — {}", r2prime_reason)
-        };
-        println!("        R2'-based (chi-sep-ilsqr/medi, wavesep, hc-chisep):");
-        println!("          {}", r2prime_how);
-
-        println!("    Bring-your-own inputs (derivatives/):");
-        println!("      masks:   {}", fmt_list(&custom_masks));
-        println!("      QSM:     {}", fmt_list(&custom_qsm));
-        println!("      R2 map:  {}", fmt_list(&custom_r2));
-        println!("      R2' map: {}", fmt_list(&custom_r2prime));
-        println!();
+        print_run(&args.bids_dir, run);
     }
 
     Ok(())
+}
+
+/// One run's report: its acquisition, what it can make, and the inputs found for it.
+fn print_run(bids_dir: &Path, run: &QsmRun) {
+    let n_echoes = run.echoes.len();
+    let has_mag = run.has_magnitude;
+    let mese = run.mese.as_ref();
+    // One read of the first echo per run, shared by the grid line and the B0 block below.
+    // The volume itself is dropped immediately; only the geometry is kept.
+    //
+    // Voxel sizes are `pixdim`, via `NiftiData::voxel_size` — deliberately, because that is
+    // the field the pipeline carries into `RunMetadata` and builds the dipole kernel from on
+    // the acquired grid. Deriving them from the affine instead would read better but would
+    // report a number the reconstruction does not use when a header has the two disagreeing.
+    // (A run that gets resampled to axial reconstructs on `axial_grid_for`'s spacings, which
+    // *are* affine-derived; this line describes the data as acquired.)
+    let gre_geometry = qsm_core::io::read_nifti_file(&run.echoes[0].phase_nifti)
+        .map(|n| (n.voxel_size, n.affine))
+        .ok();
+
+    println!("  {}", run.key);
+    println!("    Echoes: {}", n_echoes);
+    println!("    Echo times: {:?} s", run.echo_times);
+    println!("    {}", volume_line(run.dims, gre_geometry.map(|(vs, _)| vs)));
+    println!("    Field strength: {:.1} T", run.magnetic_field_strength);
+    match run.b0_dir {
+        Some((x, y, z)) => println!("    B0 direction: ({x:.2}, {y:.2}, {z:.2}) (from sidecar)"),
+        None => {
+            let affine = gre_geometry.map(|(_, a)| a)
+                .unwrap_or([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
+            let (x, y, z) = qsm_core::geometry::b0_direction_from_affine(&affine);
+            let obliquity = qsm_core::geometry::obliquity_from_affine(&affine);
+            let tilt = qsm_core::geometry::b0_angle_from_affine(&affine);
+            println!("    B0 direction: ({x:.2}, {y:.2}, {z:.2}) (from the affine)");
+            println!("    Obliquity:    {obliquity:.1}° (B0 {tilt:.1}° off the slice normal)");
+        }
+    }
+    println!("    Magnitude: {}", if has_mag { "present" } else { "MISSING (some algorithms may not work)" });
+    match mese {
+        Some(m) => println!("    MESE (spin-echo): present ({} echoes, {:?} s)", m.echo_times.len(), m.echo_times),
+        None => println!("    MESE (spin-echo): not found"),
+    }
+
+    // Bring-your-own inputs discoverable under derivatives/.
+    let custom_masks = deriv_tools_with(bids_dir, run, "*_mask.nii*", false);
+    let custom_qsm = deriv_tools_with(bids_dir, run, "*_Chimap.nii*", true);
+    let custom_r2 = deriv_tools_with(bids_dir, run, "*_R2map.nii*", false);
+    let custom_r2prime = deriv_tools_with(bids_dir, run, "*_R2primemap.nii*", false);
+
+    // Capability derivations: the same rules `qsmxt run` refuses requested outputs by.
+    let config = crate::pipeline::config::PipelineConfig::default();
+    let facts = crate::pipeline::requirements::scan_facts(run, &config);
+    let arlo = crate::pipeline::requirements::arlo_problem(&facts);
+    let r2star_ok = arlo.is_none();
+
+    println!("    Capabilities:");
+    println!("      QSM reconstruction:  yes");
+    println!("      R2*/T2* mapping:     {}", yes_no(r2star_ok, arlo.as_deref().unwrap_or("")));
+    if let (Some(_), Some(why)) = (mese, crate::pipeline::requirements::mese_problem(&facts)) {
+        println!("      R2 from the MESE:    no  — {why}");
+    }
+    println!("      SWI:                 {}", yes_no(has_mag, "needs magnitude"));
+    println!("      Susceptibility source separation:");
+    println!("        r2star-qsm (GRE):  {}", yes_no(r2star_ok, &format!("R2* {}", arlo.as_deref().unwrap_or(""))));
+    println!("        decompose  (GRE):  {}", yes_no(has_mag, "needs multi-echo magnitude"));
+    let r2prime_reason = if r2star_ok {
+        "no usable MESE acquisition and no custom R2'/R2 map"
+    } else {
+        "needs R2' (≥3-echo magnitude for R2*, plus MESE or a custom R2'/R2 map)"
+    };
+    let r2prime_how = if !custom_r2prime.is_empty() {
+        format!("yes (custom R2' map: {})", fmt_list(&custom_r2prime))
+    } else if mese.is_some() && r2star_ok
+        && crate::pipeline::requirements::mese_problem(&facts).is_none() {
+        "yes (R2' computed from MESE)".to_string()
+    } else if r2star_ok && !custom_r2.is_empty() {
+        format!("yes (R2* + custom R2 map: {})", fmt_list(&custom_r2))
+    } else {
+        format!("no  — {}", r2prime_reason)
+    };
+    println!("        R2'-based (chi-sep-ilsqr/medi, wavesep, hc-chisep):");
+    println!("          {}", r2prime_how);
+
+    println!("    Bring-your-own inputs (derivatives/):");
+    println!("      masks:   {}", fmt_list(&custom_masks));
+    println!("      QSM:     {}", fmt_list(&custom_qsm));
+    println!("      R2 map:  {}", fmt_list(&custom_r2));
+    println!("      R2' map: {}", fmt_list(&custom_r2prime));
+    println!();
 }
 
 /// The grid line for one run: dimensions always, voxel sizes when the first echo could be read.

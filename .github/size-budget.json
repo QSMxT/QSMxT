@@ -56,8 +56,7 @@
   "crates/qsmxt-tui/src/ui/input/nifti_to_bids.rs::draw_nifti_section": 181,
   "crates/qsmxt-tui/src/ui/modals.rs::draw_checklist_modal": 174,
   "crates/qsmxt-tui/src/ui/rows.rs::draw_rows_tab": 548,
-  "src/commands/integration_tests.rs::bids_validator_fixture": 152,
-  "src/commands/validate.rs::execute": 121
+  "src/commands/integration_tests.rs::bids_validator_fixture": 152
  },
  "test_files": {
   "crates/qsmxt-io/src/pipeline/runner.rs": 2505,
