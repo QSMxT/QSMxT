@@ -3,6 +3,24 @@
 use super::*;
 
 pub(super) fn defs() -> Vec<Def> {
+    [
+        algorithm(),
+        mask(),
+        vsharp(),
+        pdf(),
+        lbv(),
+        ismv(),
+        sharp(),
+        resharp(),
+        harperella(),
+        iharperella(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn algorithm() -> Vec<Def> {
     vec![
         d("bg_removal.algorithm", Background, "BG removal", "", Enum(vec![
             o("vsharp", "vsharp", "V-SHARP", "Variable-kernel SHARP (V-SHARP) — https://doi.org/10.1002/mrm.23000"),
@@ -23,6 +41,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui_option("iqfm", "iQFM deep-learning joint unwrapping + background removal from phase")
         .cli("Background field removal algorithm (default: vsharp)")
         .value_help("bfrnet", "BFRnet deep-learning background removal (weights downloaded on first use)").value_help("iqfm", "iQFM deep-learning joint unwrapping + background removal from phase (weights downloaded on first use)"),
+    ]
+}
+
+fn mask() -> Vec<Def> {
+    vec![
         d("bg_removal.erode_voxels", Background, "Erode mask", "Erode the brain mask after field mapping, before background removal (0 = none)", Int)
         .min(0.0).units("voxels").flag("--bf-erode-voxels")
         .when(|x| !x.bf("iqfm"))
@@ -41,6 +64,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Trim the mask by the phase reliability of the first and last echo before and after background removal, as UK Biobank's pipeline does")
         .cli("Trim the brain mask of voxels with unreliable phase before and after background removal, as UK Biobank's pipeline does (its phase-reliability maps of the first and last echo)")
         .negated("--no-bf-ukb-mask-trim", "Do not trim the mask by phase reliability (the default), after a `--pipeline` that does").negated_conflicts(),
+    ]
+}
+
+fn vsharp() -> Vec<Def> {
+    vec![
         d("bg_removal.vsharp.deconvolve", Background, "Deconvolve", "Undo the SMV high-pass with a truncated-SVD deconvolution (default: off)", Bool).flag("--vsharp-deconvolve").parent("bg_removal.algorithm")
         .when(|x| x.bf("vsharp"))
         .gui("Undo the SMV high-pass with a truncated-SVD deconvolution")
@@ -78,6 +106,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Isotropic working-grid spacing")
         .cli("V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic")
         .value_name("MM"),
+    ]
+}
+
+fn pdf() -> Vec<Def> {
+    vec![
         d("bg_removal.pdf.tol", Background, "Tolerance", "Convergence tolerance, relative to the noise level", Float).flag("--pdf-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("pdf"))
         .cli("PDF tolerance, relative to the noise level"),
@@ -98,6 +131,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Zero-padding around the mask's bounding box; 0 runs on the full volume")
         .cli("PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40)")
         .value_name("VOXELS"),
+    ]
+}
+
+fn lbv() -> Vec<Def> {
+    vec![
         // QSM.rs LbvParams::validate: tol finite and >= 0, depth at most 8.
         d("bg_removal.lbv.tol", Background, "Tolerance", "Stop the coarsest grid's relaxation when its summed absolute update falls below this (radians over the echo spacing)", Float).min(0.0).flag("--lbv-tol").parent("bg_removal.algorithm")
         .when(|x| x.bf("lbv"))
@@ -128,6 +166,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Arithmetic of the multigrid solver")
         .cli("LBV arithmetic: double, or single as the original implementation (default: double)")
         .parse(P::Named).value_name("PRECISION"),
+    ]
+}
+
+fn ismv() -> Vec<Def> {
+    vec![
         d("bg_removal.ismv.variant", Background, "Variant", "", Enum(vec![
             o("wen2014", "wen2014", "Wen 2014", "The authors' paper and code (default)"),
             o("qsmjl", "qsmjl", "QSM.jl", "QSM.jl's implementation"),
@@ -150,6 +193,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("SMV kernel radius. Blank = 6 × the smallest voxel dimension (QSM.jl: 2 × the largest)")
         .cli("iSMV kernel radius in mm, or auto for 6 × the smallest voxel dimension (qsmjl: 2 × the largest) (default: auto)")
         .parse(P::NumberOrAuto).value_name("MM"),
+    ]
+}
+
+fn sharp() -> Vec<Def> {
+    vec![
         // QSM.rs bgremove/sharp.rs: at <= 0 the DC bin is divided by ~0, giving inf/NaN.
         d("bg_removal.sharp.threshold", Background, "Threshold", "Deconvolution threshold", Float).above(0.0).flag("--sharp-threshold").parent("bg_removal.algorithm")
         .when(|x| x.bf("sharp"))
@@ -158,6 +206,11 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.bf("sharp"))
         .gui("SMV kernel radius")
         .cli("SHARP kernel radius in mm"),
+    ]
+}
+
+fn resharp() -> Vec<Def> {
+    vec![
         d("bg_removal.resharp.radius", Background, "Radius", "SMV kernel radius in mm", Float).units("mm").flag("--resharp-radius").parent("bg_removal.algorithm")
         .when(|x| x.bf("resharp"))
         .gui("SMV kernel radius")
@@ -173,6 +226,11 @@ pub(super) fn defs() -> Vec<Def> {
         d("bg_removal.resharp.max_iter", Background, "Max iter", "Maximum CGS iterations", Int).min(1.0).flag("--resharp-max-iter").parent("bg_removal.algorithm")
         .when(|x| x.bf("resharp")).full("Maximum iterations")
         .cli("RESHARP maximum CGS iterations"),
+    ]
+}
+
+fn harperella() -> Vec<Def> {
+    vec![
         d("bg_removal.harperella.radius", Background, "Radius", "SMV kernel radius in mm", Float).units("mm").flag("--harperella-radius").parent("bg_removal.algorithm")
         .when(|x| x.bf("harperella"))
         .gui("SMV kernel radius")
@@ -195,6 +253,11 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("Which Laplacian values in the brain's boundary rim are set to zero")
         .cli("HARPERELLA boundary rim: whole (zero every Laplacian value in the rim; default) or sti (zero the 20 % largest, as STI Suite does)")
         .parse(P::Named).value_name("RIM"),
+    ]
+}
+
+fn iharperella() -> Vec<Def> {
+    vec![
         d("bg_removal.iharperella.max_iter", Background, "Max iter", "Maximum iterations", Int).flag("--iharperella-max-iter").parent("bg_removal.algorithm")
         .when(|x| x.bf("iharperella")).full("Maximum iterations")
         .cli("iHARPERELLA maximum iterations"),
