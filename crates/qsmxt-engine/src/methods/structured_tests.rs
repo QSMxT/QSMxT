@@ -15,6 +15,17 @@ fn configs() -> Vec<(String, PipelineConfig)> {
         crate::config::enforce_separation_dependencies(&mut c);
         out.push((name, c));
     };
+    method_configs(&mut add);
+    output_configs(&mut add);
+    pipeline_configs(&mut add);
+    out
+}
+
+/// Adds a configuration by name: the defaults, changed by the function.
+type Add<'a> = dyn FnMut(String, &dyn Fn(&mut PipelineConfig)) + 'a;
+
+/// The inversion, background removal, field mapping and motion correction settings.
+fn method_configs(add: &mut Add<'_>) {
     add("default".into(), &|_| {});
     add("browser".into(), &|c| *c = PipelineConfig::browser());
     for alg in QsmAlgorithm::ALL {
@@ -80,6 +91,10 @@ fn configs() -> Vec<(String, PipelineConfig)> {
         });
     }
     add("motion".into(), &|c| c.motion_correction.enabled = true);
+}
+
+/// The outputs: SWI, SMWI, relaxometry, χ-separation and R2'.
+fn output_configs(add: &mut Add<'_>) {
     add("outputs".into(), &|c| {
         c.pipeline.do_swi = true;
         c.pipeline.do_t2starmap = true;
@@ -130,6 +145,11 @@ fn configs() -> Vec<(String, PipelineConfig)> {
         c.pipeline.do_r2primemap = true;
         c.separation.custom_r2prime_tool = Some("sepia".into());
     });
+}
+
+/// Segmentation, referencing, masking, the working grid, multi-orientation, DICOM export, and
+/// everything at once.
+fn pipeline_configs(add: &mut Add<'_>) {
     add("segmentation".into(), &|c| c.pipeline.do_segmentation = true);
     add("segmentation+analysis".into(), &|c| {
         c.pipeline.do_segmentation = true;
@@ -197,7 +217,6 @@ fn configs() -> Vec<(String, PipelineConfig)> {
         c.qsm.reference = QsmReference::Region;
         c.qsm.reference_region = Some("csf".into());
     });
-    out
 }
 
 /// The scans each configuration is planned on: the example (five echoes), one echo, and one
