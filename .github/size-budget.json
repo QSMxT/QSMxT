@@ -20,7 +20,6 @@
   "crates/qsmxt-engine/src/stages/r2/step.rs::r2": 241,
   "crates/qsmxt-engine/src/stages/separation/step.rs::chi_separation": 219,
   "crates/qsmxt-engine/tests/param_coverage.rs::qsmxt_engine_covers_all_qsm_core_params": 135,
-  "crates/qsmxt-io/src/bids/bidsprov.rs::write_provenance": 210,
   "crates/qsmxt-io/src/bids/discovery.rs::discover_runs": 172,
   "crates/qsmxt-io/src/dicom/convert.rs::convert_session_streaming": 192,
   "crates/qsmxt-io/src/pipeline/multiorient.rs::reconstruct_group": 366,
