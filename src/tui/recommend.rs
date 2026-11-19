@@ -413,8 +413,7 @@ impl App {
         }
         if let Ok(mut c) = super::command::config_from_app(self) {
             if decide::restore_kept(&mut c, &plan.kept, &facts) {
-                self.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
-                self.form.settings.set("masking.sections", serde_json::to_value(&c.masking.sections).unwrap_or_default());
+                self.set_form_from_config(&c);
             }
         }
         rec::keep(&mut self.form.dismissed, &plan.kept);
@@ -434,33 +433,14 @@ impl App {
     pub fn apply_recommendation(&mut self, rule: &str, value: Option<&Value>) -> Result<(), String> {
         let Some(r) = self.rule_view().into_iter().find(|r| r.rule == rule) else { return Ok(()) };
         let refused = || format!("{} cannot be set to {} here: change it on its row", r.label, r.recommended.name);
-        // A setting with no row in view is changed on its row once it shows, not from here.
-        let masking = matches!(r.setting.as_str(), "masking.sections" | "masking.inhomogeneity_correction");
-        if !masking && !self.all_pages().iter().flat_map(|(_, _, rows)| rows).any(|row| row_path(row) == Some(r.setting.as_str())) {
-            return Err(refused());
-        }
+        // The engine leaves a setting that does not apply alone ([`rec::rule_may_change`]): it is
+        // changed on its row once it shows, not from here.
         let mut c = super::command::config_from_app(self).map_err(|_| refused())?;
-        rec::apply(&mut c, rule, value).map_err(|_| refused())?;
+        rec::apply(&mut c, rule, value, &self.rule_facts()).map_err(|_| refused())?;
         let before = FormSnapshot::of(self);
-        let combine_of = |app: &App| ["masking.combine", "masking.refinements"].map(|p| app.form.settings.get(p));
-        let kept_combine = combine_of(self);
+        // As the engine sets it: a mask rule's recipe shows as the preset it matches, and the
+        // combine settings are the engine's (reset where the recipe has one section).
         self.set_form_from_config(&c);
-        if r.setting == "masking.sections" {
-            // A recipe set by a rule reads as the hand-edited one, even where a preset gives it:
-            // the rule chose a part of the recipe, not a preset. How several parts are combined is
-            // kept as the form had it where the recipe does not use it.
-            self.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
-            let built = super::command::config_from_app(self).ok();
-            let set = combine_of(self);
-            let put = |app: &mut App, [combine, refinements]: [Value; 2]| {
-                app.form.settings.set("masking.combine", combine);
-                app.form.settings.set("masking.refinements", refinements);
-            };
-            put(self, kept_combine);
-            if super::command::config_from_app(self).ok() != built {
-                put(self, set);
-            }
-        }
         // Checked on this scan: a rule on the field strength (DECOMPOSE's at 7 T) applies only to it.
         let facts = self.rule_facts();
         let resolved = super::command::config_from_app(self)
@@ -636,6 +616,27 @@ mod tests {
         let options = super::super::app::qsm_ref_options();
         select(&mut app, "qsm_reference", "ventricles", options);
         app
+    }
+
+    /// Decision 194: a rule never changes a hidden setting, now the engine's rule. Under iQFM no
+    /// field is mapped, so STI Suite's Laplacian unwrapping is refused and the form is left as it
+    /// was; with V-SHARP the same rule applies.
+    #[test]
+    fn a_rule_leaves_a_hidden_setting_alone() {
+        use super::super::app::BF_OPTIONS;
+        use super::super::command::config_from_app;
+        let mut app = app();
+        select(&mut app, "qsm_algorithm", "ilsqr", &QSM_PICKER_OPTIONS);
+        select(&mut app, "bf_algorithm", "iqfm", BF_OPTIONS);
+        assert!(app.rule_view().iter().any(|r| r.rule == "sti.unwrap-laplacian" && r.departs), "still a finding");
+        let before = config_from_app(&app).unwrap();
+        let e = app.apply_recommendation("sti.unwrap-laplacian", None).unwrap_err();
+        assert!(e.ends_with("cannot be set to Laplacian here: change it on its row"), "{e}");
+        assert_eq!(config_from_app(&app).unwrap(), before, "nothing changes");
+        select(&mut app, "bf_algorithm", "vsharp", BF_OPTIONS);
+        app.apply_recommendation("sti.unwrap-laplacian", None).unwrap();
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.unwrapping_algorithm,
+                   qsmxt_engine::enums::UnwrappingAlgorithm::Laplacian);
     }
 
     /// Choosing a region reference with segmentation off opens " Required change ": Segmentation
@@ -1056,6 +1057,52 @@ mod tests {
         let found: Vec<Recommendation> = app.rule_view().into_iter().filter(|r| r.authors_setting()).collect();
         let modal = AdviceModal::reference(vec![found[0].trigger.clone()], found);
         (app, items_of(&modal, true))
+    }
+
+    /// Decision 194: a mask rule sets the mask as the engine does. MEDI's BET mask is the `bet`
+    /// preset's recipe, so the picker names it (not "custom"), and the combine settings the form
+    /// held while hidden (one section) are reset to the preset's.
+    #[test]
+    fn a_mask_rule_names_the_matching_preset_and_resets_the_combine_settings() {
+        use super::super::app::MASK_PRESET_OPTIONS;
+        let mut app = medi_chosen();
+        app.refs.modal = None;
+        app.form.settings.set("masking.combine", serde_json::json!("and"));
+        app.form.settings.set("masking.refinements", serde_json::to_value([qsmxt_engine::masking::MaskOp::Erode { iterations: 2 }]).unwrap());
+        app.apply_recommendation("medi.mask-bet", None).unwrap();
+        assert_eq!(MASK_PRESET_OPTIONS[app.pipeline_state.mask_preset], "bet");
+        let (_, bet) = qsmxt_engine::mask_presets().into_iter().find(|(n, _)| *n == "bet").unwrap();
+        assert_eq!(app.form.settings.get("masking.combine"), serde_json::to_value(bet.combine).unwrap());
+        assert_eq!(app.form.settings.get("masking.refinements"), serde_json::json!([]));
+        let c = super::super::command::config_from_app(&app).unwrap();
+        assert_eq!((c.masking.sections, c.masking.combine, c.masking.refinements), (bet.sections, bet.combine, bet.refinements));
+    }
+
+    /// Decision 194: a pipeline sets the mask as the engine does. After each pipeline, the
+    /// picker names the preset whose recipe its mask is ("custom" for none), and the combine
+    /// settings the form held while hidden are the engine's.
+    #[test]
+    fn a_pipeline_names_the_matching_preset_and_resets_the_combine_settings() {
+        use super::super::app::{MASK_PRESET_CUSTOM, MASK_PRESET_OPTIONS};
+        let mut named = Vec::new();
+        for p in qsmxt_engine::pipelines::pipelines() {
+            let mut app = app();
+            app.form.settings.set("masking.combine", serde_json::json!("and"));
+            app.form.settings.set("masking.refinements", serde_json::to_value([qsmxt_engine::masking::MaskOp::Erode { iterations: 2 }]).unwrap());
+            app.choose_pipeline(p.id).unwrap();
+            let c = super::super::command::config_from_app(&app).unwrap();
+            let m = &c.masking;
+            let preset = qsmxt_engine::mask_presets().iter()
+                .position(|(_, r)| r.sections == m.sections && r.combine == m.combine && r.refinements == m.refinements)
+                .unwrap_or(*MASK_PRESET_CUSTOM);
+            assert_eq!(app.pipeline_state.mask_preset, preset, "{}", p.id);
+            assert_eq!(app.form.settings.get("masking.combine"), serde_json::to_value(m.combine).unwrap(), "{}", p.id);
+            assert_eq!(app.form.settings.get("masking.refinements"), serde_json::to_value(&m.refinements).unwrap(), "{}", p.id);
+            if preset != *MASK_PRESET_CUSTOM {
+                named.push((p.id, MASK_PRESET_OPTIONS[preset]));
+            }
+        }
+        assert!(named.contains(&("qsmxt-defaults", "robust-threshold")), "{named:?}");
     }
 
     /// Apply all leaves a setting the authors disagree on as it is, says so, and records nothing;

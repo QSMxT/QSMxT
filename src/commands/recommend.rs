@@ -61,7 +61,11 @@ pub(crate) struct Accepted {
 /// unwrapper the authors pair with it). Returns the findings applied, each once, and those left
 /// because they conflict.
 fn accept_all(config: &mut PipelineConfig, runs: &[QsmRun], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
-    qsmxt_engine::advice::accept_all(config, which, |c| found(c, runs).into_iter().map(|f| f.finding).collect())
+    // Which settings apply, from what every run agrees on: a setting that applies to some run is
+    // not hidden.
+    let scans: Vec<_> = runs.iter().map(|r| crate::pipeline::requirements::scan_facts(r, config)).collect();
+    let common = Facts::of_view(&qsmxt_engine::schema::ViewFacts::from_scans(&scans));
+    qsmxt_engine::advice::accept_all(config, which, &common, |c| found(c, runs).into_iter().map(|f| f.finding).collect())
 }
 
 /// Apply every finding `--accept-recommendations` and `--accept-reference-settings` take
@@ -288,4 +292,42 @@ pub(crate) fn summary(config: &PipelineConfig, runs: &[QsmRun], accepted: &Accep
                          applied_label(r), r.label, r.current_text(), wants(r), of_runs(f, runs.len()), r.rule));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Decision 194: `--accept-reference-settings` leaves a hidden setting alone. Under iQFM no
+    /// field is mapped, so the complex fit's authors' unwrapper (MEDI's region growing) is neither
+    /// applied nor said to be left, and `--dry` does not list it as a change; with V-SHARP the
+    /// same flag applies it.
+    #[test]
+    fn accepting_leaves_a_hidden_setting_alone() {
+        use qsmxt_engine::enums::UnwrappingAlgorithm;
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        crate::testutils::create_multi_echo_bids(&bids);
+        let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+        let config_of = |flags: &[&str]| {
+            crate::commands::run::build_config(None, &crate::cli_settings::SettingsArgs::from_flags(flags)).unwrap()
+        };
+        const RULE: &str = "complex-fit.unwrap-region-growing";
+        let which = Accept { recommendations: false, reference: true };
+        let config = config_of(&["--qsm-algorithm", "tkd", "--b0-estimation", "complex-fit", "--bf-algorithm", "iqfm"]);
+        assert!(found(&config, &runs).iter().any(|f| f.finding.rule == RULE), "still a finding");
+        let mut c = config.clone();
+        let (applied, left) = accept_all(&mut c, &runs, which);
+        let has = |rs: &[Recommendation]| rs.iter().any(|r| r.rule == RULE);
+        assert!(!has(&applied) && !has(&left), "{applied:?} {left:?}");
+        assert_eq!(c.field_mapping.unwrapping_algorithm, config.field_mapping.unwrapping_algorithm);
+        let text = dry_text(&config, &runs, which);
+        assert!(!text.contains(&format!("; {RULE})")), "{text}");
+
+        let config = config_of(&["--qsm-algorithm", "tkd", "--b0-estimation", "complex-fit"]);
+        let mut c = config.clone();
+        let accepted = accept(&mut c, &runs, which);
+        assert!(has(&accepted.applied), "{:?}", accepted.applied);
+        assert_eq!(c.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::MediRegionGrowing);
+    }
 }

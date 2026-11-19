@@ -108,7 +108,7 @@ mod tests {
             .expect("the relative Frangi c is offered after the QSMART pipeline");
         assert_eq!(r.strength, Strength::Suggested);
         assert!(!r.strength.preselected(), "suggested: Keep mine is preselected");
-        crate::recommendations::apply(&mut c, "qsmart.frangi-c-relative", None).unwrap();
+        crate::recommendations::apply(&mut c, "qsmart.frangi-c-relative", None, &crate::recommendations::Facts::of_view(&f)).unwrap();
         assert_eq!(c.inversion.qsmart.frangi_c_mode, crate::enums::QsmartFrangiCMode::Relative);
         assert_eq!(c.inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::relative());
     }

@@ -8,11 +8,14 @@
 //! - **Choosing** (Enter) opens a preview of every change ([`PreviewModal`]): Apply (preselected:
 //!   choosing the pipeline is the request) or Cancel. Nothing changes before Apply.
 //! - **Applying** resets every reconstruction page, shown settings and hidden ones
-//!   ([`pipelines::covers`]; not the Input page or the Outputs and Execution tabs), then sets each
-//!   change on the config the form builds and the form to that config, until it follows the
-//!   pipeline. The choice is remembered in the form (and so in the config:
+//!   ([`pipelines::covers`]; not the Input page or the Outputs and Execution tabs), then sets the
+//!   form to the engine's config for the pipeline ([`pipelines::target`]), as every front end
+//!   chooses it; the mask preset picker names the preset whose recipe it is. The choice is remembered in the form (and so in the config:
 //!   `reference_pipeline`). The reasoned recommendations its choices trigger (PDF's iteration
 //!   count), which are not part of it, then open their pop-up as after any change.
+//! - **A pipeline that cannot run on the form's settings** ([`pipelines::unavailable`]: HEIDI's
+//!   while orientations are grouped) is greyed out in the list, says why beside it, and Enter
+//!   does not choose it.
 //! - **About**, first in the list in a group of its own, says what the toolbox pipelines are
 //!   ([`ABOUT`]): a page to open, not text above the list. Enter there copies its link.
 //! - **The status** ([`pipelines::status`]: "MEDI toolbox", "MEDI toolbox · 1 departure",
@@ -22,7 +25,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use qsmxt_engine::pipelines::{self, Change, Pipeline, Status};
 use qsmxt_engine::schema::{self, Section, ViewFacts};
-use qsmxt_engine::PipelineConfig;
 
 use super::app::{App, Page};
 
@@ -188,10 +190,20 @@ impl App {
         }
     }
 
+    /// Why pipeline `id` cannot be chosen on the form's settings, if it cannot
+    /// ([`pipelines::unavailable`]).
+    pub fn pipeline_unavailable(&self, id: &str) -> Option<&'static str> {
+        super::command::config_from_app(self).ok().and_then(|c| pipelines::unavailable(&c, id))
+    }
+
     /// Open the preview of choosing the highlighted pipeline. A pipeline the form already
-    /// follows has nothing to change, and says so.
+    /// follows has nothing to change, and says so; one that is not available says why.
     pub fn open_pipeline_preview(&mut self) {
         let pipeline = self.highlighted_pipeline();
+        if let Some(why) = self.pipeline_unavailable(pipeline.id) {
+            self.status_message = Some(format!("{} is not available: {why}", pipeline.name));
+            return;
+        }
         match self.highlighted_changes() {
             Err(e) => self.error_message = Some(e),
             Ok(c) if c.changes.is_empty() && self.pipeline_status().pipeline.as_ref() == Some(&pipeline) => {
@@ -222,56 +234,36 @@ impl App {
         }
     }
 
-    /// Choose pipeline `id`: reset the pages it covers, then set each change it makes
-    /// ([`pipelines::changes`]) on the form's config and the form to that config, until the form
-    /// follows it. The form is left as it was if it cannot.
+    /// Choose pipeline `id`: reset the pages it covers, shown settings and hidden ones, then set
+    /// the form to the engine's config for it ([`pipelines::target`]), until the form follows it.
+    /// A pipeline [`pipelines::unavailable`] on the form's settings is refused with the reason.
+    /// The form is left as it was if it cannot.
     pub fn choose_pipeline(&mut self, id: &str) -> Result<(), String> {
         let facts = self.view_facts();
         let config = super::command::config_from_app(self).map_err(|e| e.to_string())?;
+        let name = pipelines::pipeline(id).map_or(id, |p| p.name);
+        if let Some(why) = pipelines::unavailable(&config, id) {
+            return Err(format!("{name} is not available: {why}"));
+        }
         let (stages, _) = pipelines::covers(&config, id, &facts)?;
+        let target = pipelines::target(&config, id, &facts)?;
         let mut trial = self.clone_form();
         for page in stages.iter().filter_map(|s| page_of(*s)) {
             trial.reset_page(page);
         }
         // And the settings out of view (under an option that is off), which would otherwise come
         // back with their old values when it is turned on: the config does not carry them.
-        for s in qsmxt_engine::schema::settings().iter().filter(|s| stages.contains(&s.section)) {
+        for s in schema::settings().iter().filter(|s| stages.contains(&s.section)) {
             if let Some(field) = super::app::field_of_path(s.path) {
                 trial.reset_field(field);
             }
         }
-        trial.form.reference_pipeline = (id != pipelines::QSMXT_DEFAULTS).then(|| id.to_string());
-        // The changes the pipeline makes to settings in view, set on the config and the form set
-        // to it. A change can bring settings into view (PDF's once PDF is chosen): set what is in
-        // view, then look again. A setting out of view is left as the reset made it.
-        let remaining = |app: &App| -> Result<(PipelineConfig, Vec<Change>), String> {
-            let c = super::command::config_from_app(app).map_err(|e| e.to_string())?;
-            let left = pipelines::changes(&c, id, &facts)?;
-            Ok((c, left))
-        };
-        let (mut c, mut left) = remaining(&trial)?;
-        while !left.is_empty() {
-            let before = left.len();
-            for ch in &left {
-                // A value the config refuses is left out, and named below if it stays a change.
-                let _ = schema::set(&mut c, ch.path, ch.to.clone());
-            }
-            // Remembered as chosen, though the form does not follow it yet.
-            c.reference_pipeline = (id != pipelines::QSMXT_DEFAULTS).then(|| id.to_string());
-            trial.set_form_from_config(&c);
-            if left.iter().any(|ch| ch.path == "masking.sections") {
-                // A recipe set by a pipeline reads as the hand-edited one, even where a preset
-                // gives it: the pipeline chose its parts, not a preset.
-                trial.pipeline_state.mask_preset = *super::app::MASK_PRESET_CUSTOM;
-            }
-            (c, left) = remaining(&trial)?;
-            if left.len() >= before {
-                break;
-            }
-        }
+        trial.set_form_from_config(&target);
+        let built = super::command::config_from_app(&trial).map_err(|e| e.to_string())?;
+        let left = pipelines::changes(&built, id, &facts)?;
         if !left.is_empty() {
             let names: Vec<&str> = left.iter().map(|c| c.label).collect();
-            return Err(format!("{} cannot be set here: {}", pipelines::pipeline(id).map_or(id, |p| p.name), names.join(", ")));
+            return Err(format!("{name} cannot be set here: {}", names.join(", ")));
         }
         self.form = trial.form;
         self.pipeline_state = trial.pipeline_state;
@@ -367,6 +359,8 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
 
     let status = app.pipeline_status();
     let current = status.pipeline.as_ref().map(|p| p.id);
+    let config = super::command::config_from_app(app).ok();
+    let unavailable = |id: &str| config.as_ref().and_then(|c| pipelines::unavailable(c, id));
     let cursor = app.pipelines.cursor;
     let focused = !app.tab_focus;
     let room = width.saturating_sub(1) as usize;
@@ -389,15 +383,20 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
             list.push(heading("TOOLBOX PIPELINES"));
         }
         let mark = if current == Some(p.id) { " ●" } else { "" };
+        // Greyed out: it cannot be chosen on these settings (the reason is beside the list).
+        let off = unavailable(p.id).is_some();
         if i == cursor {
             let bg = if focused { Color::Yellow } else { Color::Cyan };
-            let st = Style::default().fg(Color::Black).bg(bg).add_modifier(Modifier::BOLD);
+            let fg = if off { Color::DarkGray } else { Color::Black };
+            let st = Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD);
             let text = format!(" ▸ {}", p.name);
             let pad = room.saturating_sub(text.chars().count() + mark.chars().count());
             list.push(Line::from(vec![
                 Span::styled(text, st), Span::styled(" ".repeat(pad), st),
                 Span::styled(mark, st),
             ]));
+        } else if off {
+            list.push(Line::from(Span::styled(format!("   {}", p.name), muted())));
         } else {
             list.push(Line::from(vec![
                 Span::raw("   "), Span::raw(p.name.to_string()),
@@ -434,6 +433,14 @@ pub fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     let mut right = vec![Line::from(Span::styled(p.toolbox.unwrap_or(p.name).to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))];
     right.push(Line::from(""));
     right.extend(note_lines(&p));
+    if let Some(why) = unavailable(p.id) {
+        right.push(Line::from(vec![
+            Span::styled("Not available: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(why, Style::default().fg(Color::Gray)),
+        ]));
+        f.render_widget(Paragraph::new(right).wrap(Wrap { trim: false }), pad);
+        return;
+    }
     match app.highlighted_changes() {
         Err(e) => right.push(Line::from(Span::styled(e, Style::default().fg(Color::Red)))),
         Ok(c) => {
@@ -635,6 +642,47 @@ mod tests {
         // The lines for the mouse: About, a blank, DEFAULTS, the defaults.
         assert_eq!((list_entry(0), list_entry(1), list_entry(2), list_entry(3)), (Some(n), None, None, Some(0)));
         assert_eq!((list_entry(4), list_entry(5), list_entry(6)), (None, None, Some(1)));
+    }
+
+    /// Decision 194: while orientations are grouped, the HEIDI package's pipeline is greyed out in
+    /// the list with the reason beside it, and neither Enter nor choosing it changes anything;
+    /// without grouping it is offered as before.
+    #[test]
+    fn the_heidi_pipeline_is_greyed_out_while_orientations_are_grouped() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = four_echoes();
+        app.filter_state.orientation_group = "acq".into();
+        key(&mut app, KeyCode::Char('2'));
+        let heidi = pipelines::pipelines().iter().position(|p| p.id == "heidi").unwrap();
+        // Greyed out in the list (not highlighted), as the other entries are not.
+        let mut t = Terminal::new(TestBackend::new(140, 42)).unwrap();
+        app.prepare_frame();
+        t.draw(|f| super::super::ui::draw(f, &mut app)).unwrap();
+        let buf = t.backend().buffer();
+        // The colour of the list entry `name` (the list is the first 40 columns, one char a cell).
+        let fg_of = |name: &str| (0..buf.area.height).find_map(|y| {
+            let line: String = (0..40).map(|x| buf[(x, y)].symbol()).collect();
+            let at = line.find(name)?;
+            Some(buf[(line[..at].chars().count() as u16, y)].fg)
+        });
+        assert_eq!(fg_of("HEIDI package"), Some(Color::DarkGray), "greyed out");
+        assert_ne!(fg_of("MEDI toolbox"), Some(Color::DarkGray), "the others are not");
+        app.pipelines.cursor = heidi;
+        let text = screen(&mut app);
+        assert!(text.contains("Not available: HEIDI doesn't run on multi-orientation data"), "{text}");
+        assert!(!text.contains("Choosing it changes"), "{text}");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.pipelines.preview.is_none(), "no preview");
+        assert_eq!(app.status_message.as_deref(), Some("HEIDI package is not available: HEIDI doesn't run on multi-orientation data"));
+        assert_eq!(app.choose_pipeline("heidi").unwrap_err(), "HEIDI package is not available: HEIDI doesn't run on multi-orientation data");
+        assert!(!super::super::command::config_from_app(&app).unwrap().inversion.heidi.enabled);
+        assert_ne!(app.pipeline_status().pipeline.map(|p| p.id), Some("heidi"));
+        // Without grouping it is offered.
+        app.filter_state.orientation_group.clear();
+        let text = screen(&mut app);
+        assert!(!text.contains("Not available") && text.contains("Choosing it changes"), "{text}");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.pipelines.preview.is_some());
     }
 
     /// The tab: the list, the comparison, Enter's preview, and Apply.
