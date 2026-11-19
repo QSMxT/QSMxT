@@ -264,7 +264,7 @@ see [Output space](#output-space).
 
 | | behaviour on oblique data |
 |---|---|
-| all 20 classical dipole inversions, HEIDI, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
+| all classical dipole inversions, HEIDI, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
 | QSMnetME, χ-sepnet (its default route) | correct as acquired — rotate their inputs to B0 along z themselves, as their authors' toolbox does |
 | SHARP, V-SHARP, RESHARP, iSMV, LBV, HARPERELLA, iHARPERELLA, BFRnet | unaffected — never uses B0 |
 | the other deep-learning inversions, SUSEP-Net, R2PRIMEnet, iQFM, χ-sepnet with `--chi-sepnet-route native` | **resampled first** — assumes B0 is +z |
@@ -713,9 +713,9 @@ Set with `--bf-algorithm`.
 | `sharp` | SHARP | SHARP (Sophisticated Harmonic Artifact Reduction). | [Schweser et al., 2011](https://doi.org/10.1016/j.neuroimage.2010.10.070) |
 | `resharp` | RESHARP | Regularized SHARP (RESHARP) with Tikhonov. | [Sun & Wilman, 2014](https://doi.org/10.1002/mrm.24765) |
 | `harperella` | HARPERELLA | HARPERELLA integrated unwrap+BFR. | [Li et al., 2014](https://doi.org/10.1002/nbm.3056) |
-| `iharperella` | iHARPERELLA | Improved HARPERELLA (iHARPERELLA) — Li et al., Proc. ISMRM 2015, p.3313. | Li et al., 2015a |
-| `bfrnet` | BFRnet | BFRnet deep-learning background removal (weights auto-downloaded). | [Zhu et al., 2023](https://doi.org/10.1016/j.zemedi.2022.08.001) |
-| `iqfm` | iQFM | iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded). | [Gao et al., 2022](https://doi.org/10.1016/j.neuroimage.2022.119410) |
+| `iharperella` | iHARPERELLA | Improved HARPERELLA (iHARPERELLA). | Li et al., 2015a |
+| `bfrnet` | BFRnet | BFRnet deep-learning background removal. | [Zhu et al., 2023](https://doi.org/10.1016/j.zemedi.2022.08.001) |
+| `iqfm` | iQFM | iQFM deep-learning joint unwrapping + background removal from phase. | [Gao et al., 2022](https://doi.org/10.1016/j.neuroimage.2022.119410) |
 
 <!-- generated:background-methods end -->
 
@@ -1000,18 +1000,18 @@ config file, and blank in the TUI.
 
 | Value | Method | Description | Citation | Tileable |
 | --- | --- | --- | --- | --- |
-| `xqsm` | xQSM | xQSM (deep learning; weights auto-downloaded) — octave-convolution U-net dipole inversion. | [Gao et al., 2021](https://doi.org/10.1002/nbm.4461) | ✓ |
-| `qsmnet` | QSMnet | QSMnet (deep learning; weights auto-downloaded) — 3D U-net dipole inversion. | [Yoon et al., 2018](https://doi.org/10.1016/j.neuroimage.2018.06.030) | ✓ |
-| `qsmnet-plus` | QSMnet+ | QSMnet+ (deep learning; weights auto-downloaded) — QSMnet trained for a wider susceptibility range. | [Jung et al., 2020](https://doi.org/10.1016/j.neuroimage.2020.116619) | ✓ |
-| `qsmnetme` | QSMnetME | QSMnetME (deep learning; weights auto-downloaded) — the χ-separation toolbox's QSM network, trained on multi-echo data; rotates the field to B0 along z and resamples to 1 mm itself. | [Kim et al., 2025](https://doi.org/10.1002/hbm.70136) | ✓ |
-| `autoqsm` | AutoQSM | AutoQSM (deep learning; weights auto-downloaded) — single-step reconstruction, no separate background removal. | [Wei et al., 2019](https://doi.org/10.1016/j.neuroimage.2019.116064) |  |
-| `qsmgan` | QSMGAN | QSMGAN (deep learning; weights auto-downloaded) — GAN-refined U-net dipole inversion. | [Chen et al., 2020](https://doi.org/10.1016/j.neuroimage.2019.116389) |  |
-| `ir2qsm` | IR2QSM | IR2QSM (deep learning; weights auto-downloaded) — iterative unrolled U-net inversion. | [Li et al., 2025a](https://doi.org/10.1002/mp.17747) | ✓ |
-| `lpcnn` | LPCNN | LPCNN (deep learning; weights auto-downloaded) — learned-proximal unrolled inversion. | [Lai et al., 2020](https://doi.org/10.1007/978-3-030-59713-9_13) | ✓ |
-| `modl-qsm` | MoDL-QSM | MoDL-QSM (deep learning; weights auto-downloaded) — model-based unrolled inversion (χ33/STI). | [Feng et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118376) | ✓ |
-| `nextqsm` | NeXtQSM | NeXtQSM (deep learning; weights auto-downloaded) — single-step reconstruction, no separate background removal. | [Cognolato et al., 2023](https://doi.org/10.1016/j.media.2022.102700) | ✓ |
-| `iqsm` | iQSM | iQSM (deep learning; weights auto-downloaded) — end-to-end reconstruction from wrapped phase. | [Gao et al., 2022](https://doi.org/10.1016/j.neuroimage.2022.119410) | ✓ |
-| `iqsm-plus` | iQSM+ | iQSM+ (deep learning; weights auto-downloaded) — orientation-adaptive end-to-end reconstruction. | [Gao et al., 2024](https://doi.org/10.1016/j.media.2024.103160) | ✓ |
+| `xqsm` | xQSM | Octave-convolution U-net dipole inversion. | [Gao et al., 2021](https://doi.org/10.1002/nbm.4461) | ✓ |
+| `qsmnet` | QSMnet | 3D U-net dipole inversion. | [Yoon et al., 2018](https://doi.org/10.1016/j.neuroimage.2018.06.030) | ✓ |
+| `qsmnet-plus` | QSMnet+ | QSMnet trained for a wider susceptibility range. | [Jung et al., 2020](https://doi.org/10.1016/j.neuroimage.2020.116619) | ✓ |
+| `qsmnetme` | QSMnetME | The χ-separation toolbox's QSM network, trained on multi-echo data; rotates the field to B0 along z and resamples to 1 mm itself. | [Kim et al., 2025](https://doi.org/10.1002/hbm.70136) | ✓ |
+| `autoqsm` | AutoQSM | Single-step reconstruction, no separate background removal. | [Wei et al., 2019](https://doi.org/10.1016/j.neuroimage.2019.116064) |  |
+| `qsmgan` | QSMGAN | GAN-refined U-net dipole inversion. | [Chen et al., 2020](https://doi.org/10.1016/j.neuroimage.2019.116389) |  |
+| `ir2qsm` | IR2QSM | Iterative unrolled U-net inversion. | [Li et al., 2025a](https://doi.org/10.1002/mp.17747) | ✓ |
+| `lpcnn` | LPCNN | Learned-proximal unrolled inversion. | [Lai et al., 2020](https://doi.org/10.1007/978-3-030-59713-9_13) | ✓ |
+| `modl-qsm` | MoDL-QSM | Model-based unrolled inversion (χ33/STI). | [Feng et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118376) | ✓ |
+| `nextqsm` | NeXtQSM | Single-step reconstruction, no separate background removal. | [Cognolato et al., 2023](https://doi.org/10.1016/j.media.2022.102700) | ✓ |
+| `iqsm` | iQSM | End-to-end reconstruction from wrapped phase. | [Gao et al., 2022](https://doi.org/10.1016/j.neuroimage.2022.119410) | ✓ |
+| `iqsm-plus` | iQSM+ | Orientation-adaptive end-to-end reconstruction. | [Gao et al., 2024](https://doi.org/10.1016/j.media.2024.103160) | ✓ |
 
 <!-- generated:deep-learning-inversion-methods end -->
 
@@ -1401,12 +1401,12 @@ diamagnetic components, and choose the method with `--chisep`.
 
 | Value | Method | Description | Citation |
 | --- | --- | --- | --- |
-| `r2star-qsm` | R2\*-QSM (default) | R2\*-QSM closed-form (Dimov 2022) — QSM + R2\*, GRE-only. | [Dimov et al., 2022a](https://doi.org/10.1111/jon.13014); [Dimov et al., 2022b](https://doi.org/10.3390/tomography8030127) |
-| `decompose` | DECOMPOSE-QSM | DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude, GRE-only. | [Chen et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118477) |
-| `chi-sep-ilsqr` | χ-separation (iLSQR) | χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM. | [Shin et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118371) |
+| `r2star-qsm` | R2\*-QSM (default) | R2\*-QSM closed-form — QSM + R2\*, GRE-only. | [Dimov et al., 2022a](https://doi.org/10.1111/jon.13014); [Dimov et al., 2022b](https://doi.org/10.3390/tomography8030127) |
+| `decompose` | DECOMPOSE-QSM | DECOMPOSE-QSM signal-domain fit — QSM + multi-echo magnitude, GRE-only. | [Chen et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118477) |
+| `chi-sep-ilsqr` | χ-separation (iLSQR) | χ-separation iLSQR — local field + R2' + magnitude + QSM. | [Shin et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118371) |
 | `chi-sep-medi` | χ-separation (MEDI) | χ-separation MEDI — local field + R2' + magnitude. | [Shin et al., 2021](https://doi.org/10.1016/j.neuroimage.2021.118371) |
-| `wavesep` | WaveSep | WaveSep wavelet-L1 (Fang 2023) — QSM + R2'. | [Fang et al., 2023](https://doi.org/10.1007/978-3-031-44858-4_6) |
-| `hc-chisep` | HC-ChiSep | Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude. | Stewart et al., 2026; [Wharton & Bowtell, 2012](https://doi.org/10.1073/pnas.1211075109) |
+| `wavesep` | WaveSep | WaveSep wavelet-L1 — QSM + R2'. | [Fang et al., 2023](https://doi.org/10.1007/978-3-031-44858-4_6) |
+| `hc-chisep` | HC-ChiSep | Hollow-cylinder χ-separation — QSM + R2' + multi-echo magnitude. | Stewart et al., 2026; [Wharton & Bowtell, 2012](https://doi.org/10.1073/pnas.1211075109) |
 | `susep-net` | SUSEP-Net | SUSEP-Net deep-learning separation — QSM + R2' + local field (weights auto-downloaded). | [Li et al., 2025b](https://doi.org/10.48550/arXiv.2506.13293) |
 | `chi-sepnet` | χ-sepnet | χ-sepnet deep-learning separation — QSM + R2' + local field (weights auto-downloaded). | [Kim et al., 2025](https://doi.org/10.1002/hbm.70136) |
 

@@ -19,6 +19,11 @@ pub(super) fn defs() -> Vec<Def> {
         ])).basic().flag("--chisep").parent("pipeline.do_chi_separation")
         .when(|x| x.c.pipeline.do_chi_separation).full("χ-separation method")
         .gui("The χ-separation method, and the maps it reads")
+        .gui_option("r2star-qsm", "R2*-QSM closed-form — QSM + R2*, GRE-only")
+        .gui_option("decompose", "DECOMPOSE-QSM signal-domain fit — QSM + multi-echo magnitude, GRE-only")
+        .gui_option("chi-sep-ilsqr", "χ-separation iLSQR — local field + R2' + magnitude + QSM")
+        .gui_option("wavesep", "WaveSep wavelet-L1 — QSM + R2'")
+        .gui_option("hc-chisep", "Hollow-cylinder χ-separation — QSM + R2' + multi-echo magnitude")
         .cli("Chi-separation method (default: r2star-qsm)")
         .cli_id("chi_separation_algorithm")
         .value_help("r2star-qsm", "R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)").value_help("decompose", "DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)").value_help("chi-sep-ilsqr", "χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM").value_help("chi-sep-medi", "χ-separation MEDI — local field + R2' + magnitude").value_help("wavesep", "WaveSep wavelet-L1 (Fang 2023) — QSM + R2'").value_help("hc-chisep", "Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude").value_help("susep-net", "SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use)").value_help("chi-sepnet", "χ-sepnet deep-learning separation — QSM + R2' + local field (weights downloaded on first use)"),

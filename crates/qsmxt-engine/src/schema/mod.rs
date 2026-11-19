@@ -383,6 +383,8 @@ pub(crate) struct Def {
     gui_help: Option<&'static str>,
     /// The value row's front-end label and help, where they are not the TUI's.
     gui_value: Option<(&'static str, &'static str)>,
+    /// Options' front-end help, by value, where it is not the TUI's ([`Def::gui_option`]).
+    gui_options: Vec<(&'static str, &'static str)>,
     context: Option<&'static str>,
     item: Option<Item>,
     browser_help: Option<&'static str>,
@@ -405,7 +407,7 @@ pub(crate) struct Def {
 
 pub(crate) fn d(path: &'static str, section: Section, label: &'static str, help: &'static str, ty: Ty) -> Def {
     Def {
-        path, section, label, help, ty, value: None, full: None, gui_help: None, gui_value: None, context: None,
+        path, section, label, help, ty, value: None, full: None, gui_help: None, gui_value: None, gui_options: Vec::new(), context: None,
         item: None, browser_help: None, basic: false, units: None, min: None, max: None, exclusive_min: false, exclusive_max: false,
         off: None, optional: false, flag: None, parent: None, also: &[], browser: Browser::Available, when: None,
         cli: Default::default(),
@@ -425,6 +427,10 @@ impl Def {
     fn gui(mut self, help: &'static str) -> Self { self.gui_help = Some(help); self }
     /// The value row's label and help for any front end, where the TUI's differ.
     fn gui_value(mut self, label: &'static str, help: &'static str) -> Self { self.gui_value = Some((label, help)); self }
+    /// An option's help for any front end, where the TUI's carries what a front end shows
+    /// elsewhere: a citation (the option's link, the docs' citation column and the methods text
+    /// give it), or that a network's weights are downloaded. Its link, if any, is kept.
+    fn gui_option(mut self, value: &'static str, help: &'static str) -> Self { self.gui_options.push((value, help)); self }
     /// What the setting belongs to, where it is not the method its path names (see
     /// [`context_of`]).
     fn context(mut self, c: &'static str) -> Self { self.context = Some(c); self }
@@ -464,12 +470,18 @@ fn split_link(help: &str) -> (String, Option<String>) {
     }
 }
 
-fn options(opts: &[Opt]) -> Vec<EnumOption> {
+fn options(opts: &[Opt], gui: &[(&'static str, &'static str)]) -> Vec<EnumOption> {
+    for (v, _) in gui {
+        assert!(opts.iter().any(|(value, ..)| value.as_str() == Some(v)), "front-end help for {v:?}, which is not an option");
+    }
     opts.iter()
         .map(|(value, label, name, help)| {
             let (tui_help, url) = split_link(help);
-            // The schema carries the default; an option's help need not say it is one.
-            let help = tui_help.replace(" (default)", "");
+            let help = match gui.iter().find(|(v, _)| value.as_str() == Some(v)) {
+                Some((_, h)) => h.to_string(),
+                // The schema carries the default; an option's help need not say it is one.
+                None => tui_help.replace(" (default)", ""),
+            };
             EnumOption { value: value.clone(), label, name: name.to_string(), help, url, tui_help }
         })
         .collect()
@@ -477,7 +489,7 @@ fn options(opts: &[Opt]) -> Vec<EnumOption> {
 
 /// An echo reference's options: the one whose value is a number stands for any echo number.
 fn echo_options(opts: &[Opt]) -> Vec<EchoOption> {
-    options(opts)
+    options(opts, &[])
         .into_iter()
         .map(|option| {
             let kind = match option.value.as_str().and_then(|v| v.parse::<u32>().ok()) {
@@ -504,7 +516,7 @@ fn echo_time_options() -> Vec<EchoOption> {
         (serde_json::to_value(c).expect("an echo time serialises"), label, name, help)
     });
     let time = (serde_json::json!({ "seconds": null }), "ms", "Echo time", "A given echo time (Echo time)");
-    options(&[named.as_slice(), &[time]].concat())
+    options(&[named.as_slice(), &[time]].concat(), &[])
         .into_iter()
         .map(|option| {
             let kind = if option.value.is_object() { EchoKind::Time } else { EchoKind::Named };
@@ -598,14 +610,15 @@ fn build_schema() -> Vec<Setting> {
                 Ty::IntList => ValueType::IntList,
                 Ty::FloatVec3 => ValueType::FloatVec3,
                 Ty::Text => ValueType::Text,
-                Ty::Enum(o) => ValueType::Enum { options: options(o) },
+                Ty::Enum(o) => ValueType::Enum { options: options(o, &d.gui_options) },
                 Ty::EchoReference(o) => ValueType::EchoReference { options: echo_options(o) },
                 Ty::EchoTime => ValueType::EchoTime { options: echo_time_options() },
-                Ty::NumberOr(o) => ValueType::NumberOrChoice { options: options(o) },
+                Ty::NumberOr(o) => ValueType::NumberOrChoice { options: options(o, &d.gui_options) },
                 Ty::Regions => ValueType::Enum { options: region_options() },
                 Ty::MaskSections => ValueType::MaskSections,
                 Ty::MaskOps => ValueType::MaskOps,
             };
+            assert!(d.gui_options.is_empty() || matches!(d.ty, Ty::Enum(_) | Ty::NumberOr(_)), "{}: front-end option help for a setting without options", d.path);
             let step = matches!(d.ty, Ty::Int | Ty::IntVec3 | Ty::IntList).then_some(1.0);
             Setting {
                 path: d.path,

@@ -48,9 +48,6 @@ pub fn render_page(path: &str, page: &str) -> Result<String, String> {
         _ => return Err(format!("{path} has no generated blocks")),
     };
     let mut out = page.to_string();
-    if path == README {
-        out = splice_inline(&out, "algorithm-counts", &algorithm_counts()).map_err(|e| format!("{path}: {e}"))?;
-    }
     for (name, source, content) in blocks {
         out = splice(&out, name, source, &content).map_err(|e| format!("{path}: {e}"))?;
     }
@@ -69,16 +66,6 @@ fn splice(page: &str, name: &str, source: &str, content: &str) -> Result<String,
     out.push_str("\n\n");
     out.push_str(&page[e..]);
     Ok(out)
-}
-
-/// `page` with the inline span `name` (`<!-- generated:NAME start -->…<!-- generated:NAME end -->`,
-/// within a line, for a few generated words in hand-written prose) replaced by `content`.
-fn splice_inline(page: &str, name: &str, content: &str) -> Result<String, String> {
-    let start = format!("<!-- generated:{name} start -->");
-    let end = format!("<!-- generated:{name} end -->");
-    let s = page.find(&start).ok_or_else(|| format!("no `{start}` marker"))? + start.len();
-    let e = page[s..].find(&end).map(|i| s + i).ok_or_else(|| format!("no `{end}` after its start marker"))?;
-    Ok(format!("{}{content}{}", &page[..s], &page[e..]))
 }
 
 // ─── Markdown ───
@@ -384,24 +371,6 @@ const README_TABLES: [(&str, Rows); 14] = [
     ("Segmentation", Rows::Stage(Stage::Segmentation)),
 ];
 
-/// The README highlight's counts: the mask presets ([`crate::mask_presets`]), and the registry's
-/// background-removal, inversion and χ-separation choices, the inversions split as the tables
-/// split them (deep learning runs a network of the catalogue's entry).
-pub fn algorithm_counts() -> String {
-    let count = |path, stage, family| rows(Rows::Setting { path, stage, family }).len();
-    let presets = crate::mask_presets().len();
-    let words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
-    format!(
-        "{} masking presets, {} background-field removers, {} classical and {} deep-learning dipole \
-         inversions, {} χ-separation methods",
-        words.get(presets).map(|w| w.to_string()).unwrap_or_else(|| presets.to_string()),
-        count("bg_removal.algorithm", Stage::BackgroundRemoval, Family::All),
-        count(INVERSION, Stage::Inversion, Family::Classical),
-        count(INVERSION, Stage::Inversion, Family::DeepLearning),
-        count("separation.algorithm", Stage::Separation, Family::All),
-    )
-}
-
 /// The README's algorithm tables: each stage's methods by name, with their papers.
 pub fn readme_algorithms() -> String {
     let cites = page_citations(&README_TABLES.map(|(_, t)| t));
@@ -476,7 +445,5 @@ mod tests {
         assert!(out.ends_with(" -->\n\nnew\n\n<!-- generated:x end -->\nafter\n"), "{out}");
         assert_eq!(splice(&out, "x", "src", "new").unwrap(), out);
         assert!(splice("no markers", "x", "src", "new").is_err());
-        let line = "a <!-- generated:y start -->old<!-- generated:y end --> b";
-        assert_eq!(splice_inline(line, "y", "new").unwrap(), "a <!-- generated:y start -->new<!-- generated:y end --> b");
     }
 }
