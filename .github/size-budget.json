@@ -24,7 +24,6 @@
   "crates/qsmxt-io/src/bids/discovery.rs::discover_runs": 172,
   "crates/qsmxt-io/src/dicom/convert.rs::convert_session_streaming": 192,
   "crates/qsmxt-io/src/dicom/export/seg.rs::build_seg": 140,
-  "crates/qsmxt-io/src/dicom/synth.rs::write_fixture": 131,
   "crates/qsmxt-io/src/pipeline/multiorient.rs::reconstruct_group": 366,
   "crates/qsmxt-tui/src/app/input/nifti_to_bids.rs::handle_nifti_tab_key": 121,
   "crates/qsmxt-tui/src/app/tabs/rows.rs::handle_rows_key": 279,
