@@ -5,7 +5,6 @@
   "crates/qsmxt-engine/src/memory.rs": 819,
   "crates/qsmxt-engine/src/pipeline_graph.rs": 1446,
   "crates/qsmxt-engine/src/pipeline_graph/layout.rs": 1210,
-  "crates/qsmxt-engine/src/recommendations.rs": 1850,
   "crates/qsmxt-engine/src/requirements.rs": 1114,
   "crates/qsmxt-engine/src/store.rs": 1201,
   "crates/qsmxt-io/src/bids/discovery.rs": 811,
