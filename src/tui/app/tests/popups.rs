@@ -68,23 +68,23 @@ fn a_dev_build_starts_no_background_check() {
 
 /// An app whose launch checks have come back: `update` the newer release found (if any),
 /// `news` the announcements fetched.
-fn launched(update: Option<&str>, news: Vec<crate::commands::news::Announcement>) -> App {
+fn launched(update: Option<&str>, news: Vec<qsmxt_io::news::Announcement>) -> App {
     let mut app = App::new();
-    app.update_state = UpdateState::ready(update.map(|tag| crate::commands::update::check::UpdateInfo {
+    app.update_state = UpdateState::ready(update.map(|tag| qsmxt_io::release::check::UpdateInfo {
         tag: tag.into(),
         html_url: "https://example.com/r".into(),
     }));
-    app.news_state = NewsState::ready(crate::commands::news::Loaded { items: news, error: None });
+    app.news_state = NewsState::ready(qsmxt_io::news::Loaded { items: news, error: None });
     app
 }
 
-use crate::commands::news::tests::item;
+use qsmxt_io::news::item;
 
 /// The pop-ups' order: critical announcements, the update prompt, then ordinary ones
 /// (newest first), one at a time; closing one records it as shown.
 #[test]
 fn launch_pop_ups_come_one_at_a_time_in_order() {
-    let t = crate::commands::news::TestDir::new();
+    let t = qsmxt_io::news::TestDir::new();
     let mut app = launched(Some("v99.0.0"), vec![
         item("old", "2026-11-01", false, None),
         item("new", "2026-11-05", false, None),
@@ -130,7 +130,7 @@ fn launch_pop_ups_come_one_at_a_time_in_order() {
 /// Announcements wait while another pop-up (the startup tip, an algorithm list) is open.
 #[test]
 fn announcements_wait_for_other_pop_ups() {
-    let _t = crate::commands::news::TestDir::new();
+    let _t = qsmxt_io::news::TestDir::new();
     let mut app = launched(None, vec![item("crit", "2026-10-01", true, None), item("a", "2026-11-01", false, None)]);
     app.tip_modal = Some(TipModal::new(crate::tui::tips::TIPS[0], true));
     app.poll_launch_checks();
@@ -144,7 +144,7 @@ fn announcements_wait_for_other_pop_ups() {
 /// announcements wait for the release check (the prompt goes first).
 #[test]
 fn each_pop_up_waits_for_the_check_that_goes_before_it() {
-    let _t = crate::commands::news::TestDir::new();
+    let _t = qsmxt_io::news::TestDir::new();
     let mut app = launched(Some("v99.0.0"), Vec::new());
     let (_tx, rx) = std::sync::mpsc::channel();
     app.news_state = NewsState { receiver: Some(rx), done: false };
@@ -161,7 +161,7 @@ fn each_pop_up_waits_for_the_check_that_goes_before_it() {
 /// An announcement for other versions does not pop up; nor does a ranged one on a dev build.
 #[test]
 fn announcements_for_other_versions_do_not_pop_up() {
-    let _t = crate::commands::news::TestDir::new();
+    let _t = qsmxt_io::news::TestDir::new();
     let mut app = launched(None, vec![item("a", "2026-11-01", true, Some(("1.0.0", "2.0.0")))]);
     app.poll_launch_checks();
     assert!(app.news_modal.is_none());
@@ -172,7 +172,7 @@ fn announcements_for_other_versions_do_not_pop_up() {
 /// shown; it closes without recording anything.
 #[test]
 fn n_on_the_tab_bar_opens_the_history() {
-    let _t = crate::commands::news::TestDir::new();
+    let _t = qsmxt_io::news::TestDir::new();
     let mut app = launched(None, vec![item("new", "2026-11-05", false, None), item("old", "2026-11-01", false, Some(("1.0.0", "2.0.0")))]);
     app.poll_launch_checks();
     app.news_modal = None;
@@ -187,16 +187,16 @@ fn n_on_the_tab_bar_opens_the_history() {
     app.handle_key(key(KeyCode::Esc));
     assert!(app.news_modal.is_none());
     assert!(!app.should_quit, "Esc closes the history, not the TUI");
-    assert!(crate::commands::news::load_seen().is_empty(), "reading the history records nothing");
+    assert!(qsmxt_io::news::load_seen().is_empty(), "reading the history records nothing");
 }
 
 /// Offline, the history is the saved copy, and says so.
 #[test]
 fn the_history_offline_is_the_saved_copy() {
-    let _t = crate::commands::news::TestDir::new();
-    crate::commands::news::load(|| Ok("[[announcement]]\nid=\"a\"\ndate=\"2026-11-01\"\ntitle=\"Saved\"\nbody=\"b\"\n".into()));
+    let _t = qsmxt_io::news::TestDir::new();
+    qsmxt_io::news::load(|| Ok("[[announcement]]\nid=\"a\"\ndate=\"2026-11-01\"\ntitle=\"Saved\"\nbody=\"b\"\n".into()));
     let mut app = App::new();
-    app.receive_news(crate::commands::news::load(|| Err("offline".into())));
+    app.receive_news(qsmxt_io::news::load(|| Err("offline".into())));
     app.open_news_history();
     let m = app.news_modal.as_ref().unwrap();
     assert_eq!(m.items[0].title, "Saved");
@@ -206,7 +206,7 @@ fn the_history_offline_is_the_saved_copy() {
 /// `c` in a pop-up copies its link.
 #[test]
 fn c_copies_an_announcements_link() {
-    let _t = crate::commands::news::TestDir::new();
+    let _t = qsmxt_io::news::TestDir::new();
     let mut a = item("a", "2026-11-01", false, None);
     a.link = Some("https://example.com/a".into());
     let mut app = launched(None, vec![a]);

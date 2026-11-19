@@ -100,7 +100,7 @@ fn palette() -> Palette {
 fn version() -> String {
     // Development builds describe QSMxT and QSM.rs by a full commit hash: keep the line short.
     let short = |s: &str| if s.chars().count() > 16 { format!("{}…", s.chars().take(15).collect::<String>()) } else { s.to_string() };
-    let qsmxt = crate::commands::update::describe_version();
+    let qsmxt = qsmxt_io::version::describe_version();
     format!("QSMxT {} · QSM.rs {}", short(qsmxt), short(env!("QSM_CORE_DESCRIBE")))
 }
 
@@ -544,7 +544,7 @@ pub(super) mod tests {
     /// before it when the active tab is too far right; never across it.
     #[test]
     fn the_versions_sit_in_the_rule_when_there_is_room() {
-        let qsmxt: String = crate::commands::update::describe_version().chars().take(15).collect();
+        let qsmxt: String = qsmxt_io::version::describe_version().chars().take(15).collect();
         for tab in 0..TAB_NAMES.len() {
             let mut app = App::new();
             app.choose_pipeline("medi-toolbox").unwrap();

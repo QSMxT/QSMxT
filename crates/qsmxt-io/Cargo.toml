@@ -26,6 +26,7 @@ nifti = "0.17"
 # Copies a gzipped NIfTI to an uncompressed name (and back) as the name says (pipeline::runner).
 flate2 = "1"
 tempfile = "3"
+toml = "0.8"
 ureq = "2"
 sha2 = "0.10"
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib"] }

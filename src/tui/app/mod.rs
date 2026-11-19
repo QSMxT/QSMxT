@@ -100,9 +100,9 @@ pub struct App {
     /// Background fetch of the announcements started at launch.
     pub news_state: NewsState,
     /// What that fetch came back with, once it has.
-    pub news: Option<crate::commands::news::Loaded>,
+    pub news: Option<qsmxt_io::news::Loaded>,
     /// Announcements still to pop up, in order (critical first, then newest first).
-    pub news_queue: Vec<crate::commands::news::Announcement>,
+    pub news_queue: Vec<qsmxt_io::news::Announcement>,
     /// The "Did you know?" pop-up: shown at launch (unless tips are off) and on `?`.
     pub tip_modal: Option<TipModal>,
     /// The recommendation pop-up, opened when a change creates a recommendation

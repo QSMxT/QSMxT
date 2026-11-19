@@ -356,7 +356,7 @@ pub(super) fn draw_news_modal(f: &mut Frame, modal: &mut NewsModal, area: Rect, 
 
 /// "A new version is available" pop-up, raised by the launch-time release check.
 pub(super) fn draw_update_modal(f: &mut Frame, modal: &UpdateModal, area: Rect, hits: &crate::tui::mouse::Hits) {
-    let running = crate::commands::update::current_version();
+    let running = qsmxt_io::release::current_version();
     let lines = vec![
         Line::from(vec![
             Span::raw("  You are running "),

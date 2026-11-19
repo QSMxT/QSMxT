@@ -50,7 +50,7 @@ pub enum UpdateChoice {
 #[derive(Debug, Clone)]
 pub struct NewsModal {
     /// The announcement popping up, or every announcement (newest first) in the history.
-    pub items: Vec<crate::commands::news::Announcement>,
+    pub items: Vec<qsmxt_io::news::Announcement>,
     /// The history (opened with `n`), rather than a pop-up.
     pub history: bool,
     /// A line above the history: that the announcements could not be read and these are the
@@ -112,7 +112,7 @@ fn threshold_method_help() -> Vec<String> {
 }
 
 impl App {
-    pub(super) fn open_news(&mut self, item: crate::commands::news::Announcement) {
+    pub(super) fn open_news(&mut self, item: qsmxt_io::news::Announcement) {
         self.news_modal = Some(NewsModal { items: vec![item], history: false, note: None, scroll: 0 });
     }
 
@@ -126,9 +126,9 @@ impl App {
                     "The announcements could not be read, so these are the ones saved the last time they could.".to_string()
                 }),
             ),
-            None if self.news_state.finished() => (crate::commands::news::load_cached(), None),
+            None if self.news_state.finished() => (qsmxt_io::news::load_cached(), None),
             None => (
-                crate::commands::news::load_cached(),
+                qsmxt_io::news::load_cached(),
                 Some("Checking for new announcements; these are the ones saved last time.".to_string()),
             ),
         };
@@ -155,7 +155,7 @@ impl App {
                 let m = self.news_modal.take().expect("checked above");
                 if !m.history {
                     for a in &m.items {
-                        crate::commands::news::mark_seen(&a.id);
+                        qsmxt_io::news::mark_seen(&a.id);
                     }
                 }
             }

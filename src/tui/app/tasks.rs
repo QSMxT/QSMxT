@@ -16,14 +16,14 @@ pub struct Background<T> {
 }
 
 /// The launch-time release check: `Some` newer release, or `None`.
-pub type UpdateState = Background<Option<crate::commands::update::check::UpdateInfo>>;
+pub type UpdateState = Background<Option<qsmxt_io::release::check::UpdateInfo>>;
 
 /// The launch-time announcements fetch.
-pub type NewsState = Background<crate::commands::news::Loaded>;
+pub type NewsState = Background<qsmxt_io::news::Loaded>;
 
 impl UpdateState {
     pub fn start() -> Self {
-        Self { receiver: crate::commands::update::check::spawn(), done: false }
+        Self { receiver: qsmxt_io::release::check::spawn(), done: false }
     }
 }
 
@@ -31,7 +31,7 @@ impl NewsState {
     /// Tests never fetch: a dev build would, and the tests must stay off the network.
     pub fn start() -> Self {
         #[cfg(not(test))]
-        return Self { receiver: crate::commands::news::spawn(), done: false };
+        return Self { receiver: qsmxt_io::news::spawn(), done: false };
         #[cfg(test)]
         Self::disabled()
     }
@@ -101,8 +101,8 @@ impl App {
     }
 
     /// Take the announcements the background fetch came back with: queue those due to pop up.
-    pub fn receive_news(&mut self, loaded: crate::commands::news::Loaded) {
-        use crate::commands::{news, update};
+    pub fn receive_news(&mut self, loaded: qsmxt_io::news::Loaded) {
+        use qsmxt_io::{news, release as update};
         self.news_queue = news::pop_ups(&loaded.items, update::current_version(), &news::load_seen());
         self.news = Some(loaded);
     }

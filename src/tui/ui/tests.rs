@@ -344,7 +344,7 @@ fn update_modal_shows_both_versions_and_its_choices() {
     assert!(text.contains("Update available"), "missing title:\n{text}");
     assert!(text.contains("v9.23.0"), "missing the new version:\n{text}");
     assert!(
-        text.contains(crate::commands::update::current_version()),
+        text.contains(qsmxt_io::release::current_version()),
         "missing the running version:\n{text}"
     );
     assert!(text.contains("update now"), "missing the accept hint:\n{text}");
@@ -357,7 +357,7 @@ fn update_modal_shows_both_versions_and_its_choices() {
 #[test]
 fn an_announcement_pop_up_shows_everything_in_it() {
     use crate::tui::app::NewsModal;
-    let mut a = crate::commands::news::tests::item("a", "2026-11-06", true, Some(("10.0.0", "11.0.1")));
+    let mut a = qsmxt_io::news::item("a", "2026-11-06", true, Some(("10.0.0", "11.0.1")));
     a.title = "Wrong results from the thing".into();
     a.body = format!("{}\n\nSecond paragraph.", "word ".repeat(40));
     a.link = Some("https://example.com/a".into());
@@ -376,7 +376,7 @@ fn an_announcement_pop_up_shows_everything_in_it() {
 #[test]
 fn the_announcement_history_scrolls_and_says_when_empty() {
     use crate::tui::app::NewsModal;
-    let items: Vec<_> = (0..12).map(|i| crate::commands::news::tests::item(&format!("n{i}"), &format!("2026-11-{:02}", 20 - i), false, None)).collect();
+    let items: Vec<_> = (0..12).map(|i| qsmxt_io::news::item(&format!("n{i}"), &format!("2026-11-{:02}", 20 - i), false, None)).collect();
     let mut app = App::new();
     app.news_modal = Some(NewsModal { items, history: true, note: None, scroll: 0 });
     let text = screen_text(&render_app(&mut app));
