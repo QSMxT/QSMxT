@@ -742,8 +742,12 @@ pub fn get(config: &PipelineConfig, path: &str) -> Option<Value> {
     let v = serde_json::to_value(config).ok()?;
     let (parent, key) = path.rsplit_once('.').unwrap_or(("", path));
     let obj = if parent.is_empty() { Some(&v) } else { lookup(&v, parent) }?;
-    // An unset optional value is left out of the serialised config.
-    obj.as_object().map(|o| o.get(key).cloned().unwrap_or(Value::Null))
+    match obj.as_object()?.get(key) {
+        Some(value) => Some(value.clone()),
+        // An unset optional value is left out of the serialised config: a setting the schema
+        // knows reads as unset, any other name as no setting (a typo in the last part).
+        None => defs().iter().any(|d| d.path == path).then_some(Value::Null),
+    }
 }
 
 /// Set the value at `path` in `config`. The change goes through the config's own
