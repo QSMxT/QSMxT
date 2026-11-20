@@ -83,6 +83,13 @@ pub struct InvertMediArgs {
     /// Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
     #[arg(long, num_args = 1.., required = true)]
     pub magnitude: Vec<PathBuf>,
+    /// Hidden: `--smv true|false`, the earlier spelling of `--medi-smv` / `--no-medi-smv`
+    #[arg(long, hide = true, value_name = "BOOL")]
+    pub smv: Option<bool>,
+    /// Hidden: `--smv-shrink-mask true|false`, the earlier spelling of `--medi-smv-shrink-mask`
+    /// / `--no-medi-smv-shrink-mask`
+    #[arg(long, hide = true, value_name = "BOOL")]
+    pub smv_shrink_mask: Option<bool>,
     // The settings flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]
     pub settings: crate::cli_settings::SettingsOf<MediFlags>,

@@ -1944,11 +1944,13 @@
 --field-strength value=FIELD_STRENGTH num_args=1 action=Set required
 --echo-times aliases=echo-time value=ECHO_TIMES num_args=1.. action=Append required
 --magnitude value=MAGNITUDE num_args=1.. action=Append required
+--smv value=BOOL num_args=1 action=Set values=true,false hidden
+--smv-shrink-mask value=BOOL num_args=1 action=Set values=true,false hidden
 --no-medi-smv aliases=no-smv value=NO_MEDI_SMV num_args=0 action=SetTrue default=false
---medi-smv aliases=smv value=MEDI_SMV num_args=0 action=SetTrue default=false
+--medi-smv value=MEDI_SMV num_args=0 action=SetTrue default=false
 --medi-smv-radius aliases=smv-radius value=MEDI_SMV_RADIUS num_args=1 action=Set
 --no-medi-smv-shrink-mask aliases=no-smv-shrink-mask value=NO_MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
---medi-smv-shrink-mask aliases=smv-shrink-mask value=MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
+--medi-smv-shrink-mask value=MEDI_SMV_SHRINK_MASK num_args=0 action=SetTrue default=false
 --medi-msmv aliases=msmv value=MEDI_MSMV num_args=0 action=SetTrue default=false
 --medi-msmv-maxk aliases=msmv-maxk value=MEDI_MSMV_MAXK num_args=1 action=Set
 --medi-msmv-vessel-radius aliases=msmv-vessel-radius value=MEDI_MSMV_VESSEL_RADIUS num_args=1 action=Set

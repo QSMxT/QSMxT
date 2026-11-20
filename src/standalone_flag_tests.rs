@@ -46,3 +46,14 @@ fn an_old_name_sets_what_the_run_name_sets() {
     assert_eq!(rts("--max-iter"), 7);
     assert_eq!(rts("--rts-max-iter"), 7);
 }
+
+/// MEDI's SMV switches took a value before they were `qsmxt run`'s (`--smv false`); that still
+/// parses, and sets the setting.
+#[test]
+fn the_smv_switches_still_take_their_old_values() {
+    use clap::Parser;
+    let cli = crate::cli::Cli::try_parse_from(["qsmxt", "invert", "medi", "f.nii", "-m", "m.nii", "-o", "o.nii",
+        "--field-strength", "3", "--echo-times", "0.01", "--magnitude", "mag.nii", "--smv", "false", "--smv-shrink-mask", "true"]).unwrap();
+    let crate::cli::Command::Invert { command: crate::cli::InvertCommand::Medi(a) } = cli.command else { panic!("invert medi") };
+    assert_eq!((a.smv, a.smv_shrink_mask), (Some(false), Some(true)));
+}

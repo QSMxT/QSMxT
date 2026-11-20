@@ -282,8 +282,9 @@ fn test_invert_medi_takes_every_echo() {
         common: common_invert(input.clone(), mask.clone(), output.clone()),
         scan: scan(&[0.005, 0.010, 0.015]),
         magnitude,
+        smv: None, smv_shrink_mask: None,
         settings: SettingsOf::from_flags(&[
-            &["--medi-merit", "false", "--medi-smv", "false", "--medi-cg-max-iter", "2", "--medi-max-iter", "1"][..],
+            &["--medi-merit", "false", "--no-medi-smv", "--medi-cg-max-iter", "2", "--medi-max-iter", "1"][..],
             if msmv { &["--medi-msmv"] } else { &[] },
         ].concat()),
     });

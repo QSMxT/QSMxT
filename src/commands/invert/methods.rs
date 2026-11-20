@@ -137,7 +137,10 @@ pub(super) fn amp_pe(args: InvertAmpPeArgs) -> qsmxt_io::Result<Inverted> {
 }
 
 pub(super) fn medi(args: InvertMediArgs) -> qsmxt_io::Result<Inverted> {
-    let cfg = config(&args.common, Q::Medi, &args.settings.0)?;
+    let mut cfg = config(&args.common, Q::Medi, &args.settings.0)?;
+    // The switches' earlier spellings, which took a value.
+    if let Some(v) = args.smv { cfg.inversion.medi.smv = v; }
+    if let Some(v) = args.smv_shrink_mask { cfg.inversion.medi.smv_shrink_mask = v; }
     if cfg.inversion.medi.csf && args.scan.echo_times.len() < 3 {
         warn!(target: super::LOG_TARGET, "MEDI's CSF zero reference (MEDI+0) needs at least 3 echoes (it finds the CSF from R2*); \
                with {} MEDI runs without it", args.scan.echo_times.len());
