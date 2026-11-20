@@ -1,216 +1,94 @@
 //! The config setting each TUI row edits.
+//!
+//! A row's field name follows from its setting's path by one rule ([`PREFIXES`]), so a new
+//! setting needs no edit here unless its row is named otherwise ([`NAMES`]).
 
-/// The config setting a TUI row edits, by the row's field name. Rows that edit no config
-/// setting (the Execution tab, DICOM export's run options, the mask preset, which writes the
-/// recipe) are not listed. The settings tests (`schema_parity`) hold the TUI to it.
-pub const FIELD_PATHS: &[(&str, &str)] = &[
-    ("axial_resampling", "pipeline.axial_resampling"), ("obliquity_threshold", "pipeline.obliquity_threshold"),
-    ("output_space", "pipeline.output_space"), ("inhomogeneity_correction", "masking.inhomogeneity_correction"),
-    ("homogeneity_sigma_mm", "homogeneity.sigma_mm"), ("homogeneity_nbox", "homogeneity.nbox"),
-    ("inhomogeneity_method", "masking.inhomogeneity_method"), ("n4_shrink_factor", "n4.shrink_factor"),
-    ("n4_max_iterations", "n4.max_iterations"), ("n4_convergence_threshold", "n4.convergence_threshold"),
-    ("n4_mesh", "n4.mesh"), ("n4_spline_order", "n4.spline_order"), ("n4_bias_field_fwhm", "n4.bias_field_fwhm"),
-    ("n4_wiener_noise", "n4.wiener_noise"), ("n4_histogram_bins", "n4.histogram_bins"),
-    ("n4_geometry", "masking.n4_geometry"),
-    ("ignore_slice_gap", "pipeline.ignore_slice_gap"), ("tukey_window", "pipeline.tukey_window"),
-    ("crop_to_mask", "pipeline.crop_to_mask"),
-    ("crop_margin_mm", "pipeline.crop_margin_mm"), ("fft_padding", "pipeline.fft_padding"),
-    ("coil_combination_sigma", "field_mapping.coil_combination_sigma"),
-    ("custom_mask_tool", "masking.custom_mask_tool"), ("two_pass", "masking.two_pass"),
-    ("two_pass_mode", "masking.two_pass_mode"),
-    ("bet_smoothness", "bet.smoothness"), ("bet_gradient_threshold", "bet.gradient_threshold"),
-    ("bet_iterations", "bet.iterations"), ("bet_subdivisions", "bet.subdivisions"),
-    ("bet_orientation", "bet.orientation"),
-    ("motion_correction", "motion_correction.enabled"), ("motion_reference", "motion_correction.reference"),
-    ("motion_reference_echo", "motion_correction.reference"), ("motion_chain", "motion_correction.chain"),
-    ("motion_chain_levels", "motion_correction.chain_levels"), ("motion_min_ncc", "motion_correction.min_ncc"),
-    ("reg_levels", "registration.levels"), ("reg_max_samples", "registration.max_samples"),
-    ("reg_max_iterations", "registration.max_iterations"), ("reg_max_evaluations", "registration.max_evaluations"),
-    ("reg_tolerance", "registration.tolerance"), ("reg_rotation_step_deg", "registration.rotation_step_deg"),
-    ("reg_translation_step_mm", "registration.translation_step_mm"), ("reg_min_overlap", "registration.min_overlap"),
-    ("do_qsm", "pipeline.do_qsm"),
-    ("unwrapping_algorithm", "field_mapping.unwrapping_algorithm"), ("laplacian_solver", "field_mapping.laplacian_solver"),
-    ("laplacian_fft_pad", "field_mapping.laplacian_fft_pad"), ("laplacian_unmasked", "field_mapping.laplacian_unmasked"), ("laplacian_keep_outside", "field_mapping.laplacian_keep_outside"),
-    ("prelude_labelling", "field_mapping.prelude.labelling"), ("prelude_partitions", "field_mapping.prelude.num_phase_partitions"),
-    ("qsm_per_echo", "qsm.per_echo"), ("phase_offset_removal", "field_mapping.phase_offset_removal"),
-    ("phase_offset_sigma_mm", "field_mapping.phase_offset_sigma_mm"), ("bipolar_correction", "field_mapping.bipolar_correction"),
-    ("romeo_individual", "field_mapping.romeo.individual"), ("romeo_template", "field_mapping.romeo.template"),
-    ("romeo_correct_global", "field_mapping.romeo.correct_global"), ("romeo_phase_coherence", "field_mapping.romeo.phase_coherence"),
-    ("romeo_phase_gradient_coherence", "field_mapping.romeo.phase_gradient_coherence"),
-    ("romeo_phase_linearity", "field_mapping.romeo.phase_linearity"), ("romeo_mag_coherence", "field_mapping.romeo.mag_coherence"),
-    ("romeo_mag_weight", "field_mapping.romeo.mag_weight"), ("romeo_mag_weight2", "field_mapping.romeo.mag_weight2"),
-    ("romeo_bestpath", "field_mapping.romeo.bestpath"),
-    ("romeo_temporal_uncertain", "field_mapping.romeo.temporal_uncertain_unwrapping"),
-    ("romeo_temporal_uncertain_unwrapping", "field_mapping.romeo.temporal_uncertain_unwrapping"),
-    ("romeo_max_seeds", "field_mapping.romeo.max_seeds"), ("romeo_merge_regions", "field_mapping.romeo.merge_regions"),
-    ("romeo_correct_regions", "field_mapping.romeo.correct_regions"), ("romeo_wrap_addition", "field_mapping.romeo.wrap_addition"),
-    ("b0_estimation", "field_mapping.b0_estimation"), ("b0_weight_type", "field_mapping.b0_weight_type"),
-    ("b0_weight_assumed_t2star_ms", "field_mapping.b0_weight_assumed_t2star_ms"),
-    ("linear_fit_estimate_offset", "field_mapping.linear_fit.estimate_offset"),
-    ("robust_fit_loss", "field_mapping.robust_fit.loss"), ("robust_fit_tuning", "field_mapping.robust_fit.tuning"),
-    ("robust_fit_iterations", "field_mapping.robust_fit.iterations"),
-    ("robust_fit_downweight_level", "field_mapping.robust_fit.downweight_level"),
-    ("robust_fit_flag_ratio", "field_mapping.robust_fit.flag_ratio"),
-    ("complex_fit_reltol", "field_mapping.complex_fit.reltol"), ("complex_fit_max_iter", "field_mapping.complex_fit.max_iter"),
-    ("bf_algorithm", "bg_removal.algorithm"), ("vsharp_deconvolve", "bg_removal.vsharp.deconvolve"),
-    ("vsharp_threshold", "bg_removal.vsharp.threshold"), ("vsharp_max_radius", "bg_removal.vsharp.max_radius"),
-    ("vsharp_min_radius", "bg_removal.vsharp.min_radius"),
-    ("vsharp_radius_step", "bg_removal.vsharp.radius_step"), ("vsharp_grid", "bg_removal.vsharp.grid"),
-    ("vsharp_grid_spacing", "bg_removal.vsharp.grid_spacing"), ("pdf_tol", "bg_removal.pdf.tol"), ("pdf_n_cg", "bg_removal.pdf.n_cg"), ("bf_polish_mask", "bg_removal.polish_mask"), ("bf_ukb_mask_trim", "bg_removal.ukb_mask_trim"), ("bf_erode_voxels", "bg_removal.erode_voxels"),
-    ("pdf_space", "bg_removal.pdf.space"), ("pdf_n_pad", "bg_removal.pdf.n_pad"), ("lbv_tol", "bg_removal.lbv.tol"),
-    ("lbv_depth", "bg_removal.lbv.depth"), ("lbv_peel", "bg_removal.lbv.peel"), ("lbv_n1", "bg_removal.lbv.n1"),
-    ("lbv_n2", "bg_removal.lbv.n2"), ("lbv_n3", "bg_removal.lbv.n3"), ("lbv_precision", "bg_removal.lbv.precision"),
-    ("ismv_variant", "bg_removal.ismv.variant"),
-    ("ismv_tol", "bg_removal.ismv.tol"), ("ismv_max_iter", "bg_removal.ismv.max_iter"), ("ismv_radius", "bg_removal.ismv.radius"),
-    ("sharp_threshold", "bg_removal.sharp.threshold"), ("sharp_radius", "bg_removal.sharp.radius"),
-    ("resharp_radius", "bg_removal.resharp.radius"), ("resharp_tik_reg", "bg_removal.resharp.tik_reg"),
-    ("resharp_tol", "bg_removal.resharp.tol"), ("resharp_max_iter", "bg_removal.resharp.max_iter"),
-    ("harperella_radius", "bg_removal.harperella.radius"), ("harperella_max_iter", "bg_removal.harperella.max_iter"),
-    ("harperella_tol", "bg_removal.harperella.tol"), ("harperella_pad", "bg_removal.harperella.pad"), ("iharperella_max_iter", "bg_removal.iharperella.max_iter"),
-    ("iharperella_tol", "bg_removal.iharperella.tol"), ("iharperella_pad", "bg_removal.iharperella.pad"),
-    ("harperella_rim", "bg_removal.harperella.rim"), ("iharperella_rim", "bg_removal.iharperella.rim"),
-    ("qsm_algorithm", "inversion.algorithm"),
-    ("nltv_te", "inversion.nltv.te"), ("nltv_te_ms", "inversion.nltv.te"),
-    ("medi_te", "inversion.medi.te"), ("medi_te_ms", "inversion.medi.te"),
-    ("tfi_te", "inversion.tfi.te"), ("tfi_te_ms", "inversion.tfi.te"),
-    ("ndi_te", "inversion.ndi.te"), ("ndi_te_ms", "inversion.ndi.te"),
-    ("ndi_weight_norm", "inversion.ndi.weight_norm"),
-    ("fansi_te", "inversion.fansi.te"), ("fansi_te_ms", "inversion.fansi.te"),
-    ("l1qsm_te", "inversion.l1qsm.te"), ("l1qsm_te_ms", "inversion.l1qsm.te"),
-    ("whqsm_te", "inversion.whqsm.te"), ("whqsm_te_ms", "inversion.whqsm.te"),
-    ("heidi_te", "inversion.heidi.te"), ("heidi_te_ms", "inversion.heidi.te"),
-    ("tgv_te", "inversion.tgv.te"), ("tgv_te_ms", "inversion.tgv.te"),
-    ("rts_delta", "inversion.rts.delta"), ("rts_mu", "inversion.rts.mu"), ("rts_rho", "inversion.rts.rho"),
-    ("rts_tol", "inversion.rts.tol"), ("rts_max_iter", "inversion.rts.max_iter"), ("rts_lsmr_iter", "inversion.rts.lsmr_iter"),
-    ("rts_tau", "inversion.rts.tau"), ("rts_gamma", "inversion.rts.gamma"),
-    ("tv_lambda", "inversion.tv.lambda"), ("tv_rho", "inversion.tv.rho"), ("tv_tol", "inversion.tv.tol"),
-    ("tv_max_iter", "inversion.tv.max_iter"), ("tkd_threshold", "inversion.tkd.threshold"),
-    ("tsvd_threshold", "inversion.tsvd.threshold"), ("tgv_iterations", "inversion.tgv.iterations"),
-    ("rts_pad", "inversion.rts.pad"), ("tv_pad", "inversion.tv.pad"), ("tkd_pad", "inversion.tkd.pad"),
-    ("tsvd_pad", "inversion.tsvd.pad"), ("tikhonov_pad", "inversion.tikhonov.pad"), ("nltv_pad", "inversion.nltv.pad"),
-    ("tgv_erosions", "inversion.tgv.erosions"), ("tgv_alpha1", "inversion.tgv.alpha1"), ("tgv_alpha0", "inversion.tgv.alpha0"),
-    ("tgv_step_size", "inversion.tgv.step_size"),
-    ("tikhonov_lambda", "inversion.tikhonov.lambda"), ("nltv_lambda", "inversion.nltv.lambda"), ("nltv_mu", "inversion.nltv.mu"),
-    ("nltv_tol", "inversion.nltv.tol"), ("nltv_max_iter", "inversion.nltv.max_iter"), ("nltv_newton_iter", "inversion.nltv.max_iter_newton"),
-    ("nltv_rho", "inversion.nltv.rho"), ("nltv_tol_newton", "inversion.nltv.tol_newton"),
-    ("medi_smv", "inversion.medi.smv"), ("medi_smv_radius", "inversion.medi.smv_radius"),
-    ("medi_smv_shrink_mask", "inversion.medi.smv_shrink_mask"),
-    ("medi_msmv", "inversion.medi.msmv"), ("medi_msmv_maxk", "inversion.medi.msmv_maxk"),
-    ("medi_msmv_vessel_radius", "inversion.medi.msmv_vessel_radius"), ("medi_msmv_prefilter", "inversion.medi.msmv_prefilter"), ("medi_lambda", "inversion.medi.lambda"),
-    ("medi_percentage", "inversion.medi.percentage"), ("medi_max_iter", "inversion.medi.max_iter"),
-    ("medi_cg_max_iter", "inversion.medi.cg_max_iter"), ("medi_cg_tol", "inversion.medi.cg_tol"), ("medi_tol", "inversion.medi.tol"),
-    ("medi_merit", "inversion.medi.merit"), ("medi_data_weighting", "inversion.medi.data_weighting"),
-    ("tfi_lambda", "inversion.tfi.lambda"), ("tfi_precond", "inversion.tfi.precond"), ("tfi_percentage", "inversion.tfi.percentage"),
-    ("tfi_max_iter", "inversion.tfi.max_iter"), ("tfi_cg_max_iter", "inversion.tfi.cg_max_iter"), ("tfi_cg_tol", "inversion.tfi.cg_tol"),
-    ("tfi_tol", "inversion.tfi.tol"), ("tfi_data_weighting", "inversion.tfi.data_weighting"),
-    ("medi_csf", "inversion.medi.csf"), ("medi_lambda_csf", "inversion.medi.lambda_csf"),
-    ("medi_csf_r2s_threshold", "inversion.medi.csf_r2s_threshold"), ("medi_csf_erode", "inversion.medi.csf_erode"),
-    ("medi_zeropad", "inversion.medi.zeropad"), ("tfi_merit", "inversion.tfi.merit"), ("tfi_linear", "inversion.tfi.linear"),
-    ("ilsqr_tol", "inversion.ilsqr.tol"), ("ilsqr_max_iter", "inversion.ilsqr.max_iter"), ("ilsqr_pad_mm", "inversion.ilsqr.pad_mm"),
-    ("star_pad", "inversion.star.pad"), ("star_te", "inversion.star.te"), ("star_te_ms", "inversion.star.te"),
-    ("lsqr_residual_weighting", "inversion.lsqr.residual_weighting"), ("lsqr_fit_global_offset", "inversion.lsqr.fit_global_offset"),
-    ("lsqr_tol", "inversion.lsqr.tol"), ("lsqr_max_iter", "inversion.lsqr.max_iter"),
-    ("heidi_enabled", "inversion.heidi.enabled"),
-    ("heidi_cone_threshold", "inversion.heidi.cone_threshold"), ("heidi_gradient_threshold", "inversion.heidi.gradient_threshold"),
-    ("heidi_apply_laplacian_correction", "inversion.heidi.apply_laplacian_correction"),
-    ("heidi_laplacian_threshold", "inversion.heidi.laplacian_threshold"), ("heidi_gradient_mask_floor", "inversion.heidi.gradient_mask_floor"),
-    ("heidi_continuation_steps", "inversion.heidi.continuation_steps"), ("heidi_inner_iterations", "inversion.heidi.inner_iterations"),
-    ("heidi_mu_min", "inversion.heidi.mu_min"), ("heidi_tol", "inversion.heidi.tol"), ("heidi_denoise", "inversion.heidi.denoise"),
-    ("heidi_denoise_iterations", "inversion.heidi.denoise_iterations"), ("heidi_denoise_time_step", "inversion.heidi.denoise_time_step"),
-    ("heidi_denoise_conductance", "inversion.heidi.denoise_conductance"),
-    ("heidi_denoise_reference_itk", "inversion.heidi.denoise_reference_itk"),
-    ("qsmart_inversion", "inversion.qsmart.inversion"), ("qsmart_ilsqr_max_iter", "inversion.qsmart.ilsqr_max_iter"),
-    ("qsmart_ilsqr_pad_mm", "inversion.qsmart.ilsqr_pad_mm"), ("qsmart_sdf_sigma1_stage1", "inversion.qsmart.sdf_sigma1_stage1"),
-    ("qsmart_sdf_sigma2_stage1", "inversion.qsmart.sdf_sigma2_stage1"), ("qsmart_sdf_sigma1_stage2", "inversion.qsmart.sdf_sigma1_stage2"),
-    ("qsmart_sdf_sigma2_stage2", "inversion.qsmart.sdf_sigma2_stage2"),
-    ("qsmart_sdf_lower_lim", "inversion.qsmart.sdf_lower_lim"), ("qsmart_sdf_curv_constant", "inversion.qsmart.sdf_curv_constant"),
-    ("qsmart_vasc_sphere_radius", "inversion.qsmart.vasc_sphere_radius"), ("qsmart_frangi_scale_min", "inversion.qsmart.frangi_scale_min"),
-    ("qsmart_frangi_scale_max", "inversion.qsmart.frangi_scale_max"), ("qsmart_frangi_scale_ratio", "inversion.qsmart.frangi_scale_ratio"),
-    ("qsmart_frangi_c", "inversion.qsmart.frangi_c"), ("qsmart_frangi_c_mode", "inversion.qsmart.frangi_c_mode"),
-    ("qsmart_frangi_c_factor", "inversion.qsmart.frangi_c_factor"),
-    ("qsmart_vessel_magnitude", "inversion.qsmart.vessel_magnitude"), ("qsmart_offset_grid", "inversion.qsmart.offset_grid"), ("qsmart_vessel_units", "inversion.qsmart.vessel_size_units"),
-    ("qsmart_fit_threshold_mode", "field_mapping.qsmart_fit_threshold_mode"),
-    ("qsmart_fit_percentile", "field_mapping.qsmart_fit_percentile"), ("qsmart_fit_threshold", "field_mapping.qsmart_fit_threshold"),
-    ("ndi_tau", "inversion.ndi.tau"), ("ndi_alpha", "inversion.ndi.alpha"), ("ndi_max_iter", "inversion.ndi.max_iter"),
-    ("ndi_auto_stop", "inversion.ndi.auto_stop"),
-    ("fansi_alpha1", "inversion.fansi.alpha1"), ("fansi_mu1", "inversion.fansi.mu1"), ("fansi_mu2", "inversion.fansi.mu2"),
-    ("fansi_alpha0", "inversion.fansi.alpha0"), ("fansi_mu0", "inversion.fansi.mu0"), ("fansi_max_iter", "inversion.fansi.max_iter"),
-    ("fansi_tol_update", "inversion.fansi.tol_update"), ("fansi_tol_delta", "inversion.fansi.tol_delta"),
-    ("l1qsm_alpha1", "inversion.l1qsm.alpha1"), ("l1qsm_mu1", "inversion.l1qsm.mu1"), ("l1qsm_mu2", "inversion.l1qsm.mu2"),
-    ("l1qsm_mu3", "inversion.l1qsm.mu3"), ("l1qsm_lambda", "inversion.l1qsm.lambda"), ("l1qsm_max_iter", "inversion.l1qsm.max_iter"),
-    ("l1qsm_tol_update", "inversion.l1qsm.tol_update"), ("l1qsm_tol_delta", "inversion.l1qsm.tol_delta"),
-    ("whqsm_alpha1", "inversion.whqsm.alpha1"), ("whqsm_mu1", "inversion.whqsm.mu1"), ("whqsm_mu2", "inversion.whqsm.mu2"),
-    ("whqsm_beta", "inversion.whqsm.beta"), ("whqsm_muh", "inversion.whqsm.muh"), ("whqsm_max_iter", "inversion.whqsm.max_iter"),
-    ("whqsm_tol_update", "inversion.whqsm.tol_update"), ("whqsm_tol_delta", "inversion.whqsm.tol_delta"),
-    ("whqsm_weight", "inversion.whqsm.weight"), ("ilsqr_precision", "inversion.ilsqr.precision"),
-    ("hdqsm_alpha_l2", "inversion.hdqsm.alpha_l2"), ("hdqsm_mu1_l2", "inversion.hdqsm.mu1_l2"), ("hdqsm_mu2", "inversion.hdqsm.mu2"),
-    ("hdqsm_max_iter_l1", "inversion.hdqsm.max_iter_l1"), ("hdqsm_max_iter_l2", "inversion.hdqsm.max_iter_l2"),
-    ("hdqsm_tol_update", "inversion.hdqsm.tol_update"),
-    ("amp_pe_wave_order", "inversion.amp_pe.wave_order"), ("amp_pe_nlevel", "inversion.amp_pe.nlevel"),
-    ("amp_pe_wave_pec", "inversion.amp_pe.wave_pec"), ("amp_pe_simulated_te", "inversion.amp_pe.simulated_te"),
-    ("amp_pe_max_linearization_ite", "inversion.amp_pe.max_linearization_ite"), ("amp_pe_tikhonov_beta", "inversion.amp_pe.tikhonov_beta"),
-    ("amp_pe_damp_rate_sig", "inversion.amp_pe.damp_rate_sig"), ("amp_pe_damp_rate_par", "inversion.amp_pe.damp_rate_par"),
-    ("amp_pe_max_pe_spar_ite", "inversion.amp_pe.max_pe_spar_ite"), ("amp_pe_max_pe_est_ite", "inversion.amp_pe.max_pe_est_ite"),
-    ("amp_pe_cvg_thd", "inversion.amp_pe.cvg_thd"),
-    ("dl_tiling", "inversion.tile_size"), ("dl_tile_size", "inversion.tile_size"), ("dl_tile_halo", "inversion.tile_halo"),
-    ("orientation_algorithm", "multi_orientation.algorithm"), ("orientation_lambda", "multi_orientation.lambda"),
-    ("orientation_reference", "multi_orientation.reference"),
-    ("cosmos_magnitude_weighting", "multi_orientation.magnitude_weighting"), ("cosmos_tol", "multi_orientation.cosmos_tol"),
-    ("cosmos_max_iter", "multi_orientation.cosmos_max_iter"), ("orientation_registration", "multi_orientation.register"),
-    ("multi_orientation_force", "multi_orientation.force"), ("qsm_reference", "qsm.reference"),
-    ("do_chi_separation", "pipeline.do_chi_separation"), ("separation_algorithm", "separation.algorithm"),
-    ("sep_r2starqsm_r_const_3t", "separation.r2star_qsm.r_const_3t"), ("sep_decompose_n_inner", "separation.decompose.n_inner"),
-    ("sep_decompose_chi_bound_mode", "separation.decompose.chi_bound"), ("sep_decompose_chi_bound", "separation.decompose.chi_bound"),
-    ("sep_decompose_unwrap_phase", "separation.decompose.unwrap_phase"),
-    ("sep_decompose_fit", "separation.decompose.fit"),
-    ("sep_decompose_max_iterations", "separation.decompose.lsqcurvefit.max_iterations"),
-    ("sep_decompose_max_fevals", "separation.decompose.lsqcurvefit.max_function_evaluations"),
-    ("sep_decompose_function_tol", "separation.decompose.lsqcurvefit.function_tolerance"),
-    ("sep_decompose_step_tol", "separation.decompose.lsqcurvefit.step_tolerance"),
-    ("sep_decompose_optimality_tol", "separation.decompose.lsqcurvefit.optimality_tolerance"),
-    ("sep_decompose_fd_step", "separation.decompose.lsqcurvefit.finite_difference_step"),
-    ("sep_decompose_typical_x", "separation.decompose.lsqcurvefit.typical_x"),
-    ("sep_ilsqr_dr_pos", "separation.chi_sep_ilsqr.dr_pos"), ("sep_ilsqr_dr_neg", "separation.chi_sep_ilsqr.dr_neg"),
-    ("sep_ilsqr_pad", "separation.chi_sep_ilsqr.pad"),
-    ("sep_ilsqr_cg_max_iter_lsqr", "separation.chi_sep_ilsqr.cg_max_iter_lsqr"),
-    ("sep_ilsqr_cg_tol_lsqr", "separation.chi_sep_ilsqr.cg_tol_lsqr"),
-    ("sep_ilsqr_cg_max_iter_sa", "separation.chi_sep_ilsqr.cg_max_iter_sa"),
-    ("sep_ilsqr_cg_tol_sa", "separation.chi_sep_ilsqr.cg_tol_sa"), ("sep_ilsqr_d2_thr", "separation.chi_sep_ilsqr.d2_thr"),
-    ("sep_ilsqr_prc_w_i_min", "separation.chi_sep_ilsqr.prc_w_i_min"), ("sep_ilsqr_prc_w_i_max", "separation.chi_sep_ilsqr.prc_w_i_max"),
-    ("sep_ilsqr_prc_w_g_min", "separation.chi_sep_ilsqr.prc_w_g_min"), ("sep_ilsqr_prc_w_g_max", "separation.chi_sep_ilsqr.prc_w_g_max"),
-    ("sep_ilsqr_qsm_max_iter", "separation.chi_sep_ilsqr.qsm_ilsqr.max_iter"),
-    ("sep_ilsqr_qsm_tol", "separation.chi_sep_ilsqr.qsm_ilsqr.tol"),
-    ("sep_ilsqr_qsm_pad_mm", "separation.chi_sep_ilsqr.qsm_ilsqr.pad_mm"),
-    ("sep_ilsqr_qsm_precision", "separation.chi_sep_ilsqr.qsm_ilsqr.precision"),
-    ("sep_medi_lambda", "separation.chi_sep_medi.lambda"), ("sep_medi_lambda_csf", "separation.chi_sep_medi.lambda_csf"),
-    ("sep_medi_dr_pos", "separation.chi_sep_medi.dr_pos"), ("sep_medi_dr_neg", "separation.chi_sep_medi.dr_neg"),
-    ("sep_medi_pad", "separation.chi_sep_medi.pad"), ("sep_medi_tol", "separation.chi_sep_medi.tol"),
-    ("sep_medi_max_iter", "separation.chi_sep_medi.max_iter"), ("sep_medi_cg_tol", "separation.chi_sep_medi.cg_tol"),
-    ("sep_medi_cg_max_iter", "separation.chi_sep_medi.cg_max_iter"),
-    ("sep_medi_qsm_max_iter", "separation.chi_sep_medi.qsm_ilsqr.max_iter"),
-    ("sep_medi_qsm_tol", "separation.chi_sep_medi.qsm_ilsqr.tol"),
-    ("sep_medi_qsm_pad_mm", "separation.chi_sep_medi.qsm_ilsqr.pad_mm"),
-    ("sep_medi_qsm_precision", "separation.chi_sep_medi.qsm_ilsqr.precision"),
-    ("sep_medi_csf_r2star", "separation.chi_sep_medi.csf_r2star"),
-    ("sep_wavesep_dr_pos", "separation.wavesep.dr_pos"), ("sep_wavesep_dr_neg", "separation.wavesep.dr_neg"),
-    ("sep_wavesep_alpha", "separation.wavesep.alpha"), ("sep_wavesep_lambda", "separation.wavesep.lambda"),
-    ("sep_wavesep_wavelet_order", "separation.wavesep.wavelet_order"), ("sep_wavesep_max_iter", "separation.wavesep.max_iter"),
-    ("sep_wavesep_tol", "separation.wavesep.tol"), ("sep_hcchisep_dr_pos_3t", "separation.hc_chisep.dr_pos_3t"),
-    ("sep_hcchisep_bin_hz", "separation.hc_chisep.bin_hz"), ("sep_chisepnet_route", "separation.chi_sepnet.route"), ("sep_chisepnet_patch", "separation.chi_sepnet.patch"), ("sep_chisepnet_frame_patch", "separation.chi_sepnet.frame_patch"), ("sep_susepnet_patch", "separation.susep_net.patch"), ("custom_qsm_tool", "separation.custom_qsm_tool"),
-    ("do_magnitude", "pipeline.do_magnitude"), ("do_swi", "pipeline.do_swi"), ("swi_unwrap", "swi.unwrap"), ("swi_scaling", "swi.scaling"), ("swi_strength", "swi.strength"),
-    ("swi_hp_sigma", "swi.hp_sigma"), ("swi_mip_window", "swi.mip_window"),
-    ("swi_filtered_phase", "swi.filtered_phase"), ("do_smwi", "pipeline.do_smwi"),
-    ("smwi_threshold", "smwi.threshold_ppm"), ("smwi_power", "smwi.power"), ("smwi_mip_window", "smwi.mip_window"),
-    ("do_t2starmap", "pipeline.do_t2starmap"), ("do_r2starmap", "pipeline.do_r2starmap"), ("do_r2map", "pipeline.do_r2map"),
-    ("custom_r2_tool", "separation.custom_r2_tool"), ("do_r2primemap", "pipeline.do_r2primemap"),
-    ("custom_r2prime_tool", "separation.custom_r2prime_tool"), ("r2prime_strategy", "separation.r2prime_strategy"),
-    ("r2primenet_ignore_field_mismatch", "separation.r2primenet.ignore_field_mismatch"), ("r2primenet_patch", "separation.r2primenet.patch"),
-    ("do_segmentation", "pipeline.do_segmentation"), ("segmentation_source", "segmentation.custom_dseg_tool"),
-    ("custom_dseg_tool", "segmentation.custom_dseg_tool"), ("synthseg_version", "segmentation.version"),
-    ("synthseg_crop", "segmentation.crop"), ("synthseg_patch", "segmentation.patch"), ("synthseg_flip_averaging", "segmentation.flip_averaging"),
-    ("synthseg_topology_cleanup", "segmentation.topology_cleanup"), ("synthseg_smoothing", "segmentation.sigma_smoothing"),
-    ("synthseg_sigma", "segmentation.sigma_smoothing"), ("do_analysis", "pipeline.do_analysis"), ("export_dicom", "pipeline.export_dicom"),
+use std::sync::LazyLock;
+
+use qsmxt_engine::schema;
+
+/// The config setting a TUI row edits, by the row's field name, in the settings' order; a setting
+/// with a value row has two names. Rows that edit no config setting (the Execution tab, DICOM
+/// export's run options, the mask preset, which writes the recipe) are not listed. The settings
+/// tests (`schema_parity`) hold the TUI to it.
+pub static FIELD_PATHS: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(derive);
+
+/// The TUI's short prefix for each group of settings. A row's field name is its setting's path
+/// with the longest of these prefixes it starts with swapped for the short one, and its other
+/// dots made underscores: `bg_removal.vsharp.threshold` is `vsharp_threshold`,
+/// `homogeneity.sigma_mm` (no prefix here) `homogeneity_sigma_mm`.
+const PREFIXES: &[(&str, &str)] = &[
+    ("pipeline.", ""), ("masking.", ""), ("field_mapping.", ""), ("bg_removal.", ""), ("inversion.", ""),
+    ("registration.", "reg_"), ("motion_correction.", "motion_"), ("multi_orientation.", "orientation_"),
+    ("segmentation.", "synthseg_"), ("separation.", ""), ("separation.r2star_qsm.", "sep_r2starqsm_"),
+    ("separation.decompose.", "sep_decompose_"), ("separation.decompose.lsqcurvefit.", "sep_decompose_"),
+    ("separation.chi_sep_ilsqr.", "sep_ilsqr_"), ("separation.chi_sep_ilsqr.qsm_ilsqr.", "sep_ilsqr_qsm_"),
+    ("separation.chi_sep_medi.", "sep_medi_"), ("separation.chi_sep_medi.qsm_ilsqr.", "sep_medi_qsm_"),
+    ("separation.wavesep.", "sep_wavesep_"), ("separation.hc_chisep.", "sep_hcchisep_"),
+    ("separation.chi_sepnet.", "sep_chisepnet_"), ("separation.susep_net.", "sep_susepnet_"),
 ];
+
+/// The settings whose rows the rule ([`PREFIXES`]) does not name, with each of their rows' names
+/// in order: the setting's own row, then its value's row (an echo time's milliseconds, the size
+/// of a checkbox with a value), or a choice the TUI makes about it before either.
+const NAMES: &[(&str, &[&str])] = &[
+    ("motion_correction.enabled", &["motion_correction"]),
+    ("motion_correction.reference", &["motion_reference", "motion_reference_echo"]),
+    ("field_mapping.prelude.num_phase_partitions", &["prelude_partitions"]),
+    ("field_mapping.romeo.temporal_uncertain_unwrapping", &["romeo_temporal_uncertain", "romeo_temporal_uncertain_unwrapping"]),
+    ("bg_removal.algorithm", &["bf_algorithm"]), ("bg_removal.polish_mask", &["bf_polish_mask"]),
+    ("bg_removal.ukb_mask_trim", &["bf_ukb_mask_trim"]), ("bg_removal.erode_voxels", &["bf_erode_voxels"]),
+    ("inversion.algorithm", &["qsm_algorithm"]),
+    ("inversion.nltv.te", &["nltv_te", "nltv_te_ms"]), ("inversion.medi.te", &["medi_te", "medi_te_ms"]),
+    ("inversion.tfi.te", &["tfi_te", "tfi_te_ms"]), ("inversion.ndi.te", &["ndi_te", "ndi_te_ms"]),
+    ("inversion.fansi.te", &["fansi_te", "fansi_te_ms"]), ("inversion.l1qsm.te", &["l1qsm_te", "l1qsm_te_ms"]),
+    ("inversion.whqsm.te", &["whqsm_te", "whqsm_te_ms"]), ("inversion.heidi.te", &["heidi_te", "heidi_te_ms"]),
+    ("inversion.tgv.te", &["tgv_te", "tgv_te_ms"]), ("inversion.star.te", &["star_te", "star_te_ms"]),
+    ("inversion.nltv.max_iter_newton", &["nltv_newton_iter"]),
+    ("inversion.qsmart.vessel_size_units", &["qsmart_vessel_units"]),
+    ("inversion.tile_size", &["dl_tiling", "dl_tile_size"]), ("inversion.tile_halo", &["dl_tile_halo"]),
+    ("multi_orientation.magnitude_weighting", &["cosmos_magnitude_weighting"]),
+    ("multi_orientation.cosmos_tol", &["cosmos_tol"]), ("multi_orientation.cosmos_max_iter", &["cosmos_max_iter"]),
+    ("multi_orientation.register", &["orientation_registration"]),
+    ("multi_orientation.force", &["multi_orientation_force"]),
+    ("separation.algorithm", &["separation_algorithm"]),
+    ("separation.decompose.chi_bound", &["sep_decompose_chi_bound_mode", "sep_decompose_chi_bound"]),
+    ("separation.decompose.lsqcurvefit.max_function_evaluations", &["sep_decompose_max_fevals"]),
+    ("separation.decompose.lsqcurvefit.function_tolerance", &["sep_decompose_function_tol"]),
+    ("separation.decompose.lsqcurvefit.step_tolerance", &["sep_decompose_step_tol"]),
+    ("separation.decompose.lsqcurvefit.optimality_tolerance", &["sep_decompose_optimality_tol"]),
+    ("separation.decompose.lsqcurvefit.finite_difference_step", &["sep_decompose_fd_step"]),
+    ("smwi.threshold_ppm", &["smwi_threshold"]),
+    ("segmentation.custom_dseg_tool", &["segmentation_source", "custom_dseg_tool"]),
+    ("segmentation.sigma_smoothing", &["synthseg_smoothing", "synthseg_sigma"]),
+];
+
+/// Settings the TUI edits with a widget of its own rather than a named row: the mask recipe,
+/// the reference region picker and the orientation grouping.
+const NO_ROW: &[&str] = &[
+    "masking.sections", "masking.combine", "masking.refinements", "masking.two_pass_sections",
+    "masking.two_pass_combine", "qsm.reference_region", "multi_orientation.group_by",
+];
+
+/// A row's field name by the rule: its setting's path with its group's prefix ([`PREFIXES`])
+/// made short and its dots underscores.
+fn rule_name(path: &str) -> String {
+    let (long, short) = PREFIXES.iter().filter(|(p, _)| path.starts_with(p)).max_by_key(|(p, _)| p.len()).copied().unwrap_or(("", ""));
+    format!("{short}{}", path[long.len()..].replace('.', "_"))
+}
+
+/// Every row's field name and the setting it edits, in the settings' order.
+fn derive() -> Vec<(&'static str, &'static str)> {
+    let mut out = Vec::new();
+    for path in schema::settings().iter().map(|s| s.path).filter(|p| !NO_ROW.contains(p)) {
+        match NAMES.iter().find(|(p, _)| *p == path) {
+            Some((_, names)) => out.extend(names.iter().map(|n| (*n, path))),
+            // Built once, so the few hundred names are leaked once to live as long as the table.
+            None => out.push((&*Box::leak(rule_name(path).into_boxed_str()), path)),
+        }
+    }
+    out
+}
 
 /// The config setting a TUI row edits, by the row's field name ([`FIELD_PATHS`]).
 pub fn field_path(field: &str) -> Option<&'static str> {
@@ -220,4 +98,34 @@ pub fn field_path(field: &str) -> Option<&'static str> {
 /// The form field of a config setting path: [`field_path`]'s inverse.
 pub fn field_of_path(path: &str) -> Option<&'static str> {
     FIELD_PATHS.iter().find(|(_, p)| *p == path).map(|(f, _)| *f)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// No two rows share a field name.
+    #[test]
+    fn field_names_are_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for (field, path) in FIELD_PATHS.iter() {
+            assert!(seen.insert(field), "{field} names two rows (one edits {path})");
+        }
+    }
+
+    /// The tables name registry settings, every prefix names some row, and every entry of
+    /// [`NAMES`] is one the rule gets wrong.
+    #[test]
+    fn the_tables_are_the_fewest_that_name_every_row() {
+        let paths: Vec<&str> = schema::settings().iter().map(|s| s.path).collect();
+        for path in NO_ROW.iter().chain(NAMES.iter().map(|(p, _)| p)) {
+            assert!(paths.contains(path), "{path} is not a setting");
+        }
+        for (path, names) in NAMES {
+            assert_ne!(*names, [rule_name(path).as_str()], "{path}'s row is named by the rule");
+        }
+        for (long, _) in PREFIXES {
+            assert!(FIELD_PATHS.iter().any(|(_, p)| p.starts_with(long)), "no setting starts with {long}");
+        }
+    }
 }

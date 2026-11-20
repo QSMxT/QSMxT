@@ -81,7 +81,7 @@ impl App {
             }
             let differs = |path: &str| now.as_ref().is_none_or(|n| value_at(n, path) != value_at(&target, path));
             let before = self.form_print();
-            for (field, path) in FIELD_PATHS {
+            for (field, path) in FIELD_PATHS.iter() {
                 if !differs(path) || SPECIAL.contains(field) {
                     continue;
                 }
