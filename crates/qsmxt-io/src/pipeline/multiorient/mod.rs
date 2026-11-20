@@ -54,7 +54,7 @@ use crate::multiorient::{
     check_directions, DirectionSource, MultiOrientKind, Orientation, MIN_SPREAD_DEG,
 };
 use qsm_core::registration::{register_rigid, RigidParams, RigidTransform};
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
 mod reconstruct;
 pub use reconstruct::reconstruct_group;
@@ -202,8 +202,8 @@ pub fn preview_group(
 /// Which reconstruction the config asks for.
 pub fn kind_of(config: &PipelineConfig) -> MultiOrientKind {
     match config.multi_orientation.algorithm {
-        crate::pipeline::config::MultiOrientAlgorithm::Cosmos => MultiOrientKind::Cosmos,
-        crate::pipeline::config::MultiOrientAlgorithm::Sti => MultiOrientKind::Sti,
+        qsmxt_engine::MultiOrientAlgorithm::Cosmos => MultiOrientKind::Cosmos,
+        qsmxt_engine::MultiOrientAlgorithm::Sti => MultiOrientKind::Sti,
     }
 }
 
@@ -259,7 +259,7 @@ fn on_working_grid(output: &DerivativeOutputs, key: &AcquisitionKey, published: 
 
 /// Whether the run's outputs were returned to its acquired grid by its last run.
 fn returned_to_acquired(output: &DerivativeOutputs, key: &AcquisitionKey) -> bool {
-    std::fs::read_to_string(output.state_path(key)).ok()
+    fs_err::read_to_string(output.state_path(key)).ok()
         .and_then(|t| serde_json::from_str::<crate::pipeline::graph::PipelineState>(&t).ok())
         .is_some_and(|st| st.completed_steps.contains_key("output_space"))
 }
@@ -274,7 +274,7 @@ struct MemberPaths {
 /// Whether the run was resampled to an axial working grid (its state records the grid it came
 /// from).
 fn was_resampled(output: &DerivativeOutputs, key: &AcquisitionKey) -> bool {
-    std::fs::read_to_string(output.state_path(key)).ok()
+    fs_err::read_to_string(output.state_path(key)).ok()
         .and_then(|t| serde_json::from_str::<crate::pipeline::graph::PipelineState>(&t).ok())
         .and_then(|st| st.run_metadata)
         .is_some_and(|m| m.source_geometry.is_some())
@@ -377,7 +377,7 @@ fn load_member(paths: &MemberPaths, run: &QsmRun) -> crate::Result<MemberData> {
 /// A file's identity for the cache key: path, size and modification time. A member that
 /// recomputes its background removal rewrites its local field, which changes this.
 fn file_identity(p: &std::path::Path) -> serde_json::Value {
-    let meta = std::fs::metadata(p).ok();
+    let meta = fs_err::metadata(p).ok();
     serde_json::json!({
         "path": p.display().to_string(),
         "size": meta.as_ref().map(|m| m.len()),
@@ -731,7 +731,7 @@ mod tests {
             .find(|p| p.extension().is_some_and(|e| e == "json"))
             .expect("a sidecar should be written");
         let json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(sidecar).unwrap()).unwrap();
+            serde_json::from_str(&fs_err::read_to_string(sidecar).unwrap()).unwrap();
         let sources = json["B0_dir_sources"].as_array().unwrap();
         assert!(
             sources.iter().all(|s| s == "registration"),
@@ -750,9 +750,9 @@ mod tests {
             &output, "qsmxt run",
         ).unwrap();
         let act: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(dir.path().join("prov/prov-qsmxt_act.json")).unwrap()).unwrap();
+            &fs_err::read_to_string(dir.path().join("prov/prov-qsmxt_act.json")).unwrap()).unwrap();
         let cosmos: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(output.multiorient_sidecar_path(&key, "cosmos")).unwrap()).unwrap();
+            &fs_err::read_to_string(output.multiorient_sidecar_path(&key, "cosmos")).unwrap()).unwrap();
         let by = cosmos["GeneratedBy"].as_str().expect("COSMOS sidecar has a GeneratedBy");
         assert_eq!(by, format!("bids::prov/#cosmos-{}", key.basename()));
         assert_eq!(act[by]["Used"].as_array().unwrap().len(), 1 + 3 * 3, "env + field, mask, magnitude per member");
@@ -910,7 +910,7 @@ mod tests {
             .find(|p| p.extension().is_some_and(|e| e == "json"))
             .unwrap();
         let json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(sidecar).unwrap()).unwrap();
+            serde_json::from_str(&fs_err::read_to_string(sidecar).unwrap()).unwrap();
         assert!(json["Registration"].is_null(), "should not have registered: {:?}", json["Registration"]);
         let sources = json["B0_dir_sources"].as_array().unwrap();
         assert!(sources.iter().all(|s| s == "sidecar"), "{sources:?}");
@@ -964,7 +964,7 @@ mod tests {
         let key = group_key(&members);
         let table = output.segmentation_stats_path(&key);
         assert!(written.contains(&table), "{written:?}");
-        let rows = crate::pipeline::stats::parse_tsv(&std::fs::read_to_string(&table).unwrap());
+        let rows = crate::pipeline::stats::parse_tsv(&fs_err::read_to_string(&table).unwrap());
         assert!(!rows.is_empty() && rows.iter().all(|r| r.map == "desc-cosmos_Chimap"));
 
         // Referenced over the intersection: the mean of the map over its support is ~0.
@@ -991,7 +991,7 @@ mod tests {
         // The sidecar is under test, not the solve: a couple of CG steps are enough.
         config.multi_orientation.cosmos_max_iter = 2;
         reconstruct_group(&group, &members, &config, &output, true, &|_| {}).unwrap();
-        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+        let json: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(
             output.multiorient_sidecar_path(&group_key(&members), "cosmos")).unwrap()).unwrap();
         assert_eq!(json["MagnitudeWeighting"], true);
     }
@@ -1006,7 +1006,7 @@ mod tests {
         assert!(m.validate().unwrap_err().contains("--cosmos-magnitude-weighting"));
         m.magnitude_weighting = true;
         assert!(m.validate().is_ok());
-        m.algorithm = crate::pipeline::config::MultiOrientAlgorithm::Sti;
+        m.algorithm = qsmxt_engine::MultiOrientAlgorithm::Sti;
         assert!(m.validate().unwrap_err().contains("STI"));
     }
 

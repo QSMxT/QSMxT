@@ -10,14 +10,13 @@ use std::path::{Path, PathBuf};
 use log::info;
 
 use super::common::{load_nifti, save_mask, save_nifti};
-use crate::bids::{entities, naming};
+use qsmxt_io::bids::{entities, naming};
 use crate::cli::{CombineCommand, CombineMcpc3dsArgs, UnwrapAlgorithmArg};
-use crate::error::QsmxtError;
-use crate::pipeline::phase;
+use qsmxt_io::error::QsmxtError;
 
 /// Group files into `[coil][echo]` order using BIDS `coil-NN` / `echo-N` entities when every
 /// file has them, otherwise coil-major in the given order with `num_echoes` per coil.
-fn group_by_coil(files: &[PathBuf], num_echoes: Option<usize>, what: &str) -> crate::Result<Vec<Vec<PathBuf>>> {
+fn group_by_coil(files: &[PathBuf], num_echoes: Option<usize>, what: &str) -> qsmxt_io::Result<Vec<Vec<PathBuf>>> {
     let parsed: Vec<Option<(u32, u32)>> = files.iter().map(|f| {
         let name = f.file_name()?.to_str()?;
         let e = entities::parse_entities(name)?;
@@ -53,12 +52,12 @@ fn group_by_coil(files: &[PathBuf], num_echoes: Option<usize>, what: &str) -> cr
     }
 }
 
-pub(crate) fn echo_times_from_sidecars(phase_files: &[PathBuf]) -> crate::Result<Vec<f64>> {
+pub(crate) fn echo_times_from_sidecars(phase_files: &[PathBuf]) -> qsmxt_io::Result<Vec<f64>> {
     let mut tes = Vec::with_capacity(phase_files.len());
     for f in phase_files {
         let js = entities::sidecar_path(f).filter(|p| p.exists()).ok_or_else(|| QsmxtError::Config(format!(
             "no echo times: pass --tes or provide a JSON sidecar next to {}", f.display())))?;
-        tes.push(crate::bids::sidecar::read_sidecar(&js)?.echo_time);
+        tes.push(qsmxt_io::bids::sidecar::read_sidecar(&js)?.echo_time);
     }
     Ok(tes)
 }
@@ -72,13 +71,13 @@ fn input_suffix(phase: &Path) -> String {
         .unwrap_or_else(|| "MEGRE".to_string())
 }
 
-pub fn execute(cmd: CombineCommand) -> crate::Result<()> {
+pub fn execute(cmd: CombineCommand) -> qsmxt_io::Result<()> {
     match cmd {
         CombineCommand::Mcpc3ds(args) => mcpc3ds(args),
     }
 }
 
-fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
+fn mcpc3ds(args: CombineMcpc3dsArgs) -> qsmxt_io::Result<()> {
     let phase_files = group_by_coil(&args.phase, args.num_echoes, "--phase")?;
     let mag_files = group_by_coil(&args.magnitude, args.num_echoes, "--magnitude")?;
     let n_coils = phase_files.len();
@@ -128,7 +127,7 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
     // Into radians, with one conversion for every coil and echo (scale_phases_to_pi).
     {
         let mut all: Vec<&mut Vec<f64>> = phases.iter_mut().flatten().collect();
-        phase::scale_phases_to_pi(&mut all);
+        qsm_core::pipeline::scale_phases_to_pi(&mut all);
     }
 
     let sigma = match &args.sigma {
@@ -138,7 +137,11 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
     let unwrap = match args.hip_unwrapping {
         UnwrapAlgorithmArg::Romeo => qsm_core::unwrap::UnwrapMethod::Romeo,
         UnwrapAlgorithmArg::Laplacian => qsm_core::unwrap::UnwrapMethod::Laplacian,
-        UnwrapAlgorithmArg::Prelude => qsm_core::unwrap::UnwrapMethod::Prelude(args.prelude_params.to_prelude_params()),
+        UnwrapAlgorithmArg::Prelude => {
+            let mut cfg = qsmxt_engine::PipelineConfig::default();
+            qsmxt_io::settings::apply(&mut cfg, &args.settings.0)?;
+            qsm_core::unwrap::UnwrapMethod::Prelude((&cfg.field_mapping.prelude).into())
+        }
         UnwrapAlgorithmArg::MediRegionGrowing => qsm_core::unwrap::UnwrapMethod::MediRegionGrowing,
     };
     let combined = qsm_core::utils::mcpc3ds_combine(&phases, &mags, &tes, sigma, [0, 1], unwrap, &grid)?;
@@ -147,7 +150,7 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
 
     if let Some(parent) = args.output.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
+            fs_err::create_dir_all(parent)?;
         }
     }
     let suffix = input_suffix(&phase_files[0][0]);

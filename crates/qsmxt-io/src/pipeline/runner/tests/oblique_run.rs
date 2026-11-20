@@ -61,7 +61,7 @@ fn fast_config() -> PipelineConfig {
     use qsmxt_engine::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
     let mut config = PipelineConfig::default();
     config.inversion.algorithm = QsmAlgorithm::Tkd;
-    config.field_mapping.unwrapping_algorithm = crate::pipeline::config::UnwrappingAlgorithm::Laplacian;
+    config.field_mapping.unwrapping_algorithm = qsmxt_engine::UnwrappingAlgorithm::Laplacian;
     config.masking.sections = vec![MaskSection {
         input: MaskingInput::Magnitude,
         generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
@@ -116,7 +116,7 @@ fn the_datasets_methods_come_from_its_runs_and_a_run_that_differs_is_kept_in_cha
     config.masking.custom_mask_tool = Some("nothing-here".into());
     let derivatives = dir.path().join("out");
     let output = DerivativeOutputs::new(&derivatives);
-    std::fs::create_dir_all(&derivatives).unwrap();
+    fs_err::create_dir_all(&derivatives).unwrap();
     crate::dataset::write_dataset_files(&derivatives, dir.path(), &config, &runs[..3]).unwrap();
     assert!(output.dataset_graph_path().with_extension("svg").exists());
     for run in &runs[..3] {
@@ -128,11 +128,11 @@ fn the_datasets_methods_come_from_its_runs_and_a_run_that_differs_is_kept_in_cha
         }
     }
     let summarise = || crate::dataset::write_dataset_summary(&derivatives, &config).unwrap();
-    let read = |p: std::path::PathBuf| std::fs::read_to_string(p).unwrap();
+    let read = |p: std::path::PathBuf| fs_err::read_to_string(p).unwrap();
     summarise();
     let methods = read(derivatives.join("methods.md"));
     assert!(!methods.contains("Where available") && methods.contains("A brain mask was generated"), "{methods}");
-    assert!(crate::pipeline::methods::generate_methods(&config).contains("Where available"));
+    assert!(qsmxt_engine::methods::generate_methods(&config).contains("Where available"));
     assert_eq!(methods, read(output.run_methods_path(&runs[0].key)));
     assert!(!output.changes_dir().exists());
     let graph = read(output.dataset_graph_path());
@@ -143,12 +143,12 @@ fn the_datasets_methods_come_from_its_runs_and_a_run_that_differs_is_kept_in_cha
     let mut file: RunRecordFile = serde_json::from_str(&read(output.run_record_path(c))).unwrap();
     let mask = file.record.steps.iter_mut().find(|s| s.id == "mask").unwrap();
     mask.decisions = vec![Decision::new(Topic::MaskSource, Choice::Supplied, "Taken from the supplied mask.")];
-    std::fs::write(output.run_record_path(c), serde_json::to_string(&file).unwrap()).unwrap();
+    fs_err::write(output.run_record_path(c), serde_json::to_string(&file).unwrap()).unwrap();
     summarise();
     let methods = read(derivatives.join("methods.md"));
     assert!(methods.contains("Where available"), "{methods}");
     let changes = || -> Vec<String> {
-        let mut v: Vec<String> = std::fs::read_dir(output.changes_dir()).map(|d| d.map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
+        let mut v: Vec<String> = fs_err::read_dir(output.changes_dir()).map(|d| d.map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
         v.sort();
         v
     };
@@ -171,11 +171,11 @@ fn the_datasets_methods_come_from_its_runs_and_a_run_that_differs_is_kept_in_cha
     assert!(output.run_record_path(&runs[3].key).exists());
     let b_state = crate::pipeline::graph::state_file_path(&derivatives, &runs[1].key);
     let saved = read(b_state.clone());
-    std::fs::write(&b_state, saved.replace("\"complete\"", "\"running\"")).unwrap();
+    fs_err::write(&b_state, saved.replace("\"complete\"", "\"running\"")).unwrap();
     summarise();
     let graph = read(output.dataset_graph_path());
     assert!(graph.contains("1 of 2: supplied (nothing-here)"), "{graph}");
-    std::fs::write(&b_state, saved).unwrap();
+    fs_err::write(&b_state, saved).unwrap();
 
     // Run c again: it is like the rest, and changes/ goes.
     run_pipeline_cached(&runs[2], &config, &output, false, &|_| {}).unwrap();
@@ -214,7 +214,7 @@ fn a_rerun_after_returning_to_the_acquired_grid_reads_the_working_grid() {
     assert_eq!(voxels(&output.mask_path(&run.key)), ACQUIRED);
 
     // Asking for the working grid on a re-run brings the working-grid outputs back.
-    config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+    config.pipeline.output_space = qsmxt_engine::OutputSpace::Working;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     // ...under their working-space names (#275).
     assert_ne!(voxels(&output.published(&run.key).qsm_path(&run.key)), ACQUIRED);
@@ -229,7 +229,7 @@ fn returning_to_the_acquired_grid_leaves_other_runs_alone() {
     let output = DerivativeOutputs::new(&dir.path().join("out"));
     let a = oblique_run(dir.path(), "a", 1);
     let mut working = resampling_config();
-    working.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+    working.pipeline.output_space = qsmxt_engine::OutputSpace::Working;
     run_pipeline_cached(&a, &working, &output, false, &|_| {}).unwrap();
     let a_mask = output.published(&a.key).mask_path(&a.key);
     let a_working = voxels(&a_mask);
@@ -265,12 +265,12 @@ fn every_published_image_has_resolvable_provenance() {
         .unwrap();
 
     let read = |p: &Path| -> serde_json::Value {
-        serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+        serde_json::from_str(&fs_err::read_to_string(p).unwrap()).unwrap()
     };
     let act = read(&deriv.join("prov/prov-qsmxt_act.json"));
     let ent = read(&deriv.join("prov/prov-qsmxt_ent.json"));
     let mut images = 0;
-    for entry in std::fs::read_dir(output.anat_dir(&run.key)).unwrap() {
+    for entry in fs_err::read_dir(output.anat_dir(&run.key)).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().is_none_or(|e| e != "nii") {
             continue;
@@ -298,8 +298,8 @@ fn every_published_image_has_resolvable_provenance() {
     // activities that made them.
     let resample = &act[format!("bids::prov/#output_space-{}", run.key.basename())];
     assert!(resample["Used"].as_array().unwrap().len() > 1, "{resample}");
-    for dir_entry in std::fs::read_dir(deriv.join("prov")).unwrap() {
-        let text = std::fs::read_to_string(dir_entry.unwrap().path()).unwrap();
+    for dir_entry in fs_err::read_dir(deriv.join("prov")).unwrap() {
+        let text = fs_err::read_to_string(dir_entry.unwrap().path()).unwrap();
         assert!(!text.contains("unknown"), "provenance still says unknown");
     }
     let soft = read(&deriv.join("prov/prov-qsmxt_soft.json"));
@@ -384,14 +384,14 @@ fn touching_an_input_recomputes_the_run() {
     let output = DerivativeOutputs::new(&dir.path().join("out"));
     let config = fast_config();
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
-    let mtime = |p: PathBuf| std::fs::metadata(p).unwrap().modified().unwrap();
+    let mtime = |p: PathBuf| fs_err::metadata(p).unwrap().modified().unwrap();
     let first = mtime(output.qsm_path(&run.key));
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     assert_eq!(mtime(output.qsm_path(&run.key)), first, "an untouched re-run recomputed χ");
 
     let phase = &run.echoes[1].phase_nifti;
     std::thread::sleep(std::time::Duration::from_millis(20));
-    std::fs::write(phase, std::fs::read(phase).unwrap()).unwrap();
+    fs_err::write(phase, fs_err::read(phase).unwrap()).unwrap();
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     assert_ne!(mtime(output.qsm_path(&run.key)), first, "a replaced input did not recompute χ");
 }
@@ -409,7 +409,7 @@ fn cleaning_intermediates_keeps_the_outputs() {
     assert!(!output.working_grid_dir(&run.key).exists());
     // Re-run with the same configuration: nothing is recomputed, and nothing is lost for want
     // of the working-grid copies that cleaning removed.
-    let mtime = |p: PathBuf| std::fs::metadata(p).unwrap().modified().unwrap();
+    let mtime = |p: PathBuf| fs_err::metadata(p).unwrap().modified().unwrap();
     let before = mtime(output.qsm_path(&run.key));
     run_pipeline_cached(&run, &resampling_config(), &output, false, &|_| {}).unwrap();
     assert_eq!(mtime(output.qsm_path(&run.key)), before, "the re-run recomputed χ");
@@ -436,7 +436,7 @@ fn qsmart_keeps_its_intermediates_in_each_pass_step() {
     config.masking.two_pass = true;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     let prov: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(output.provenance_path(&run.key, "unwrap")).unwrap()).unwrap();
+        &fs_err::read_to_string(output.provenance_path(&run.key, "unwrap")).unwrap()).unwrap();
     assert!(prov["parameters"]["qsmart_fit_threshold"].is_f64(), "{prov}");
 
     let names = [
@@ -567,7 +567,7 @@ fn only_the_last_inversion_is_named_the_raw_maps_maker() {
             }
             for (raw, step) in raws {
                 let makers: Vec<&str> = crate::bids::bidsprov::STEPS.iter().copied().filter(|&s| {
-                    let Ok(text) = std::fs::read_to_string(output.provenance_path(k, s)) else { return false };
+                    let Ok(text) = fs_err::read_to_string(output.provenance_path(k, s)) else { return false };
                     let prov: serde_json::Value = serde_json::from_str(&text).unwrap();
                     prov["outputs"].as_array().unwrap().iter().any(|o| o.as_str() == Some(&raw.display().to_string()))
                 }).collect();
@@ -657,7 +657,7 @@ fn a_recomputed_map_keeps_nothing_from_the_sidecar_it_replaced() {
     let sidecar = || read_json_object(&crate::bids::entities::sidecar_path(&output.qsm_path(&run.key)).unwrap());
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     assert!(sidecar().contains_key("QsmReferenceOffsetPpm"));
-    config.qsm.reference = crate::pipeline::config::QsmReference::None;
+    config.qsm.reference = qsmxt_engine::QsmReference::None;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     let fields = sidecar();
     assert_eq!(fields["QsmReference"], "none");
@@ -699,7 +699,7 @@ fn a_new_obliquity_threshold_is_honoured_on_a_rerun() {
     let output = DerivativeOutputs::new(&dir.path().join("out"));
     let resampled = |output: &DerivativeOutputs| -> bool {
         let state: PipelineState = serde_json::from_str(
-            &std::fs::read_to_string(output.state_path(&run.key)).unwrap()).unwrap();
+            &fs_err::read_to_string(output.state_path(&run.key)).unwrap()).unwrap();
         state.run_metadata.unwrap().source_geometry.is_some()
     };
     run_pipeline_cached(&run, &fast_config(), &output, false, &|_| {}).unwrap();
@@ -733,7 +733,7 @@ fn the_phase_steps_leave_the_acquired_grid_echoes_in_files() {
     let working = io::read_nifti_file(&output.phase_scaled_path(k, 2)).unwrap();
     assert_ne!(working.dims, acquired.dims, "the working echoes are on the axial grid");
     assert_eq!(voxels(&output.mag_path(k, 2)), working.data.len());
-    let provenance = |step: &str| std::fs::read_to_string(output.provenance_path(k, step)).unwrap_or_else(|e| panic!("{step}: {e}"));
+    let provenance = |step: &str| fs_err::read_to_string(output.provenance_path(k, step)).unwrap_or_else(|e| panic!("{step}: {e}"));
     let steps = ["scale_phase", "tukey_window", "resample_axial"];
     let before: Vec<String> = steps.iter().map(|s| provenance(s)).collect();
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
@@ -767,7 +767,7 @@ fn output_space_keeps_labels_valid_and_rebuilds_the_smwi_projections() {
     let dseg: Vec<f64> = (0..work.data.len()).map(|v| ids[(v / 7) % ids.len()]).collect();
     save_nifti_like(&output.dseg_path(&run.key), &dseg, &work);
     let state_path = output.state_path(&run.key);
-    let mut state: PipelineState = serde_json::from_str(&std::fs::read_to_string(&state_path).unwrap()).unwrap();
+    let mut state: PipelineState = serde_json::from_str(&fs_err::read_to_string(&state_path).unwrap()).unwrap();
     state.completed_steps.remove("output_space");
     state.save(&state_path).unwrap();
 
@@ -786,22 +786,22 @@ fn working_grid_outputs_are_named_in_their_space() {
     let run = oblique_run(dir.path(), "a", 2);
     let output = DerivativeOutputs::new(&dir.path().join("out"));
     let mut config = resampling_config();
-    config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+    config.pipeline.output_space = qsmxt_engine::OutputSpace::Working;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     let axial = output.in_space(Some("axial"));
     assert!(axial.qsm_path(&run.key).exists());
     assert!(!output.qsm_path(&run.key).exists(), "an unlabelled map on the working grid");
     assert_eq!(output.published(&run.key).qsm_path(&run.key), axial.qsm_path(&run.key));
-    let sidecar: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+    let sidecar: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(
         crate::bids::entities::sidecar_path(&axial.qsm_path(&run.key)).unwrap()).unwrap()).unwrap();
     let reference = sidecar["SpatialReference"].as_str().unwrap();
     assert!(output.output_dir.join(reference).exists(), "{reference}");
     assert!(reference.ends_with("_part-mag_space-axial_T2starw.nii"), "{reference}");
 
-    config.pipeline.output_space = crate::pipeline::config::OutputSpace::Acquired;
+    config.pipeline.output_space = qsmxt_engine::OutputSpace::Acquired;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
-    let left: Vec<String> = std::fs::read_dir(output.anat_dir(&run.key)).unwrap()
+    let left: Vec<String> = fs_err::read_dir(output.anat_dir(&run.key)).unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .filter(|n| n.contains("space-axial"))
         .collect();
@@ -844,13 +844,13 @@ fn an_oblique_cosmos_group_lands_on_the_acquired_grid_referenced_and_cached() {
     let key = crate::pipeline::multiorient::group_key(&members);
     let cosmos = output.cosmos_path(&key);
     assert_eq!(voxels(&cosmos), ACQUIRED, "the COSMOS map is on the acquired grid");
-    let sidecar: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+    let sidecar: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(
         output.multiorient_sidecar_path(&key, "cosmos")).unwrap()).unwrap();
     assert_eq!(sidecar["QsmReference"], "mean", "{sidecar}");
     assert!(sidecar["QsmReferenceOffsetPpm"].is_number(), "{sidecar}");
     assert_eq!(sidecar["Space"], "acquired");
 
-    let mtime = || std::fs::metadata(&cosmos).unwrap().modified().unwrap();
+    let mtime = || fs_err::metadata(&cosmos).unwrap().modified().unwrap();
     let first = mtime();
     combine(&config);
     assert_eq!(mtime(), first, "an unchanged group was recomputed");

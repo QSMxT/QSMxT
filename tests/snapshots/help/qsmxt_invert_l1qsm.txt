@@ -33,32 +33,32 @@ Options:
       --magnitude <MAGNITUDE>...
           Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
 
-      --alpha1 <ALPHA1>
-          Gradient (TV) L1 penalty weight (alpha1)
+      --l1qsm-alpha1 <L1QSM_ALPHA1>
+          L1-QSM gradient (TV) L1 penalty weight (alpha1) (default: 0.005)
 
-      --mu1 <MU1>
-          Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
+      --l1qsm-mu1 <MU1>
+          L1-QSM gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
 
-      --mu2 <MU2>
-          Fidelity-consistency ADMM weight (mu2)
+      --l1qsm-mu2 <L1QSM_MU2>
+          L1-QSM fidelity-consistency ADMM weight (mu2) (default: 1)
 
-      --mu3 <MU3>
-          L1 proximal ADMM weight (mu3)
+      --l1qsm-mu3 <L1QSM_MU3>
+          L1-QSM L1 proximal ADMM weight (mu3) (default: 1)
 
-      --lambda <LAMBDA>
-          L1 fidelity strength (lambda)
+      --l1qsm-lambda <L1QSM_LAMBDA>
+          L1-QSM L1 fidelity strength (lambda) (default: 0.8)
 
-      --max-iter <MAX_ITER>
-          Max iterations
+      --l1qsm-max-iter <L1QSM_MAX_ITER>
+          L1-QSM: Number of outer ADMM iterations (default: 50)
 
-      --tol-update <TOL_UPDATE>
-          Percent-update convergence tolerance
+      --l1qsm-tol-update <L1QSM_TOL_UPDATE>
+          L1-QSM: Percent-update stopping tolerance (default: 1)
 
-      --tol-delta <TOL_DELTA>
-          Inner Newton convergence tolerance
+      --l1qsm-tol-delta <L1QSM_TOL_DELTA>
+          L1-QSM: Inner Newton convergence tolerance (default: 1e-6)
 
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
+      --l1qsm-te <TE>
+          L1-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
 
   -h, --help
           Print help

@@ -1,13 +1,16 @@
 //! QSMxT's run engine.
 //!
 //! Pipeline configuration, command generation and methods text for QSMxT, with no file I/O, so it
-//! also builds for the browser. Used by both qsmxt (CLI/TUI) and qsmbly (browser WASM). The run
-//! logic in `qsmxt`'s `src/pipeline/` moves here in stages; so far: what a scan's headers and
-//! sidecar say ([`scan`]), what a run can produce ([`requirements`]), memory estimates, step
-//! cache keys and which steps read which ([`graph`]), field mapping's input checks, referencing,
-//! what each QSM stage computes ([`stages`]), what a run reports as it goes ([`observe`]), and
-//! running one: [`plan::plan`] decides its steps, [`run::run`] runs them against a
-//! [`store::StageStore`].
+//! also builds for the browser. Used by both qsmxt (CLI/TUI) and qsmbly (browser WASM). It holds
+//! what a scan's headers and sidecar say ([`scan`]), what a run can produce ([`requirements`]),
+//! memory estimates, step cache keys and which steps read which ([`graph`]), field mapping's input
+//! checks, referencing, what each QSM stage computes ([`stages`]), what a run reports as it goes
+//! ([`observe`]), and running one: [`plan::plan`] decides its steps, [`run::run`] runs them against
+//! a [`store::StageStore`]. `qsmxt-io` reads and writes the files; it does not re-export this
+//! crate, so each name has one owner.
+//!
+//! The configuration types ([`config`], [`enums`], [`masking`]) are also exported at the root:
+//! they are what every front end builds.
 
 /// The qsm-core this crate is built against. Downstream consumers (qsmbly's WASM crate) use
 /// algorithms through this re-export rather than depending on qsm-core themselves, so the

@@ -25,8 +25,31 @@ Options:
       --params <PARAMS>
           JSON params file: {"TE":[..seconds], "B0":<tesla>, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present
 
+      --reliability-output <RELIABILITY_OUTPUT>
+          `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`
+
+      --field-mask-output <FIELD_MASK_OUTPUT>
+          Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask
+
+      --complex-fit-output <FILE>
+          `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`)
+
+      --complex-fit-noise-output <FILE>
+          `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`)
+
+      --phase-offset-removal <PHASE_OFFSET_REMOVAL>
+          Enable phase offset removal for multi-echo data (default: true)
+
+          [possible values: true, false]
+
+      --phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM> <PHASE_OFFSET_SIGMA_MM> <PHASE_OFFSET_SIGMA_MM>
+          Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's)
+
+      --bipolar-correction
+          Enable bipolar gradient correction (requires >= 3 echoes)
+
       --b0-estimation <B0_ESTIMATION>
-          B0 field estimation method
+          B0 field estimation method (default: weighted-avg)
 
           Possible values:
           - weighted-avg
@@ -35,35 +58,24 @@ Options:
           - qsmart-echofit: QSMART's echo fit: a magnitude-weighted fit of the unwrapped phase vs TE through the origin, which also marks the voxels QSMART leaves out
           - complex-fit:    MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase per echo spacing. Needs the magnitude and evenly spaced echoes; no phase offset removal is run first, and bipolar correction is refused
 
-          [default: weighted-avg]
-
       --qsmart-fit-threshold-mode <QSMART_FIT_THRESHOLD_MODE>
-          `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is marked unreliable is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode
+          `--b0-estimation qsmart-echofit`: how the fit residual at which a voxel is left out of QSMART's reconstruction is set: a percentile of the blurred residual over the volume (`--qsmart-fit-percentile`), or a fixed residual (`--qsmart-fit-threshold`; default, QSMART v1.0's 40). Without it, giving one of those two selects its mode
 
           [possible values: percentile, absolute]
 
       --qsmart-fit-percentile <QSMART_FIT_PERCENTILE>
-          `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is marked unreliable (default 99)
+          `--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default: 99)
 
       --qsmart-fit-threshold <QSMART_FIT_THRESHOLD>
-          `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is marked unreliable, instead of a percentile (40 when the mode is `absolute` and none is given)
-
-      --reliability-output <RELIABILITY_OUTPUT>
-          `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`
-
-      --field-mask-output <FIELD_MASK_OUTPUT>
-          Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask
+          `--b0-estimation qsmart-echofit`: a fixed blurred fit residual above which a voxel is left out of QSMART's reconstruction, instead of a percentile (40 when the mode is `absolute` and none is given) (default: 40)
 
       --b0-weight-type <B0_WEIGHT_TYPE>
-          B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2*) from the echo times and an assumed T2* (no T2* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude
+          B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2*) computed from the echo times and an assumed T2* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO (default: phase-snr)
 
-          [default: phase-snr]
           [possible values: phase-snr, phase-var, average, tes, mag, assumed-decay]
 
       --b0-weight-assumed-t2star <MS>
-          T2* in ms assumed by `--b0-weight-type assumed-decay` (no T2* map is used)
-
-          [default: 40]
+          T2* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2* map is used)
 
       --linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>
           Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without
@@ -91,24 +103,22 @@ Options:
           Complex fit (`--b0-estimation complex-fit`): stop once the update is this fraction of the first estimate, over the whole volume (default 1e-4)
 
       --complex-fit-max-iter <COMPLEX_FIT_MAX_ITER>
-          Complex fit: Gauss-Newton iterations at most (default 30)
+          Complex fit: Gauss-Newton iterations at most (default: 30)
 
-      --complex-fit-output <FILE>
-          `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`)
+      --romeo-individual
+          ROMEO: unwrap each echo on its own (individual mode, for motion or time series)
 
-      --complex-fit-noise-output <FILE>
-          `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`)
+      --no-romeo-individual
+          ROMEO: unwrap the template echo spatially and the others temporally from it (default)
 
-      --phase-offset-removal <PHASE_OFFSET_REMOVAL>
-          Enable phase offset removal for multi-echo data (default: true)
+      --romeo-template <ROMEO_TEMPLATE>
+          ROMEO: template echo index (1-indexed, only for template mode) (default: 1)
 
-          [possible values: true, false]
+      --romeo-correct-global
+          ROMEO: correct global 2π offsets, of each echo and between echoes (default: off)
 
-      --phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM> <PHASE_OFFSET_SIGMA_MM> <PHASE_OFFSET_SIGMA_MM>
-          Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's)
-
-      --bipolar-correction
-          Enable bipolar gradient correction (requires >= 3 echoes)
+      --no-romeo-correct-global
+          ROMEO: do not correct global 2π offsets (default)
 
       --no-romeo-phase-coherence
           ROMEO: disable phase coherence weights (default: on)
@@ -137,26 +147,11 @@ Options:
       --romeo-bestpath
           ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off)
 
-      --romeo-template <ROMEO_TEMPLATE>
-          ROMEO: template echo index (1-indexed, only for template mode)
-
-      --romeo-individual
-          ROMEO: unwrap each echo on its own (individual mode, for motion or time series)
-
-      --no-romeo-individual
-          ROMEO: unwrap the template echo spatially and the others temporally from it (default)
-
-      --romeo-correct-global
-          ROMEO: correct global 2π offsets, of each echo and between echoes (default: off)
-
-      --no-romeo-correct-global
-          ROMEO: do not correct global 2π offsets (default)
-
       --romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>
           ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0)
 
       --romeo-max-seeds <ROMEO_MAX_SEEDS>
-          ROMEO: maximum number of seed regions (default: 1)
+          ROMEO: Maximum number of seed regions (default: 1)
 
       --romeo-merge-regions
           ROMEO: merge neighboring regions after unwrapping (default: off)

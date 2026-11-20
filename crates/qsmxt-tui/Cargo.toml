@@ -6,6 +6,8 @@ description = "QSMxT's terminal UI: the form, its tabs and pop-ups; the qsmxt bi
 license = "GPL-3.0-only"
 
 [dependencies]
+# std::fs with the path in every error (`--config typo.toml` names the file it could not read).
+fs-err = "3"
 # Pinned once, in the root Cargo.toml's [workspace.dependencies].
 qsm-core = { workspace = true }
 qsmxt-engine = { path = "../qsmxt-engine" }

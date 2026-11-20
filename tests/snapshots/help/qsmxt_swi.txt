@@ -38,19 +38,19 @@ Options:
           - laplacian-slice: Laplacian, slice by slice (2D multi-slice acquisitions)
           - romeo:           All echoes together with ROMEO
 
-      --swi-hp-sigma <SWI_HP_SIGMA> <SWI_HP_SIGMA> <SWI_HP_SIGMA>
-          SWI high-pass filter sigma (3 values, in voxels)
-
       --swi-scaling <SWI_SCALING>
-          SWI phase-mask scaling
+          SWI phase-mask scaling (default: tanh)
 
           [possible values: tanh, negative-tanh, positive, negative, triangular]
 
       --swi-strength <SWI_STRENGTH>
-          SWI phase scaling strength
+          SWI: Phase scaling strength (higher = stronger phase contrast) (default: 4)
+
+      --swi-hp-sigma <SWI_HP_SIGMA> <SWI_HP_SIGMA> <SWI_HP_SIGMA>
+          SWI high-pass filter sigma (3 values, in voxels) (default: 4 4 0)
 
       --swi-mip-window <SWI_MIP_WINDOW>
-          SWI MIP window size in slices
+          SWI: Minimum-intensity-projection window, in slices (default: 7)
 
   -h, --help
           Print help (see a summary with '-h')

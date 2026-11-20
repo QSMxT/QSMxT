@@ -213,7 +213,7 @@ pub const SEG_REFERENCES: [&str; 12] = [
 
 /// Refuse, before a run, a DICOM export that selects the segmentation (`dseg`) and none of the
 /// maps its SEG could be drawn on ([`SEG_REFERENCES`]) among those the run makes.
-pub fn check_outputs(filter: Option<&[String]>, config: &crate::pipeline::config::PipelineConfig) -> Result<(), String> {
+pub fn check_outputs(filter: Option<&[String]>, config: &qsmxt_engine::PipelineConfig) -> Result<(), String> {
     let Some(filter) = filter else { return Ok(()) };
     let p = &config.pipeline;
     let segmentation = p.do_segmentation || config.segmentation.custom_dseg_tool.is_some();
@@ -325,7 +325,7 @@ fn export_map(m: ExportMap) -> crate::Result<usize> {
         )));
     }
 
-    std::fs::create_dir_all(m.out_dir)?;
+    fs_err::create_dir_all(m.out_dir)?;
 
     // Per-volume linear rescale of f64 -> u16 [0, 65535].
     let (slope, intercept) = rescale_params(&volume.data);
@@ -674,7 +674,7 @@ mod tests {
         assert_eq!(n, nz);
 
         // One .dcm per slice.
-        let dcms: Vec<_> = std::fs::read_dir(&out_dir)
+        let dcms: Vec<_> = fs_err::read_dir(&out_dir)
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().is_some_and(|x| x == "dcm"))
@@ -716,7 +716,7 @@ mod tests {
         // Hand-build a minimal source DICOM carrying patient/study identity.
         let tmp = tempfile::tempdir().unwrap();
         let src_dir = tmp.path().join("src");
-        std::fs::create_dir_all(&src_dir).unwrap();
+        fs_err::create_dir_all(&src_dir).unwrap();
         let mut src = InMemDicomObject::new_empty();
         src.put(DataElement::new(tags::SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE));
         src.put(DataElement::new(tags::SOP_INSTANCE_UID, VR::UI, "2.25.999"));
@@ -785,7 +785,7 @@ mod tests {
         use crate::bids::entities::AcquisitionKey;
         let tmp = tempfile::tempdir().unwrap();
         let json = tmp.path().join("echo-1_part-phase_MEGRE.json");
-        std::fs::write(&json, r#"{"RepetitionTime": 0.028, "EchoTrainLength": 4, "PatientPosition": "HFS",
+        fs_err::write(&json, r#"{"RepetitionTime": 0.028, "EchoTrainLength": 4, "PatientPosition": "HFS",
             "BodyPart": "BRAIN", "Manufacturer": "Siemens", "EchoTime": 0.004,
             "StudyInstanceUID": "1.3.12.2.1107.5.2.43.1", "FrameOfReferenceUID": "1.3.12.2.1107.5.2.43.2",
             "StudyID": "7", "PatientName": "Doe^Jane"}"#).unwrap();
@@ -809,7 +809,7 @@ mod tests {
 
         // A source DICOM with only some of them: its values win, the sidecar fills the rest.
         let src_dir = tmp.path().join("src");
-        std::fs::create_dir_all(&src_dir).unwrap();
+        fs_err::create_dir_all(&src_dir).unwrap();
         let mut src = InMemDicomObject::new_empty();
         src.put(DataElement::new(tags::SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE));
         src.put(DataElement::new(tags::SOP_INSTANCE_UID, VR::UI, "2.25.999"));
@@ -872,7 +872,7 @@ mod tests {
             0.0, 0.0, 0.0, 1.0,
         ];
         let write = |p: std::path::PathBuf| {
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs_err::create_dir_all(p.parent().unwrap()).unwrap();
             io::save_nifti_to_file(&p, &data, (nx, ny, nz), (1.0, 1.0, 1.0), &affine).unwrap();
         };
         write(output.qsm_path(&key));
@@ -934,7 +934,7 @@ mod tests {
         ] {
             let dir = output.dicom_dir(&key, suffix);
             assert!(dir.is_dir(), "missing DICOM dir for {suffix}");
-            let n = std::fs::read_dir(&dir)
+            let n = fs_err::read_dir(&dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
                 .filter(|e| e.path().extension().is_some_and(|x| x == "dcm"))
@@ -981,11 +981,11 @@ mod tests {
         let chi: Vec<f64> = (0..24).map(|i| i as f64 * 0.01).collect();
         let magnitude: Vec<f64> = (0..24).map(|i| 100.0 + i as f64).collect();
         for (p, d) in [(output.qsm_path(&key), &chi), (output.magnitude_path(&key), &magnitude), (output.dseg_path(&key), &labels)] {
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs_err::create_dir_all(p.parent().unwrap()).unwrap();
             io::save_nifti_to_file(&p, d, dims, vox, &affine).unwrap();
         }
         if let Some(t) = tsv {
-            std::fs::write(output.dseg_lookup_path(&key), t).unwrap();
+            fs_err::write(output.dseg_lookup_path(&key), t).unwrap();
         }
         let run = crate::bids::discovery::QsmRun {
             key, echoes: vec![], coils: None, magnetic_field_strength: 3.0, echo_times: vec![0.02],
@@ -1064,7 +1064,7 @@ mod tests {
     /// A run refuses a DICOM export that selects the segmentation and nothing to draw it on.
     #[test]
     fn dseg_alone_is_refused_before_the_run() {
-        let mut config = crate::pipeline::config::PipelineConfig::default();
+        let mut config = qsmxt_engine::PipelineConfig::default();
         config.pipeline.export_dicom = true;
         config.pipeline.do_segmentation = true;
         let f = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();

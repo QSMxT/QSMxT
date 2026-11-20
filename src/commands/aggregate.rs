@@ -8,38 +8,38 @@
 use log::{error, info};
 
 use super::run;
-use crate::bids::derivatives::DerivativeOutputs;
-use crate::bids::discovery::{self, DiscoveryFilter};
-use crate::cli::AggregateArgs;
+use qsmxt_io::bids::derivatives::DerivativeOutputs;
+use qsmxt_io::bids::discovery;
+use crate::cli::{AggregateArgs, ExecArgs};
 
-pub fn execute(args: AggregateArgs) -> crate::Result<()> {
-    let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
-    let derivatives_dir = base_dir.join("derivatives").join("qsmxt");
+pub fn execute(args: AggregateArgs) -> qsmxt_io::Result<()> {
+    // Every option is taken apart here, so one that nothing reads is a warning (an unused
+    // variable), which CI's clippy refuses: the aggregation sees the runs and configuration the
+    // workers did.
+    let AggregateArgs { dataset, pipeline, exec, command_line } = args;
+    let ExecArgs { force, debug, clean_intermediates } = exec;
+    let derivatives_dir = dataset.base_dir().join("derivatives").join("qsmxt");
 
     // Held until qsmxt.log is opened below, where the workers' logs go first.
-    run::init_logging(run::LogSink::Buffer(Vec::new()), args.debug);
+    run::init_logging(run::LogSink::Buffer(Vec::new()), debug);
     // Before anything is created: the default output directory is inside it.
-    discovery::require_bids_dir(&args.bids_dir)?;
-    std::fs::create_dir_all(&derivatives_dir)?;
+    discovery::require_bids_dir(&dataset.bids_dir)?;
+    fs_err::create_dir_all(&derivatives_dir)?;
 
-    let config = run::build_config(args.config.as_deref(), &args.pipeline)?;
+    let config = run::build_config(dataset.config.as_deref(), &pipeline)?;
 
-    let filter = DiscoveryFilter {
-        include: args.include.clone(),
-        exclude: args.exclude.clone(),
-        num_echoes: args.num_echoes,
-    };
-    let runs = discovery::discover_runs(&args.bids_dir, &filter)?;
+    let filter = dataset.discovery_filter();
+    let runs = discovery::discover_runs(&dataset.bids_dir, &filter)?;
     if runs.is_empty() {
-        return Err(discovery::no_runs(&args.bids_dir, &filter));
+        return Err(discovery::no_runs(&dataset.bids_dir, &filter));
     }
 
     // qsmxt.log: what each worker logged, in run order, then this step's own lines — the same
     // record a local run leaves, grouped by run rather than interleaved.
-    let mut log = std::fs::File::create(derivatives_dir.join("qsmxt.log"))?;
+    let mut log = fs_err::File::create(derivatives_dir.join("qsmxt.log"))?;
     for path in worker_logs(&derivatives_dir, &runs) {
         use std::io::Write;
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let text = fs_err::read_to_string(&path).unwrap_or_default();
         let name = path.strip_prefix(&derivatives_dir).unwrap_or(&path);
         writeln!(log, "==> {} <==", name.display())?;
         log.write_all(text.as_bytes())?;
@@ -53,7 +53,7 @@ pub fn execute(args: AggregateArgs) -> crate::Result<()> {
     info!("QSM.rs {}", env!("QSM_CORE_DESCRIBE"));
     info!("Dataset-level steps over {} run(s)", runs.len());
 
-    run::write_dataset_files(&derivatives_dir, &args.bids_dir, &config, &runs)?;
+    run::write_dataset_files(&derivatives_dir, &dataset.bids_dir, &config, &runs)?;
 
     // A local run knows which of its runs succeeded; here the pipeline state says, and it has to
     // be the state of this configuration — a run processed with other settings is not one of
@@ -61,7 +61,7 @@ pub fn execute(args: AggregateArgs) -> crate::Result<()> {
     let output = DerivativeOutputs::new(&derivatives_dir);
     let mut run_failures = Vec::new();
     let completed: Vec<bool> = runs.iter().map(|r| {
-        match crate::pipeline::graph::run_completed_under(&output.output_dir, &r.key, &config) {
+        match qsmxt_io::pipeline::graph::run_completed_under(&output.output_dir, &r.key, &config) {
             Ok(()) => true,
             Err(why) => {
                 error!("{}: {why}", r.key);
@@ -75,15 +75,15 @@ pub fn execute(args: AggregateArgs) -> crate::Result<()> {
         }
     }).collect();
 
-    let command_line = args.command_line.clone()
+    let command_line = command_line
         .unwrap_or_else(|| std::env::args().collect::<Vec<_>>().join(" "));
     let group_failures = run::run_dataset_steps(&run::DatasetSteps {
         derivatives_dir: &derivatives_dir,
         runs: &runs,
         completed: &completed,
         config: &config,
-        force: args.force,
-        clean_intermediates: args.clean_intermediates,
+        force,
+        clean_intermediates,
         command_line: &command_line,
     });
     run::finish(&run_failures, &group_failures, &derivatives_dir)
@@ -93,7 +93,7 @@ pub fn execute(args: AggregateArgs) -> crate::Result<()> {
 /// several runs) belonging to `runs`, in run order.
 fn worker_logs(derivatives_dir: &std::path::Path, runs: &[discovery::QsmRun]) -> Vec<std::path::PathBuf> {
     let dir = derivatives_dir.join("logs");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let Ok(entries) = fs_err::read_dir(&dir) else { return Vec::new() };
     let mut names: Vec<String> = entries.flatten()
         .filter_map(|e| e.file_name().to_str().map(str::to_string))
         .filter(|n| n.ends_with(".log"))

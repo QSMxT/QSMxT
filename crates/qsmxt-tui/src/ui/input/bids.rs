@@ -77,10 +77,10 @@ pub(super) fn draw_bids_section<'a>(app: &App, fs: &'a crate::app::FilterTreeSta
 /// The tree's lines: a subject, a session or a run, with its orientation group.
 fn tree_lines(app: &App, tree: &qsmxt_io::bids::discovery::BidsTree, in_io: bool, lines: &mut Vec<Line<'_>>) {
     let visible = app.filter_state.visible_rows();
-    let reference = app.field_text("orientation_reference");
+    let reference = app.field_text("multi_orientation.reference");
     let preview = app.filter_state.orientation_preview(&reference);
     let groups = app.filter_state.orientation_groups(&reference);
-    let need = orientations_needed(app.field_select("orientation_algorithm"));
+    let need = orientations_needed(app.field_select("multi_orientation.algorithm"));
     for (i, row) in visible.iter().enumerate() {
         let focused = !in_io && app.filter_state.focus == crate::app::FilterFocus::TreeNode(i);
         let line = match row {

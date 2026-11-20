@@ -93,7 +93,7 @@ fn motion_correction_stage() {
     run_engine_step(&run, &config, &output, &meta, Stage::Motion).unwrap();
     let shrunk = output.motion_coverage_path(&k);
     let report: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(output.motion_report_path(&k)).unwrap()).unwrap();
+        &fs_err::read_to_string(output.motion_report_path(&k)).unwrap()).unwrap();
     let t = report["echoes"][1]["translation_mm"].as_f64().unwrap();
     assert!(t > 1.0, "echo 2 moved 2 mm and is reported at {t} mm: {report}");
     assert_eq!(report["echoes"][0]["translation_mm"].as_f64().unwrap(), 0.0);
@@ -189,7 +189,7 @@ fn minip_header_matches_its_payload() {
     assert_eq!(mip.data.len(), 12 * 10 * 26);
 
     // The file on disk holds exactly the payload, not the full-volume length.
-    let bytes = std::fs::metadata(output.swi_mip_path(&k)).unwrap().len();
+    let bytes = fs_err::metadata(output.swi_mip_path(&k)).unwrap().len();
     assert_eq!(bytes, 352 + (12 * 10 * 26 * 4) as u64);
 
     // And it is the projection of the SWI that was saved beside it, zeros included.
@@ -272,7 +272,7 @@ fn a_first_echo_swi_cache_is_rebuilt() {
     });
     let first_echo_hash = crate::pipeline::graph::step_params_hash(Some("clear-swi"), &first_echo_key);
     let state: PipelineState = serde_json::from_str(
-        &std::fs::read_to_string(output.state_path(&k)).unwrap()).unwrap();
+        &fs_err::read_to_string(output.state_path(&k)).unwrap()).unwrap();
     assert_ne!(state.completed_steps.get("swi").unwrap().params_hash.as_deref(), Some(first_echo_hash.as_str()));
 }
 
@@ -293,7 +293,7 @@ fn a_stale_minip_cache_is_rebuilt() {
     });
     let stale_hash = crate::pipeline::graph::step_params_hash(Some("clear-swi"), &stale);
     let mut state: PipelineState =
-        serde_json::from_str(&std::fs::read_to_string(output.state_path(&k)).unwrap()).unwrap();
+        serde_json::from_str(&fs_err::read_to_string(output.state_path(&k)).unwrap()).unwrap();
     assert_ne!(
         state.completed_steps.get("swi").unwrap().params_hash.as_deref(),
         Some(stale_hash.as_str()),

@@ -33,32 +33,32 @@ Options:
       --magnitude <MAGNITUDE>...
           Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
 
-      --lambda <LAMBDA>
-          Lambda
+      --nltv-lambda <NLTV_LAMBDA>
+          NLTV: Regularisation parameter (default: 0.001)
 
-      --rho <RHO>
-          Rho (ADMM penalty), or auto for 100 × lambda (default: auto)
+      --nltv-rho <RHO>
+          NLTV rho (ADMM penalty), or auto for 100 × lambda (default: auto)
 
-      --mu <MU>
-          Mu (penalty parameter)
+      --nltv-mu <NLTV_MU>
+          NLTV mu (penalty parameter) (default: 1)
 
-      --tol <TOL>
-          Tolerance
+      --nltv-tol <NLTV_TOL>
+          NLTV: Convergence tolerance (default: 0.001)
 
-      --max-iter <MAX_ITER>
-          Max iterations
+      --nltv-max-iter <NLTV_MAX_ITER>
+          NLTV: Maximum ADMM iterations (default: 250)
 
-      --tol-newton <TOL_NEWTON>
-          Convergence tolerance of the Newton iterations of the data-term subproblem
+      --nltv-tol-newton <NLTV_TOL_NEWTON>
+          NLTV: Convergence tolerance of the Newton iterations of the data-term subproblem (default: 1e-6)
 
-      --newton-iter <NEWTON_ITER>
-          Maximum Newton iterations of the data-term subproblem
+      --nltv-newton-iter <NLTV_NEWTON_ITER>
+          NLTV: Maximum Newton iterations of the data-term subproblem (default: 10)
 
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
+      --nltv-te <TE>
+          NLTV: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
 
-      --pad <X> <Y> <Z>
-          Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+      --nltv-pad <X> <Y> <Z>
+          NLTV: Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded, in voxels (default: 0 0 0)
 
   -h, --help
           Print help

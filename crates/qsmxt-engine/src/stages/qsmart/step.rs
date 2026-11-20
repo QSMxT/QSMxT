@@ -9,9 +9,9 @@ use crate::store::{Data, Item, StageStore};
 impl<S: StageStore + ?Sized> Run<'_, S> {
     /// QSMART, from the total field, keeping its intermediates.
     pub(crate) fn qsmart(&mut self, pass: Pass) -> Result<(), S::Error> {
-        let name = Stage::Qsmart(pass).name();
+        let stage = Stage::Qsmart(pass);
         let params = stages::qsmart::params(self.config);
-        let Some(key) = self.begin(&name, Some("qsmart"), &params, "Skipping qsmart (cached)",
+        let Some(key) = self.begin(stage, Some("qsmart"), &params, "Skipping qsmart (cached)",
                                    "QSMART reconstruction") else { return Ok(()) };
         let field = self.store.real(&Item::FieldPpm)?;
         let mask_item = self.pass_mask(pass);
@@ -66,7 +66,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             outputs.push(item);
         }
         self.complete(Done {
-            step: &name, algorithm: Some("qsmart"), params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage, algorithm: Some("qsmart"), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, &format!("QSMART{}", pass_label(pass)))
     }
 }

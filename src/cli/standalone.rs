@@ -3,6 +3,16 @@ use std::path::PathBuf;
 
 use super::*;
 
+crate::flag_set! {
+    /// CLEAR-SWI's, as `qsmxt run` names them; the filtered phase is the command's own output.
+    SwiFlags = ["swi.", "!swi.filtered_phase"], short = false;
+    /// SynthSeg's, as `qsmxt run` names them.
+    SegmentFlags = ["segmentation."], short = false;
+    /// The correction's method and each method's settings, as `qsmxt run` names them.
+    HomogeneityFlags = ["masking.inhomogeneity_method", "homogeneity.", "n4.", "masking.n4_geometry"], short = false,
+        aliases = [("inhomogeneity-method", "method"), ("homogeneity-sigma-mm", "sigma"), ("homogeneity-nbox", "nbox")];
+}
+
 // ── SWI ──
 
 #[derive(Parser, Debug)]
@@ -59,8 +69,9 @@ pub struct SegmentArgs {
     /// Also write the BIDS label lookup table (index/name) to this path
     #[arg(long)]
     pub lookup: Option<PathBuf>,
+    // The settings flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]
-    pub params: SegmentationParamArgs,
+    pub settings: crate::cli_settings::SettingsOf<SegmentFlags>,
 }
 
 #[derive(Parser, Debug)]
@@ -99,8 +110,9 @@ pub struct SwiArgs {
     /// `sub-01_desc-swi_phase.nii`, as the pipeline names it). Implies --filtered-phase
     #[arg(long)]
     pub filtered_phase_output: Option<PathBuf>,
+    // The CLEAR-SWI settings' flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]
-    pub swi_params: SwiParamArgs,
+    pub settings: crate::cli_settings::SettingsOf<SwiFlags>,
 }
 
 // ── Other simple commands ──
@@ -205,19 +217,9 @@ pub struct HomogeneityArgs {
     /// Output corrected magnitude NIfTI file
     #[arg(short, long)]
     pub output: PathBuf,
-    /// Correction method: `makehomogeneous` (--sigma, --nbox) or `n4` (N4 bias field correction,
-    /// as ANTs' N4BiasFieldCorrection; --n4-*)
-    #[arg(long, value_enum, default_value_t = InhomogeneityMethodArg::Makehomogeneous)]
-    pub method: InhomogeneityMethodArg,
-    /// makehomogeneous: smoothing sigma in mm
-    #[arg(long, default_value_t = qsmxt_engine::HomogeneityConfig::default().sigma_mm)]
-    pub sigma: f64,
-    /// makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity
-    /// is estimated from
-    #[arg(long, default_value_t = qsmxt_engine::HomogeneityConfig::default().nbox)]
-    pub nbox: usize,
+    // The settings flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]
-    pub n4_params: N4ParamArgs,
+    pub settings: crate::cli_settings::SettingsOf<HomogeneityFlags>,
 }
 
 #[derive(Parser, Debug)]

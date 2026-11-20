@@ -38,7 +38,6 @@ use std::sync::LazyLock;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use qsmxt_io::bids::discovery::{self, BidsTree};
-use qsmxt_io::dicom;
 use qsmxt_io::nifti;
 
 use super::mask_builder::MaskRecipe;
@@ -46,6 +45,31 @@ use super::settings_rows::{stored_path, stored_placeholder};
 
 /// The settings Basic mode shows, by path ([`App::basic_paths`]).
 type BasicPaths = std::rc::Rc<std::collections::BTreeSet<&'static str>>;
+
+/// The release check started at launch, and the pop-up it leads to.
+#[derive(Debug)]
+pub struct UpdateCheck {
+    /// The "a new version is available" pop-up, once the background check has found one.
+    pub modal: Option<UpdateModal>,
+    /// Background release check started at launch.
+    pub state: UpdateState,
+    /// A newer release the check found, waiting for its turn among the pop-ups
+    /// ([`App::show_next_pop_up`]).
+    pub pending: Option<UpdateModal>,
+}
+
+/// The announcements fetched at launch, and their pop-up.
+#[derive(Debug)]
+pub struct Announcements {
+    /// An announcement pop-up, or the history of them all (`n` on the tab bar).
+    pub modal: Option<NewsModal>,
+    /// Background fetch of the announcements started at launch.
+    pub state: NewsState,
+    /// What that fetch came back with, once it has.
+    pub loaded: Option<qsmxt_io::news::Loaded>,
+    /// Announcements still to pop up, in order (critical first, then newest first).
+    pub queue: Vec<qsmxt_io::news::Announcement>,
+}
 
 pub struct App {
     pub active_tab: usize,
@@ -88,21 +112,10 @@ pub struct App {
     pub nifti_state: NiftiState,
     /// When set, an algorithm-selection modal is open over the QSM/χ-separation tab.
     pub algo_modal: Option<AlgoModal>,
-    /// The "a new version is available" pop-up, once the background check has found one.
-    pub update_modal: Option<UpdateModal>,
-    /// Background release check started at launch.
-    pub update_state: UpdateState,
-    /// A newer release the check found, waiting for its turn among the pop-ups
-    /// ([`App::show_next_pop_up`]).
-    pub pending_update: Option<UpdateModal>,
-    /// An announcement pop-up, or the history of them all (`n` on the tab bar).
-    pub news_modal: Option<NewsModal>,
-    /// Background fetch of the announcements started at launch.
-    pub news_state: NewsState,
-    /// What that fetch came back with, once it has.
-    pub news: Option<qsmxt_io::news::Loaded>,
-    /// Announcements still to pop up, in order (critical first, then newest first).
-    pub news_queue: Vec<qsmxt_io::news::Announcement>,
+    /// The release check started at launch, and its pop-up.
+    pub update: UpdateCheck,
+    /// The announcements fetched at launch, and their pop-up.
+    pub announcements: Announcements,
     /// The "Did you know?" pop-up: shown at launch (unless tips are off) and on `?`.
     pub tip_modal: Option<TipModal>,
     /// The recommendation pop-up, opened when a change creates a recommendation
@@ -181,13 +194,8 @@ impl App {
             status_message: None,
             clipboard: None,
             algo_modal: None,
-            update_modal: None,
-            update_state,
-            pending_update: None,
-            news_modal: None,
-            news_state,
-            news: None,
-            news_queue: Vec::new(),
+            update: UpdateCheck { modal: None, state: update_state, pending: None },
+            announcements: Announcements { modal: None, state: news_state, loaded: None, queue: Vec::new() },
             tip_modal: None,
             input_mode: InputMode::Bids,
             example_state: ExampleState::default(),

@@ -91,7 +91,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         let supplied: &[Item] = if self.config.masking.custom_mask_tool.is_some() { &[Item::SuppliedMask] } else { &[] };
         let params = self.with_supplied(stages::mask::params(self.config), supplied);
-        let Some(key) = self.begin("mask", None, &params, "Skipping mask (cached)", "Creating mask") else { return Ok(()) };
+        let Some(key) = self.begin(Stage::Mask(Pass::Main), None, &params, "Skipping mask (cached)", "Creating mask") else { return Ok(()) };
         // A supplied mask, when one is asked for and found. One that cannot be used falls back to
         // the recipe, whose models the plan did not list.
         let mut models = step.models.clone();
@@ -105,7 +105,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                             "The brain mask was the one supplied with the scan.").with_detail(origin));
                         self.put(Item::BrainMask, Data::Mask(&mask))?;
                         return self.complete(Done {
-                            step: "mask", algorithm: None, params: &params, outcome: None, key: &key,
+                            stage: Stage::Mask(Pass::Main), algorithm: None, params: &params, outcome: None, key: &key,
                             outputs: &[Item::BrainMask],
                         }, "Mask (custom)");
                     }
@@ -137,7 +137,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         stages::mask::require_voxels(&mask, stages::mask::MaskSource::Recipe(&self.config.masking))?;
         self.put(Item::BrainMask, Data::Mask(&mask))?;
         self.complete(Done {
-            step: "mask", algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::BrainMask],
+            stage: Stage::Mask(Pass::Main), algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::BrainMask],
         }, "Mask creation")
     }
 
@@ -145,8 +145,8 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     pub(crate) fn reliable_mask(&mut self, step: &Step) -> Result<(), S::Error> {
         let sections = self.config.masking.resolved_two_pass_sections();
         let params = stages::mask::reliable_params(self.config);
-        let name = Stage::Mask(Pass::Reliable).name();
-        let Some(key) = self.begin(&name, None, &params, "Skipping reliable-phase mask (cached)",
+        let stage = Stage::Mask(Pass::Reliable);
+        let Some(key) = self.begin(stage, None, &params, "Skipping reliable-phase mask (cached)",
                                    "Creating the reliable-phase mask") else { return Ok(()) };
         let combine = self.config.masking.resolved_two_pass_combine();
         self.log(Level::Info, &format!("Creating the reliable-phase mask ({} section(s), combined with {combine})",
@@ -170,7 +170,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         };
         self.put(Item::ReliableMask, Data::Mask(&restricted))?;
         self.complete(Done {
-            step: &name, algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::ReliableMask],
+            stage, algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::ReliableMask],
         }, "Reliable-phase mask")
     }
 }

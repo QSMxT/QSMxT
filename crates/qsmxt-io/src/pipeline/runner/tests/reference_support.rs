@@ -164,7 +164,7 @@ fn each_map_carries_its_own_reference_in_the_table() {
     let single_off = offset_of(f.output.singlepass_qsm_path(&f.run.key));
     assert!((main_off - single_off).abs() > 0.01, "{main_off} vs {single_off}");
 
-    let table = std::fs::read_to_string(f.output.segmentation_stats_path(&f.run.key)).unwrap();
+    let table = fs_err::read_to_string(f.output.segmentation_stats_path(&f.run.key)).unwrap();
     let rows = stats::parse_tsv(&table);
     let by_map = |name: &str| rows.iter().filter(|r| r.map == name).collect::<Vec<_>>();
     for r in by_map("Chimap") {

@@ -6,7 +6,7 @@ pub use qsmxt_engine::scan::QsmSidecar;
 
 /// Read a BIDS JSON sidecar, extracting QSM-relevant fields.
 pub fn read_sidecar(path: &Path) -> crate::Result<QsmSidecar> {
-    let text = std::fs::read_to_string(path)?;
+    let text = fs_err::read_to_string(path)?;
 
     // Parse as generic Value first to give better error messages
     let value: serde_json::Value =

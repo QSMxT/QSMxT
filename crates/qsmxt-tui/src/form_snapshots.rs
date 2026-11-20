@@ -161,7 +161,7 @@ fn every_reachable_form_builds_what_it_built() {
     }
     // A file left from a select or checkbox that no longer exists would never be checked.
     if std::env::var_os(snapshot::UPDATE).is_none() {
-        for entry in std::fs::read_dir(DIR).unwrap() {
+        for entry in fs_err::read_dir(DIR).unwrap() {
             let name = entry.unwrap().file_name().to_string_lossy().trim_end_matches(".txt").to_string();
             assert!(files.contains_key(&name), "{DIR}/{name}.txt lists no form the TUI reaches now: delete it");
         }

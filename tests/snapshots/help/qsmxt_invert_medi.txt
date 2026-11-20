@@ -33,78 +33,80 @@ Options:
       --magnitude <MAGNITUDE>...
           Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
 
-      --lambda <LAMBDA>
-          Lambda: the data-fidelity weight (larger fits the field more closely)
+      --no-medi-smv
+          MEDI: no SMV high-pass of the local field
 
-      --merit <MERIT>
-          Enable MERIT weighting
+      --medi-smv
+          MEDI: high-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV; on by default)
+
+      --medi-smv-radius <MEDI_SMV_RADIUS>
+          MEDI SMV radius in mm (also mSMV's) (default: 5)
+
+      --no-medi-smv-shrink-mask
+          MEDI-SMV: keep the full mask, high-passing the field over it
+
+      --medi-smv-shrink-mask
+          MEDI-SMV: shrink the mask to where the SMV of the mask exceeds 0.999 (on by default)
+
+      --medi-msmv
+          MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value before MEDI, which fits it with the SMV-filtered dipole kernel (it implies the SMV). Needs at least 3 echoes
+
+      --medi-msmv-maxk <MEDI_MSMV_MAXK>
+          MEDI-mSMV: the boundary correction makes at most this many passes, less one (default: 5)
+
+      --medi-msmv-vessel-radius <MEDI_MSMV_VESSEL_RADIUS>
+          MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more)
+
+      --no-medi-msmv-prefilter
+          MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges (expert)
+
+      --medi-lambda <MEDI_LAMBDA>
+          MEDI lambda: the data-fidelity weight (larger fits the field more closely) (default: 1000)
+
+      --medi-percentage <MEDI_PERCENTAGE>
+          MEDI edge percentage (0.0-1.0) (default: 0.9)
+
+      --medi-max-iter <MEDI_MAX_ITER>
+          MEDI: Maximum outer iterations (default: 10)
+
+      --medi-cg-max-iter <MEDI_CG_MAX_ITER>
+          MEDI: Maximum conjugate gradient iterations (default: 100)
+
+      --medi-cg-tol <MEDI_CG_TOL>
+          MEDI: CG convergence tolerance (default: 0.01)
+
+      --medi-tol <MEDI_TOL>
+          MEDI: Outer convergence tolerance (default: 0.1)
+
+      --medi-merit <MEDI_MERIT>
+          MEDI: enable MERIT weighting (default: true)
 
           [possible values: true, false]
 
-      --csf <CSF>
-          MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2* of the echo magnitudes, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it
+      --medi-csf <MEDI_CSF>
+          MEDI+0 (Liu et al. 2018): zero-reference χ to the ventricular CSF, found from R2*, and keep it uniform there (default: true). Needs at least 3 echoes; with fewer, MEDI runs without it
 
           [possible values: true, false]
 
-      --lambda-csf <LAMBDA_CSF>
+      --medi-lambda-csf <MEDI_LAMBDA_CSF>
           MEDI+0: weight of the CSF uniformity term (default: 100)
 
-      --csf-r2s-threshold <CSF_R2S_THRESHOLD>
+      --medi-csf-r2s-threshold <MEDI_CSF_R2S_THRESHOLD>
           MEDI+0: R2* in Hz below which a voxel is a CSF candidate (default: 5)
 
-      --csf-erode <CSF_ERODE>
+      --medi-csf-erode <MEDI_CSF_ERODE>
           MEDI+0: erode the mask by a 10 mm sphere before finding the CSF (default: true)
 
           [possible values: true, false]
 
-      --zeropad <X> <Y> <Z>
-          Voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default: 0 0 0)
+      --medi-zeropad <X> <Y> <Z>
+          MEDI: voxels of zeros appended at the end of x, y and z before the inversion; the result is cropped back (default: 0 0 0)
 
-      --smv <SMV>
-          High-pass the local field with a spherical mean value filter, removing residual background near the brain edge (MEDI-SMV) [default: on]
+      --medi-data-weighting <MEDI_DATA_WEIGHTING>
+          MEDI: data weighting mode (0=uniform, 1=SNR) (default: 1)
 
-          [possible values: true, false]
-
-      --smv-radius <SMV_RADIUS>
-          SMV radius in mm (also mSMV's)
-
-      --smv-shrink-mask <SMV_SHRINK_MASK>
-          With SMV, shrink the mask to where the SMV of the mask exceeds 0.999; false keeps the full mask, high-passing the field over it [default: on]
-
-          [possible values: true, false]
-
-      --msmv
-          MEDI-mSMV (Roberts et al. 2024): filter the local field by maximum spherical mean value first, and fit it with the SMV-filtered dipole kernel. Needs at least 3 echoes
-
-      --msmv-maxk <MSMV_MAXK>
-          MEDI-mSMV: the boundary correction makes at most this many passes, less one
-
-      --msmv-vessel-radius <MSMV_VESSEL_RADIUS>
-          MEDI-mSMV: largest vessel thickness of the vessel mask, in voxels (default: 15, or 8 × the largest voxel dimension if that is more)
-
-      --no-msmv-prefilter
-          MEDI-mSMV: no SMV prefilter before mSMV. Only consistent for a field already high-passed by the same SMV; after PDF, V-SHARP or LBV it diverges (expert)
-
-      --data-weighting <DATA_WEIGHTING>
-          Data weighting mode (0=uniform, 1=SNR)
-
-      --percentage <PERCENTAGE>
-          Edge percentage (0.0-1.0)
-
-      --cg-tol <CG_TOL>
-          CG tolerance
-
-      --cg-max-iter <CG_MAX_ITER>
-          CG max iterations
-
-      --max-iter <MAX_ITER>
-          Max outer iterations
-
-      --tol <TOL>
-          Outer tolerance
-
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)
+      --medi-te <TE>
+          MEDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)
 
   -h, --help
           Print help

@@ -3,6 +3,7 @@
 
 use serde_json::json;
 
+use crate::plan::Stage;
 use crate::observe::StageEvent;
 use crate::run::{Done, Run};
 use crate::stages;
@@ -33,7 +34,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     pub(crate) fn homogeneity(&mut self) -> Result<(), S::Error> {
         let targets = self.plan.homogeneity.clone();
         let params = stages::magnitude::step_params(self.config, &targets);
-        let Some(key) = self.begin("inhomog", None, &params, "Skipping inhomogeneity correction (cached)",
+        let Some(key) = self.begin(Stage::InhomogeneityCorrection, None, &params, "Skipping inhomogeneity correction (cached)",
                                    "Correcting the magnitude for inhomogeneity") else { return Ok(()) };
         let mut outputs = Vec::new();
         // QSMART's vessel magnitude is the mean over every echo: a run with magnitude must have
@@ -67,7 +68,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             outputs.push(Item::HomogeneousMagnitude(e));
         }
         self.complete(Done {
-            step: "inhomog", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage: Stage::InhomogeneityCorrection, algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "Inhomogeneity correction")
     }
 
@@ -78,7 +79,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let params = json!({ "echoes": if corrected { "corrected" } else { "as acquired" },
                              "published": self.config.pipeline.do_magnitude });
         let doing = if corrected { "Computing the RSS-combined magnitude of the corrected echoes" } else { "Computing RSS-combined magnitude" };
-        let Some(key) = self.begin("magnitude", Some("rss"), &params, "Skipping magnitude (cached)", doing) else { return Ok(()) };
+        let Some(key) = self.begin(Stage::Magnitude, Some("rss"), &params, "Skipping magnitude (cached)", doing) else { return Ok(()) };
         let n = self.n_echoes();
         let mut echoes = Vec::with_capacity(n);
         for e in 1..=n {
@@ -90,7 +91,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             drop(echoes);
             self.put(Item::CombinedMagnitude, Data::Real(&combined))?;
             self.record(Done {
-                step: "magnitude", algorithm: Some("rss"), params: &params, outcome: None, key: &key,
+                stage: Stage::Magnitude, algorithm: Some("rss"), params: &params, outcome: None, key: &key,
                 outputs: &[Item::CombinedMagnitude],
             })?;
         } else {

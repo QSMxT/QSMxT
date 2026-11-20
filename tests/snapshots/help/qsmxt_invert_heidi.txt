@@ -43,58 +43,58 @@ Options:
           Do not fit a global field offset alongside χ
 
       --lsqr-tol <LSQR_TOL>
-          LSQR convergence tolerance
+          LSQR convergence tolerance (default: 1e-5)
 
       --lsqr-max-iter <LSQR_MAX_ITER>
-          LSQR max iterations
+          LSQR: Maximum LSQR iterations (default: 400)
 
       --heidi-cone-threshold <HEIDI_CONE_THRESHOLD>
-          |D(k)| above which a coefficient is well-conditioned and kept from the seed map
+          |D(k)| above which a coefficient is well-conditioned and kept from the seed map (default: 0.1)
 
       --heidi-gradient-threshold <HEIDI_GRADIENT_THRESHOLD>
-          Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous
+          Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous (default: 3.924908970520748e-3)
 
       --no-heidi-laplacian-correction
           Do not open the homogeneity masks where the field's Laplacian is large
 
       --heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>
-          Field-Laplacian threshold (ppm per voxel²)
+          HEIDI: Field-Laplacian threshold (ppm per voxel²) (default: 5.943433583931419e-2)
 
       --heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>
-          TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks)
+          TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks) (default: 0)
 
       --heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>
-          NESTA continuation steps on μ
+          HEIDI: NESTA continuation steps on μ (default: 8)
 
       --heidi-inner-iterations <HEIDI_INNER_ITERATIONS>
-          Accelerated-gradient iterations per continuation step
+          HEIDI: Accelerated-gradient iterations per continuation step (default: 500)
 
       --heidi-mu-min <HEIDI_MU_MIN>
-          Final (smallest) smoothing parameter μ
+          HEIDI: Final (smallest) smoothing parameter μ (default: 2.220446049250313e-16)
 
       --heidi-tol <HEIDI_TOL>
-          Relative objective change that ends an inner loop early (the default runs every iteration)
+          HEIDI: Relative objective change that ends an inner loop early (the default runs every iteration)
+
+      --heidi-te <TE>
+          HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last)
 
       --no-heidi-denoise
           Skip the anisotropic-diffusion smoothing of the field before its gradients are taken
 
       --heidi-denoise-iterations <HEIDI_DENOISE_ITERATIONS>
-          Anisotropic-diffusion iterations
+          HEIDI: Anisotropic-diffusion iterations (default: 5)
 
       --heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>
-          Anisotropic-diffusion time step
+          HEIDI: Anisotropic-diffusion time step (default: 0.05)
 
       --heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>
-          Anisotropic-diffusion conductance
+          HEIDI: Anisotropic-diffusion conductance (default: 1)
 
       --heidi-denoise-reference-itk
-          ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)
+          HEIDI: ITK 3.20's float arithmetic for the denoising, as the authors' code runs it (for comparison with it; the default computes its conductance scale in double precision)
 
       --no-heidi-denoise-reference-itk
           The denoising in double precision, after a pipeline that turns ITK's float arithmetic on (the HEIDI pipeline)
-
-      --heidi-te <TE>
-          HEIDI: the echo time the field stands for the phase of, in the conversion to HEIDI's units: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: last)
 
   -h, --help
           Print help

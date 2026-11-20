@@ -1,11 +1,11 @@
-## toggle do_smwi
+## toggle pipeline.do_smwi
 config:
   /pipeline/do_smwi: false -> true
 command:
   + --do-smwi
 methods: d438d651f19ec966 (14 lines)
 
-## toggle do_smwi, toggle export_dicom
+## toggle pipeline.do_smwi, toggle export_dicom
 config:
   /pipeline/do_smwi: false -> true
   /pipeline/export_dicom: false -> true

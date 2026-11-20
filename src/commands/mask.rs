@@ -10,11 +10,9 @@ use qsm_core::io::NiftiData;
 use qsm_core::pipeline::config::ScanMetadata;
 use super::common::{load_nifti, load_nifti_4d, save_mask};
 use crate::cli::{MaskCombineCliArgs, MaskCommand, MaskCommonArgs, MaskPresetArgs};
-use crate::error::QsmxtError;
-use crate::pipeline::config::{
-    mask_preset_recipe, parse_mask_op, to_mask_ops, to_mask_sections, to_scan_metadata,
-    MaskCombine, MaskOp, MaskRecipe, MaskSection, MaskingInput,
-};
+use qsmxt_io::error::QsmxtError;
+use crate::cli::mask_preset_recipe;
+use qsmxt_engine::{parse_mask_op, to_mask_ops, to_mask_sections, to_scan_metadata, MaskCombine, MaskOp, MaskRecipe, MaskSection, MaskingInput};
 
 /// qsm-core's view of a volume: the mask ops need dims and voxel size, and MindGrab the affine.
 fn scan_meta(nifti: &NiftiData) -> ScanMetadata {
@@ -28,7 +26,7 @@ fn dims_str(nifti: &NiftiData) -> String {
 /// The image a generating subcommand reads: a 3-D image as it is, or a 4-D multi-echo magnitude
 /// combined over its echoes by root-sum-of-squares, as `qsmxt run` combines the echoes for a
 /// `magnitude` mask section (and as HD-BET's own pipeline does).
-fn load_image(path: &std::path::Path) -> crate::Result<NiftiData> {
+fn load_image(path: &std::path::Path) -> qsmxt_io::Result<NiftiData> {
     let multi = load_nifti_4d(path)?;
     let mut nifti = multi.geometry_reference();
     nifti.data = match multi.echoes.len() {
@@ -45,7 +43,7 @@ fn load_image(path: &std::path::Path) -> crate::Result<NiftiData> {
 
 /// A binary mask (thresholded at 0.5). A 4-D file is refused: a mask has one volume, and reading
 /// only the first of several would silently drop the rest.
-fn load_mask(path: &std::path::Path) -> crate::Result<(Vec<u8>, NiftiData)> {
+fn load_mask(path: &std::path::Path) -> qsmxt_io::Result<(Vec<u8>, NiftiData)> {
     let multi = load_nifti_4d(path)?;
     if multi.echoes.len() > 1 {
         return Err(QsmxtError::Config(format!(
@@ -59,9 +57,9 @@ fn load_mask(path: &std::path::Path) -> crate::Result<(Vec<u8>, NiftiData)> {
 
 /// Fetch the weights of any deep-learning op (HD-BET) before running, with a progress bar — or
 /// fail clearly on a build without the `dl` feature.
-fn prefetch_dl_weights(ops: &[MaskOp]) -> crate::Result<()> {
+fn prefetch_dl_weights(ops: &[MaskOp]) -> qsmxt_io::Result<()> {
     for id in to_mask_ops(ops, &Default::default()).iter().filter_map(|op| op.dl_model_id()) {
-        crate::pipeline::runner::prefetch_weights(id, id)?;
+        qsmxt_io::pipeline::runner::prefetch_weights(id, id)?;
     }
     Ok(())
 }
@@ -69,7 +67,7 @@ fn prefetch_dl_weights(ops: &[MaskOp]) -> crate::Result<()> {
 /// Apply refinements in order through qsm-core. `magnitude` is what `signal-erode` gates on;
 /// the generating subcommands pass their input (it is the magnitude), the mask-to-mask ones
 /// pass what `--magnitude` gave them, if anything.
-fn refine(mask: Vec<u8>, ops: &[MaskOp], reference: &NiftiData, magnitude: Option<&[f64]>) -> crate::Result<Vec<u8>> {
+fn refine(mask: Vec<u8>, ops: &[MaskOp], reference: &NiftiData, magnitude: Option<&[f64]>) -> qsmxt_io::Result<Vec<u8>> {
     if let Some(op) = ops.iter().find(|op| op.is_generator()) {
         return Err(QsmxtError::Config(format!(
             "--op {op} creates a mask rather than refining one; use the matching `qsmxt mask` subcommand",
@@ -97,25 +95,24 @@ fn refine(mask: Vec<u8>, ops: &[MaskOp], reference: &NiftiData, magnitude: Optio
 }
 
 /// Parse and apply the `--op` chain.
-fn refine_with(mask: Vec<u8>, ops: &[String], reference: &NiftiData, magnitude: Option<&[f64]>) -> crate::Result<Vec<u8>> {
+fn refine_with(mask: Vec<u8>, ops: &[String], reference: &NiftiData, magnitude: Option<&[f64]>) -> qsmxt_io::Result<Vec<u8>> {
     let parsed = ops.iter().map(|s| parse_mask_op(s)).collect::<Result<Vec<_>, _>>()?;
     refine(mask, &parsed, reference, magnitude)
 }
 
-/// The BET settings of a subcommand: qsm-core's defaults, with its orientation if it gave one.
-fn bet_config(orientation: Option<qsmxt_engine::BetOrientation>) -> qsmxt_engine::BetConfig {
-    let mut bet = qsmxt_engine::BetConfig::default();
-    if let Some(o) = orientation {
-        bet.orientation = o;
-    }
-    bet
+/// The BET settings of a subcommand: QSMxT's, with its `--bet-*` flags applied as `qsmxt run`
+/// applies them.
+fn bet_config(settings: &[qsmxt_engine::schema::cli_apply::Given]) -> qsmxt_io::Result<qsmxt_engine::BetConfig> {
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    qsmxt_io::settings::apply(&mut cfg, settings)?;
+    Ok(cfg.bet)
 }
 
 /// A generating subcommand: run `generator` on the input image, then the `--op` chain. The input
 /// doubles as the magnitude for `bet`/`hd-bet`/`signal-erode`, which is right when it is one.
-fn generate(common: &MaskCommonArgs, generator: MaskOp, bet: &qsmxt_engine::BetConfig) -> crate::Result<()> {
+fn generate(common: &MaskCommonArgs, generator: MaskOp, bet: &qsmxt_engine::BetConfig) -> qsmxt_io::Result<()> {
     let nifti = load_image(&common.input)?;
-    if let MaskOp::Threshold { method: crate::pipeline::config::MaskThresholdMethod::Otsu, .. } = &generator {
+    if let MaskOp::Threshold { method: qsmxt_engine::MaskThresholdMethod::Otsu, .. } = &generator {
         info!("Otsu threshold: {:.4}", qsm_core::utils::otsu_threshold(&nifti.data, 256));
     }
     info!("{} ({})", generator, dims_str(&nifti));
@@ -129,7 +126,7 @@ fn generate(common: &MaskCommonArgs, generator: MaskOp, bet: &qsmxt_engine::BetC
 }
 
 /// A mask-to-mask subcommand: `op` on the input mask, then the `--op` chain.
-fn refine_file(common: &MaskCommonArgs, op: MaskOp) -> crate::Result<()> {
+fn refine_file(common: &MaskCommonArgs, op: MaskOp) -> qsmxt_io::Result<()> {
     let (mask, nifti) = load_mask(&common.input)?;
     info!("{} ({})", op, dims_str(&nifti));
     let mut ops = vec![op];
@@ -140,7 +137,7 @@ fn refine_file(common: &MaskCommonArgs, op: MaskOp) -> crate::Result<()> {
 
 /// The HD-BET op for `qsmxt mask hd-bet` (`--patch` wins over `--low-memory`, which wins over
 /// `--window`; any of them, or `--tile-step`, selects the sliding window).
-fn hd_bet_op(args: &crate::cli::MaskHdBetArgs) -> crate::Result<MaskOp> {
+fn hd_bet_op(args: &crate::cli::MaskHdBetArgs) -> qsmxt_io::Result<MaskOp> {
     let mut spec = String::from("hd-bet");
     if let Some(p) = &args.patch {
         spec += &format!(":{p}");
@@ -156,7 +153,7 @@ fn hd_bet_op(args: &crate::cli::MaskHdBetArgs) -> crate::Result<MaskOp> {
 
 /// Build the `rs2-net` op from its flags, through the same parser the `--mask` strings use, so
 /// the flags and the spec cannot drift.
-fn rs2_net_op(args: &crate::cli::MaskRs2NetArgs) -> crate::Result<MaskOp> {
+fn rs2_net_op(args: &crate::cli::MaskRs2NetArgs) -> qsmxt_io::Result<MaskOp> {
     let mut spec = String::from("rs2-net");
     if args.tta { spec += ":tta"; }
     if let Some(step) = args.tile_step { spec += &format!(":step={step}"); }
@@ -164,14 +161,14 @@ fn rs2_net_op(args: &crate::cli::MaskRs2NetArgs) -> crate::Result<MaskOp> {
 }
 
 /// Build the `mindgrab` op from its flags, through the same parser the `--mask` strings use.
-fn mindgrab_op(args: &crate::cli::MaskMindGrabArgs) -> crate::Result<MaskOp> {
+fn mindgrab_op(args: &crate::cli::MaskMindGrabArgs) -> qsmxt_io::Result<MaskOp> {
     Ok(parse_mask_op(if args.tta { "mindgrab:tta" } else { "mindgrab" })?)
 }
 
 /// Run a whole `--mask-preset` recipe on files: each section reads the input image, or
 /// `--quality` for the phase-quality sections when it is given; the sections fold with the
 /// recipe's combine mode; the recipe's own refinements run on the result, then the `--op` chain.
-fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> crate::Result<()> {
+fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> qsmxt_io::Result<()> {
     let magnitude = load_image(&args.common.input)?;
     let quality = args.quality.as_deref().map(load_nifti).transpose()?;
     if let Some(q) = &quality {
@@ -184,7 +181,7 @@ fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> crate::Result<()> {
     }
 
     let meta = scan_meta(&magnitude);
-    let core = to_mask_sections(&recipe.sections, &bet_config(args.bet_orientation));
+    let core = to_mask_sections(&recipe.sections, &bet_config(&args.settings.0)?);
     let mut combined: Option<Vec<u8>> = None;
     for (section, core_section) in recipe.sections.iter().zip(&core) {
         let (image, what): (&[f64], &str) = match (section.input, &quality) {
@@ -220,7 +217,7 @@ fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> crate::Result<()> {
 
 /// `--phase`: the voxels where the scanner wrote no phase leave the mask, as they leave every
 /// recipe's mask in `qsmxt run` (qsmxt-engine's `stages::mask::ScannerMasked`).
-fn leave_out_scanner_masked(mask: &mut [u8], path: &std::path::Path, reference: &NiftiData) -> crate::Result<()> {
+fn leave_out_scanner_masked(mask: &mut [u8], path: &std::path::Path, reference: &NiftiData) -> qsmxt_io::Result<()> {
     let phase = load_nifti_4d(path)?;
     let dims = phase.geometry_reference().dims;
     if dims != reference.dims {
@@ -246,7 +243,7 @@ fn leave_out_scanner_masked(mask: &mut [u8], path: &std::path::Path, reference: 
 
 /// Fold masks together with `mode`, then apply `--op` refinements to the result — the standalone
 /// form of what `qsmxt run --mask-combine` does between `--mask` sections.
-fn combine(args: MaskCombineCliArgs, mode: MaskCombine) -> crate::Result<()> {
+fn combine(args: MaskCombineCliArgs, mode: MaskCombine) -> qsmxt_io::Result<()> {
     let (mut combined, reference) = load_mask(&args.inputs[0])?;
     for path in &args.inputs[1..] {
         let (mask, nifti) = load_mask(path)?;
@@ -279,23 +276,23 @@ fn combine(args: MaskCombineCliArgs, mode: MaskCombine) -> crate::Result<()> {
     Ok(())
 }
 
-pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
-    use crate::pipeline::config::MaskThresholdMethod;
+pub fn execute(cmd: MaskCommand) -> qsmxt_io::Result<()> {
+    use qsmxt_engine::MaskThresholdMethod;
     match cmd {
-        MaskCommand::Otsu(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }, &bet_config(None)),
-        MaskCommand::Value(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(args.threshold) }, &bet_config(None)),
-        MaskCommand::StiGui(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None }, &bet_config(None)),
-        MaskCommand::Percentile(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(args.percentile) }, &bet_config(None)),
+        MaskCommand::Otsu(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }, &bet_config(&[])?),
+        MaskCommand::Value(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(args.threshold) }, &bet_config(&[])?),
+        MaskCommand::StiGui(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None }, &bet_config(&[])?),
+        MaskCommand::Percentile(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(args.percentile) }, &bet_config(&[])?),
         MaskCommand::Bet(args) => generate(&args.common, MaskOp::Bet {
             fractional_intensity: args.fractional_intensity,
             voxel_scale: args.voxel_scale.unwrap_or_else(qsmxt_engine::bet_default_voxel_scale),
-        }, &bet_config(args.orientation)),
-        MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op, &bet_config(None)) }
-        MaskCommand::Rs2Net(args) => { let op = rs2_net_op(&args)?; generate(&args.common, op, &bet_config(None)) }
-        MaskCommand::Mindgrab(args) => { let op = mindgrab_op(&args)?; generate(&args.common, op, &bet_config(None)) }
+        }, &bet_config(&args.settings.0)?),
+        MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op, &bet_config(&[])?) }
+        MaskCommand::Rs2Net(args) => { let op = rs2_net_op(&args)?; generate(&args.common, op, &bet_config(&[])?) }
+        MaskCommand::Mindgrab(args) => { let op = mindgrab_op(&args)?; generate(&args.common, op, &bet_config(&[])?) }
         MaskCommand::Preset(args) => { let recipe = mask_preset_recipe(args.preset)?; preset(&args, recipe) }
         MaskCommand::Robust(args) => preset(
-            &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None, phase: None, bet_orientation: None },
+            &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None, phase: None, settings: Default::default() },
             mask_preset_recipe(crate::cli::MaskPresetArg::RobustThreshold)?,
         ),
         MaskCommand::Erode(args) => refine_file(&args.common, MaskOp::Erode { iterations: args.iterations }),
@@ -316,7 +313,7 @@ fn log_saved(path: &std::path::Path, mask: &[u8]) {
     info!("Mask saved to {} ({} voxels, {:.1}%)", path.display(), count, 100.0 * count as f64 / mask.len() as f64);
 }
 
-fn save_and_log(common: &MaskCommonArgs, mask: &[u8], nifti: &NiftiData) -> crate::Result<()> {
+fn save_and_log(common: &MaskCommonArgs, mask: &[u8], nifti: &NiftiData) -> qsmxt_io::Result<()> {
     save_mask(&common.output, mask, nifti)?;
     log_saved(&common.output, mask);
     Ok(())

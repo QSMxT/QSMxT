@@ -24,32 +24,32 @@ Options:
       --tile-halo <TILE_HALO>
           DL tiling: context margin per side, in voxels (default 8)
 
-      --delta <DELTA>
-          Delta parameter
+      --rts-delta <RTS_DELTA>
+          RTS: Threshold for ill-conditioned k-space region (default: 0.15)
 
-      --mu <MU>
-          Mu parameter
+      --rts-mu <RTS_MU>
+          RTS: Regularization parameter for well-conditioned region (default: 100000)
 
-      --tol <TOL>
-          Tolerance
+      --rts-rho <RTS_RHO>
+          RTS rho (ADMM penalty) (default: 10)
 
-      --rho <RHO>
-          Rho (ADMM penalty)
+      --rts-tol <RTS_TOL>
+          RTS: Convergence tolerance (relative change) (default: 0.01)
 
-      --max-iter <MAX_ITER>
-          Max iterations
+      --rts-max-iter <RTS_MAX_ITER>
+          RTS: Maximum ADMM iterations (default: 20)
 
-      --lsmr-iter <LSMR_ITER>
-          LSMR iterations
+      --rts-lsmr-iter <RTS_LSMR_ITER>
+          RTS: LSMR iterations for step 1 (well-conditioned solve) (default: 4)
 
-      --tau <TAU>
-          Rho is raised when the primal residual falls by less than this factor (tau)
+      --rts-tau <RTS_TAU>
+          RTS: rho is raised when the primal residual falls by less than this factor (tau) (default: 0.7)
 
-      --gamma <GAMMA>
-          The factor rho is raised by (gamma)
+      --rts-gamma <RTS_GAMMA>
+          RTS: the factor rho is raised by (gamma) (default: 5)
 
-      --pad <X> <Y> <Z>
-          Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+      --rts-pad <X> <Y> <Z>
+          RTS: Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded, in voxels (default: 0 0 0)
 
   -h, --help
           Print help

@@ -5,8 +5,8 @@
 //! `settings_view` says it applies, with one widget per value type: a checkbox for a bool, a
 //! select for a choice, a text row for anything typed. Labels, help and options are the
 //! registry's TUI wording; a setting is indented once for each setting it is listed under on the
-//! same page. The rows keep the form's field names ([`FIELD_PATHS`]), which the rest of the TUI
-//! (focus, advice, Basic mode) knows them by.
+//! same page. A row is known to the rest of the TUI (focus, advice, Basic mode) by its setting's
+//! path ([`FIELD_PATHS`]).
 //!
 //! The settings of the sections in [`STORED_SECTIONS`] live in [`SettingsStore`]: a config, plus
 //! the text typed on their text rows. The two settings outside them are the Input tab's
@@ -24,7 +24,7 @@ use serde_json::Value;
 use qsmxt_engine::schema::{self, EchoKind, Section, Setting, ValueType, ViewFacts};
 use qsmxt_engine::PipelineConfig;
 
-use super::app::{field_of_path, field_path, App, Page, PipelineRow, RowContext, FIELD_PATHS};
+use super::app::{field_of_path, field_path, is_choice, App, Page, PipelineRow, RowContext, FIELD_PATHS};
 
 /// The sections whose settings are kept in [`SettingsStore`] rather than in the form's fields.
 pub const STORED_SECTIONS: &[Section] =

@@ -2,44 +2,26 @@ use log::info;
 
 use super::common::{load_nifti, nifti_grid, save_nifti};
 use crate::cli::SegmentArgs;
-use crate::error::QsmxtError;
-use crate::pipeline::config::{parse_synthseg_version, SegmentationConfig, SynthSegVersion};
+use qsmxt_io::error::QsmxtError;
+use qsmxt_engine::{SegmentationConfig, SynthSegVersion};
 
 /// `qsmxt segment` — run SynthSeg on one magnitude image.
 ///
 /// The pipeline stage is the usual way in; this exists to try the network on a single volume, or to
 /// segment data that never went through a QSM run.
-pub fn execute(args: SegmentArgs) -> crate::Result<()> {
+pub fn execute(args: SegmentArgs) -> qsmxt_io::Result<()> {
     // `--use-custom-dseg` comes with the shared segmentation flags, but it names a segmentation
     // for `qsmxt run` to use instead of computing one; here the point is to compute one.
-    if let Some(ref tool) = args.params.use_custom_dseg {
+    if let Some(g) = args.settings.0.iter().find(|g| g.flag.long == "use-custom-dseg") {
         return Err(QsmxtError::Config(format!(
-            "--use-custom-dseg {tool}: `qsmxt segment` computes a segmentation; a supplied one is \
-             only read by `qsmxt run`")));
+            "--use-custom-dseg {}: `qsmxt segment` computes a segmentation; a supplied one is \
+             only read by `qsmxt run`", g.values.join(" "))));
     }
-    let mut cfg = SegmentationConfig::default();
-    if let Some(ref v) = args.params.synthseg_version {
-        cfg.version = parse_synthseg_version(v).ok_or_else(|| {
-            QsmxtError::Config(format!("--synthseg-version '{v}': expected v1 or v2"))
-        })?;
-    }
-    if let Some(v) = args.params.synthseg_crop {
-        cfg.crop = Some(v);
-    }
-    if let Some(v) = args.params.synthseg_patch {
-        cfg.patch = Some(v);
-    }
-    if args.params.no_synthseg_flip_averaging {
-        cfg.flip_averaging = false;
-    }
-    if args.params.no_synthseg_topology_cleanup {
-        cfg.topology_cleanup = false;
-    }
-    if let Some(v) = args.params.synthseg_sigma {
-        cfg.sigma_smoothing = v;
-    }
+    let mut config = qsmxt_engine::PipelineConfig::default();
+    qsmxt_io::settings::apply(&mut config, &args.settings.0)?;
+    let cfg = config.segmentation;
 
-    crate::pipeline::config::synthseg_weights_available(cfg.version)?;
+    qsmxt_io::pipeline::config::synthseg_weights_available(cfg.version)?;
 
     let nifti = load_nifti(&args.magnitude)?;
     let grid = nifti_grid(&nifti);
@@ -61,9 +43,9 @@ pub fn execute(args: SegmentArgs) -> crate::Result<()> {
             out.push_str(&format!("{id}\t{name}\n"));
         }
         if let Some(parent) = lookup.parent() {
-            std::fs::create_dir_all(parent)?;
+            fs_err::create_dir_all(parent)?;
         }
-        std::fs::write(lookup, out)?;
+        fs_err::write(lookup, out)?;
         info!("Wrote {}", lookup.display());
     }
     Ok(())
@@ -79,15 +61,15 @@ fn core_version(v: SynthSegVersion) -> qsm_core::segment::SynthSegVersion {
 #[cfg(feature = "dl")]
 fn run(
     magnitude: &[f64], grid: &qsm_core::Grid, affine: &[f64; 16], cfg: &SegmentationConfig,
-) -> crate::Result<(Vec<i32>, Vec<f64>)> {
-    crate::pipeline::runner::prefetch_weights(cfg.version.weights_id(), "segment")?;
+) -> qsmxt_io::Result<(Vec<i32>, Vec<f64>)> {
+    qsmxt_io::pipeline::runner::prefetch_weights(cfg.version.weights_id(), "segment")?;
     let params = qsm_core::segment::SynthSegParams {
         version: core_version(cfg.version),
         crop: cfg.crop,
         flip_averaging: cfg.flip_averaging,
         topology_cleanup: cfg.topology_cleanup,
         sigma_smoothing: cfg.sigma_smoothing,
-        inference: crate::pipeline::config::synthseg_inference(cfg.patch),
+        inference: qsmxt_engine::synthseg_inference(cfg.patch),
         // The head crop and the posteriors' precision are not QSMxT settings yet: qsm-core's.
         ..Default::default()
     };
@@ -101,7 +83,7 @@ fn run(
 #[cfg(not(feature = "dl"))]
 fn run(
     _magnitude: &[f64], _grid: &qsm_core::Grid, _affine: &[f64; 16], _cfg: &SegmentationConfig,
-) -> crate::Result<(Vec<i32>, Vec<f64>)> {
+) -> qsmxt_io::Result<(Vec<i32>, Vec<f64>)> {
     Err(QsmxtError::Config(
         "qsmxt segment needs a deep-learning build: SynthSeg runs an ONNX network, which this \
          binary was compiled without (--no-default-features)"

@@ -34,7 +34,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     /// total-field methods (TFI, AutoQSM, NeXtQSM), which remove or model the
     /// background themselves, of the total field inside the pass's mask.
     pub(crate) fn inversion(&mut self, step: &Step, pass: Pass) -> Result<(), S::Error> {
-        let name = step.stage.name();
+        let stage = step.stage;
         let label = pass_label(pass);
         // A two-pass run inverts each pass without HEIDI, and fills the combined map once
         // ([`Self::two_pass_combination`]).
@@ -68,7 +68,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 params["heidi_te_s"] = serde_json::json!(te);
             }
         }
-        let Some(key) = self.begin(&name, Some(&algorithm), &params, "Skipping invert (cached)",
+        let Some(key) = self.begin(stage, Some(&algorithm), &params, "Skipping invert (cached)",
                                    &format!("Dipole inversion{label}")) else { return Ok(()) };
         if per_echo {
             // Read only by the total-field methods: the others each take their echo's own mask.
@@ -99,7 +99,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 outputs.push(Item::EchoRawChi(e));
             }
             return self.complete(Done {
-                step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
+                stage, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
             }, &format!("Dipole inversion ({algorithm}), each echo"));
         }
         let (field_item, mask_item) = if skip_bgremove {
@@ -119,18 +119,18 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let chi = stages::inversion::invert(&field, &mask, magnitude.as_deref(), &self.meta, config, self.observer)?;
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
         self.complete(Done {
-            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key,
+            stage, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key,
             outputs: &[Item::RawChi(pass)],
         }, &format!("Dipole inversion ({algorithm}){label}"))
     }
 
     /// iQSM / iQSM+: the raw map straight from every echo's wrapped phase.
     pub(crate) fn iqsm(&mut self, step: &Step, pass: Pass) -> Result<(), S::Error> {
-        let name = step.stage.name();
+        let stage = step.stage;
         let label = pass_label(pass);
         let algorithm = stages::inversion::iqsm_algorithm(self.config).unwrap_or_default();
         let params = stages::inversion::iqsm_params(&self.meta);
-        let Some(key) = self.begin(&name, Some(algorithm), &params, &format!("Skipping {algorithm} (cached)"),
+        let Some(key) = self.begin(stage, Some(algorithm), &params, &format!("Skipping {algorithm} (cached)"),
                                    &format!("iQSM reconstruction{label}")) else { return Ok(()) };
         let (phases, magnitudes) = self.phase_echoes()?;
         let mask_item = self.pass_mask(pass);
@@ -142,7 +142,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
         let net = if algorithm == "iqsm-plus" { "iQSM+" } else { "iQSM" };
         self.complete(Done {
-            step: &name, algorithm: Some(algorithm), params: &params, outcome: None, key: &key,
+            stage, algorithm: Some(algorithm), params: &params, outcome: None, key: &key,
             outputs: &[Item::RawChi(pass)],
         }, &format!("{net}{label}"))
     }
@@ -150,10 +150,10 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     /// TGV-QSM, from the total field (several echoes) or echo 1's wrapped phase (one).
     pub(crate) fn tgv(&mut self, pass: Pass) -> Result<(), S::Error> {
         use stages::inversion::TgvSource;
-        let name = Stage::Tgv(pass).name();
+        let stage = Stage::Tgv(pass);
         let label = pass_label(pass);
         let params = stages::inversion::tgv_params(self.config, &self.meta);
-        let Some(key) = self.begin(&name, Some("tgv"), &params, "Skipping tgv (cached)",
+        let Some(key) = self.begin(stage, Some("tgv"), &params, "Skipping tgv (cached)",
                                    &format!("TGV-QSM reconstruction{label}")) else { return Ok(()) };
         let mask_item = self.pass_mask(pass);
         let mask = self.store.mask(&mask_item)?;
@@ -164,7 +164,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let chi = stages::inversion::tgv(&data, &mask, &self.meta, self.config)?;
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
         self.complete(Done {
-            step: &name, algorithm: Some("tgv"), params: &params, outcome: None, key: &key,
+            stage, algorithm: Some("tgv"), params: &params, outcome: None, key: &key,
             outputs: &[Item::RawChi(pass)],
         }, &format!("TGV-QSM{label}"))
     }
@@ -186,7 +186,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             }
         }
         let doing = if heidi.is_some() { "Combining two-pass reconstructions, then HEIDI" } else { "Combining two-pass reconstructions" };
-        let Some(key) = self.begin("twopass", None, &params, "Skipping twopass (cached)", doing) else { return Ok(()) };
+        let Some(key) = self.begin(Stage::TwoPassCombination, None, &params, "Skipping twopass (cached)", doing) else { return Ok(()) };
         let chi_reliable = self.store.real(&Item::RawChi(Pass::Reliable))?;
         let chi_main = self.store.real(&Item::RawChi(Pass::Main))?;
         let declared = self.store.mask(&support)?;
@@ -210,7 +210,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         self.put(Item::CombinedRawChi, Data::Real(&combined))?;
         self.complete(Done {
-            step: "twopass", algorithm: heidi.is_some().then_some("heidi"), params: &params, outcome: None, key: &key,
+            stage: Stage::TwoPassCombination, algorithm: heidi.is_some().then_some("heidi"), params: &params, outcome: None, key: &key,
             outputs: &[Item::CombinedRawChi],
         }, if heidi.is_some() { "Two-pass combination and HEIDI" } else { "Two-pass combination" })
     }
@@ -226,7 +226,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let segmentation = self.store.recorded_key("segmentation");
         let params = crate::referencing::params(self.config, segmentation.as_deref())?;
         let region = crate::referencing::reference_region(self.config)?;
-        let Some(key) = self.begin(&name, Some(&method), &params, &format!("Skipping {name} (cached)"),
+        let Some(key) = self.begin(stage, Some(&method), &params, &format!("Skipping {name} (cached)"),
                                    "Referencing QSM") else { return Ok(()) };
         self.log(Level::Info, &format!("QSM referencing ({})", self.config.qsm.reference));
         let dseg = match region {
@@ -241,7 +241,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             None => None,
         };
         if !single_pass && self.per_echo() {
-            return self.reference_per_echo(&name, &method, &params, &key, dseg.as_deref());
+            return self.reference_per_echo(stage, &method, &params, &key, dseg.as_deref());
         }
         let (raw, supports, out) = if single_pass {
             (Item::RawChi(Pass::Main), vec![self.support(Pass::Main)], Item::SinglePassChi)
@@ -265,7 +265,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         // over its own support, so each has its own offset.
         self.store.annotate(&out, crate::referencing::sidecar_fields(self.config, offset.as_ref()))?;
         self.complete(Done {
-            step: &name, algorithm: Some(&method), params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage, algorithm: Some(&method), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "QSM referencing")
     }
 
@@ -275,7 +275,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     /// as a QSM is. Referencing commutes with the mean over one support, so the QSM is also the
     /// mean of the referenced echoes' maps there.
     pub(crate) fn reference_per_echo(
-        &mut self, name: &str, method: &str, params: &Value, key: &str, dseg: Option<&[f64]>,
+        &mut self, stage: Stage, method: &str, params: &Value, key: &str, dseg: Option<&[f64]>,
     ) -> Result<(), S::Error> {
         let n = self.n_echoes();
         let skip_bgremove = crate::bridge::skips_bgremove(self.config);
@@ -315,7 +315,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.store.annotate(&Item::Chi, crate::referencing::sidecar_fields(self.config, offset.as_ref()))?;
         outputs.extend([Item::Chi, Item::ChiSupport]);
         self.complete(Done {
-            step: name, algorithm: Some(method), params, outcome: None, key, outputs: &outputs,
+            stage, algorithm: Some(method), params, outcome: None, key, outputs: &outputs,
         }, "QSM referencing")
     }
 }

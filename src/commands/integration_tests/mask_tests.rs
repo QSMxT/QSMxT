@@ -42,7 +42,7 @@ fn test_mask_combines_4d_magnitude_by_rss() {
     let a = qsm_core::io::read_nifti_file(&e1).unwrap();
     let b = qsm_core::io::read_nifti_file(&e2).unwrap();
     let four_d = dir.path().join("mag4d.nii");
-    crate::nifti::write::write_volumes_4d(&four_d, &[&a.data, &b.data], a.dims, a.voxel_size, &a.affine).unwrap();
+    qsmxt_io::nifti::write::write_volumes_4d(&four_d, &[&a.data, &b.data], a.dims, a.voxel_size, &a.affine).unwrap();
 
     // Echo 1 alone and the RSS cross a threshold at different voxels.
     let rss: Vec<f64> = a.data.iter().zip(&b.data).map(|(x, y)| (x * x + y * y).sqrt()).collect();
@@ -81,7 +81,7 @@ fn test_mask_bet() {
         common: common_mask(input, output.clone()),
         fractional_intensity: 0.5,
         voxel_scale: None,
-        orientation: None,
+        settings: Default::default(),
     })).unwrap();
     assert!(output.exists());
 }
@@ -257,7 +257,7 @@ fn test_mask_robust() {
 
     // `robust` is `preset robust-threshold`, not a third copy of the recipe.
     let via_preset = dir.path().join("preset.nii");
-    super::mask::execute(MaskCommand::Preset(MaskPresetArgs { bet_orientation: None,
+    super::mask::execute(MaskCommand::Preset(MaskPresetArgs { settings: Default::default(),
         preset: MaskPresetArg::RobustThreshold, common: common_mask(input, via_preset.clone()), quality: None, phase: None,
     })).unwrap();
     assert_eq!(read_mask(&output), read_mask(&via_preset));
@@ -274,12 +274,12 @@ fn test_mask_preset_bet_and_phase() {
     testutils::write_mask_where(&quality, |i| i >= 64);
 
     let with_quality = dir.path().join("with.nii");
-    super::mask::execute(MaskCommand::Preset(MaskPresetArgs { bet_orientation: None,
+    super::mask::execute(MaskCommand::Preset(MaskPresetArgs { settings: Default::default(),
         preset: MaskPresetArg::BetAndPhase, common: common_mask(mag.clone(), with_quality.clone()),
         quality: Some(quality.clone()), phase: None,
     })).unwrap();
     let without = dir.path().join("without.nii");
-    super::mask::execute(MaskCommand::Preset(MaskPresetArgs { bet_orientation: None,
+    super::mask::execute(MaskCommand::Preset(MaskPresetArgs { settings: Default::default(),
         preset: MaskPresetArg::BetAndPhase, common: common_mask(mag.clone(), without.clone()), quality: None, phase: None,
     })).unwrap();
     let (w, wo) = (read_mask(&with_quality), read_mask(&without));
@@ -290,7 +290,7 @@ fn test_mask_preset_bet_and_phase() {
     // --quality must be on the input's grid.
     let small = dir.path().join("small.nii");
     testutils::write_mismatched_volume(&small, 1.0);
-    let err = super::mask::execute(MaskCommand::Preset(MaskPresetArgs { bet_orientation: None,
+    let err = super::mask::execute(MaskCommand::Preset(MaskPresetArgs { settings: Default::default(),
         preset: MaskPresetArg::BetAndPhase, common: common_mask(mag, dir.path().join("x.nii")),
         quality: Some(small), phase: None,
     })).unwrap_err();
@@ -305,7 +305,7 @@ fn test_mask_preset_leaves_out_scanner_masked_phase() {
     testutils::write_magnitude(&mag);
     // One constant value everywhere but the first slice.
     testutils::write_mask_where(&phase, |i| i >= 64);
-    let preset = |output: &std::path::Path, phase: Option<std::path::PathBuf>| super::mask::execute(MaskCommand::Preset(MaskPresetArgs { bet_orientation: None,
+    let preset = |output: &std::path::Path, phase: Option<std::path::PathBuf>| super::mask::execute(MaskCommand::Preset(MaskPresetArgs { settings: Default::default(),
         preset: MaskPresetArg::RobustThreshold, common: common_mask(mag.clone(), output.to_path_buf()), quality: None, phase,
     }));
     let (with, without) = (dir.path().join("with.nii"), dir.path().join("without.nii"));
@@ -395,8 +395,8 @@ fn test_mask_fill_holes() {
     })).unwrap();
     assert!(output.exists());
     // The bare op agrees with the subcommand default and the presets: 0 = automatic.
-    assert_eq!(crate::pipeline::config::parse_mask_op("fill-holes").unwrap(),
-               crate::pipeline::config::MaskOp::FillHoles { max_size: 0 });
+    assert_eq!(qsmxt_engine::parse_mask_op("fill-holes").unwrap(),
+               qsmxt_engine::MaskOp::FillHoles { max_size: 0 });
 }
 
 #[test]

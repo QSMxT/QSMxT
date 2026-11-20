@@ -24,11 +24,11 @@ Options:
       --tile-halo <TILE_HALO>
           DL tiling: context margin per side, in voxels (default 8)
 
-      --threshold <THRESHOLD>
-          Threshold on |D| (default: 0.15)
+      --tsvd-threshold <TSVD_THRESHOLD>
+          TSVD: Truncation threshold for SVD (0.1-0.2) (default: 0.15)
 
-      --pad <X> <Y> <Z>
-          Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+      --tsvd-pad <X> <Y> <Z>
+          TSVD: Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded, in voxels (default: 0 0 0)
 
   -h, --help
           Print help

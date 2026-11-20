@@ -25,26 +25,26 @@ Options:
       --r2prime <R2PRIME>
           R2' map NIfTI in Hz
 
-      --dr-pos <DR_POS>
-          Paramagnetic relaxivity (Hz/ppm)
+      --wavesep-dr-pos <WAVESEP_DR_POS>
+          WaveSep paramagnetic relaxivity (Hz/ppm) (default: 137)
 
-      --dr-neg <DR_NEG>
-          Diamagnetic relaxivity (Hz/ppm)
+      --wavesep-dr-neg <WAVESEP_DR_NEG>
+          WaveSep diamagnetic relaxivity (Hz/ppm) (default: 137)
 
-      --alpha <ALPHA>
-          Proximal-gradient step size
+      --wavesep-alpha <WAVESEP_ALPHA>
+          WaveSep: Proximal-gradient step size (default: 0.2)
 
-      --lambda <LAMBDA>
-          Wavelet L1 soft-threshold weight
+      --wavesep-lambda <WAVESEP_LAMBDA>
+          WaveSep: Wavelet L1 soft-threshold weight (default: 0.02)
 
-      --wavelet-order <WAVELET_ORDER>
-          Daubechies wavelet order
+      --wavesep-wavelet-order <WAVESEP_WAVELET_ORDER>
+          WaveSep: Daubechies order (default: 4)
 
-      --max-iter <MAX_ITER>
-          ISTA max iterations
+      --wavesep-max-iter <WAVESEP_MAX_ITER>
+          WaveSep: ISTA max iterations (default: 100)
 
-      --tol <TOL>
-          Relative-change stop tolerance
+      --wavesep-tol <WAVESEP_TOL>
+          WaveSep: Relative-change stop tolerance (default: 0.001)
 
   -h, --help
           Print help

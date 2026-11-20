@@ -569,7 +569,7 @@ impl App {
 
             // A run: its orientation group. A subject or session: collapse/expand.
             KeyCode::Left | KeyCode::Right if self.filter_state.focused_run().is_some() => {
-                let reference = self.field_text("orientation_reference").into_owned();
+                let reference = self.field_text("multi_orientation.reference").into_owned();
                 self.filter_state.move_orientation(key.code == KeyCode::Right, &reference);
                 // Each group's reference is now its first run.
                 self.form.settings.reset("multi_orientation.reference", false);

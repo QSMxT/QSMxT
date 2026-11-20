@@ -16,8 +16,8 @@ fn test_bgremove_vsharp() {
     c.output_mask = Some(output_mask.clone());
     super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
         common: c,
-        deconvolve: None, threshold: None, max_radius: None, min_radius: None, radius_step: None, grid: None, grid_spacing: None,
         ball: None,
+        settings: Default::default(),
     })).unwrap();
     assert!(output.exists());
     assert!(output_mask.exists());
@@ -37,8 +37,8 @@ fn test_bgremove_vsharp() {
     c.output_mask = None;
     super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
         common: c,
-        deconvolve: Some(true), threshold: None, max_radius: None, min_radius: None, radius_step: None, grid: None, grid_spacing: None,
         ball: None,
+        settings: SettingsOf::from_flags(&["--vsharp-deconvolve", "true"]),
     })).unwrap();
     let on = read(&output);
     // `--ball qsmjl` reaches it too.
@@ -46,8 +46,8 @@ fn test_bgremove_vsharp() {
     c.output_mask = None;
     super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
         common: c,
-        deconvolve: None, threshold: None, max_radius: None, min_radius: None, radius_step: None, grid: None, grid_spacing: None,
         ball: Some(crate::cli::VsharpBallArg::Qsmjl),
+        settings: Default::default(),
     })).unwrap();
     let qsmjl_ball = read(&output);
     let as_f32 = |v: Vec<f64>| v.into_iter().map(|x| x as f32).collect::<Vec<_>>();
@@ -74,7 +74,7 @@ fn test_bgremove_lbv() {
     super::bgremove::execute(BgremoveCommand::Lbv(BgremoveLbvArgs {
         common: common_bgremove(input, mask, output.clone()),
         scan: crate::cli::ScanParamArgs { field_strength: 3.0, echo_times: vec![0.004, 0.008] },
-        tol: None, depth: None, peel: None, n1: None, n2: None, n3: None, precision: None,
+        settings: Default::default(),
     })).unwrap();
     assert!(output.exists());
 }
@@ -90,7 +90,7 @@ fn test_bgremove_ismv() {
 
     super::bgremove::execute(BgremoveCommand::Ismv(BgremoveIsmvArgs {
         common: common_bgremove(input, mask, output.clone()),
-        variant: None, tol: None, max_iter: Some(5), radius: None,
+        settings: SettingsOf::from_flags(&["--ismv-max-iter", "5"]),
     })).unwrap();
     assert!(output.exists());
 }
@@ -106,7 +106,8 @@ fn test_bgremove_sharp() {
 
     super::bgremove::execute(BgremoveCommand::Sharp(BgremoveSharpArgs {
         common: common_bgremove(input, mask, output.clone()),
-        threshold: None, radius: None, variant: Some(crate::cli::SharpVariantArg::Qsmjl),
+        variant: Some(crate::cli::SharpVariantArg::Qsmjl),
+        settings: Default::default(),
     })).unwrap();
     assert!(output.exists());
 }

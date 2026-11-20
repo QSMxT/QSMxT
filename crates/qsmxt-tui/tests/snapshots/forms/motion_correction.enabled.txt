@@ -1,11 +1,11 @@
-## toggle motion_correction
+## toggle motion_correction.enabled
 config:
   /motion_correction/enabled: false -> true
 command:
   + --motion-correction
 methods: 6186ebbc57daedb9 (29 lines)
 
-## toggle motion_correction, motion_reference = echo
+## toggle motion_correction.enabled, motion_correction.reference = echo
 config:
   /motion_correction/enabled: false -> true
   /motion_correction/reference: "first" -> "1"

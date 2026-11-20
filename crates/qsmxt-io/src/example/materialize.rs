@@ -9,7 +9,7 @@
 //! `sub-01` and are told apart by their `ses-`(scanner) / `acq-`(protocol) / `run-`
 //! entities. That is what makes several of them shareable in one dataset.
 
-use std::fs;
+use fs_err as fs;
 use std::io::Read;
 use std::path::Path;
 

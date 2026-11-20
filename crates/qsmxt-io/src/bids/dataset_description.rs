@@ -46,7 +46,7 @@ struct DatasetDescription {
 fn build(source_bids_dir: &Path) -> DatasetDescription {
     // Record the raw dataset this was derived from as a file:// URI when the
     // path can be resolved to an absolute location; otherwise omit it.
-    let source_datasets = std::fs::canonicalize(source_bids_dir)
+    let source_datasets = fs_err::canonicalize(source_bids_dir)
         .ok()
         .map(|p| {
             vec![SourceDataset {
@@ -84,7 +84,7 @@ pub fn write(derivatives_dir: &Path, source_bids_dir: &Path) -> crate::Result<()
     let json = serde_json::to_string_pretty(&desc).map_err(|e| {
         crate::error::QsmxtError::Config(format!("Failed to serialize dataset_description.json: {}", e))
     })?;
-    std::fs::write(derivatives_dir.join("dataset_description.json"), json)?;
+    fs_err::write(derivatives_dir.join("dataset_description.json"), json)?;
     Ok(())
 }
 
@@ -135,7 +135,7 @@ pub fn bidsignore() -> String {
 /// Write a `.bidsignore` so the derivatives dataset validates cleanly against
 /// the current BIDS validator.
 pub fn write_bidsignore(derivatives_dir: &Path) -> crate::Result<()> {
-    std::fs::write(derivatives_dir.join(".bidsignore"), bidsignore())?;
+    fs_err::write(derivatives_dir.join(".bidsignore"), bidsignore())?;
     Ok(())
 }
 
@@ -186,7 +186,7 @@ are listed in `.bidsignore`.
 
 /// Write a minimal `README` (recommended for every BIDS dataset).
 pub fn write_readme(derivatives_dir: &Path) -> crate::Result<()> {
-    std::fs::write(derivatives_dir.join("README"), README)?;
+    fs_err::write(derivatives_dir.join("README"), README)?;
     Ok(())
 }
 
@@ -232,7 +232,7 @@ mod tests {
     fn test_write_produces_valid_json() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), Path::new("/nonexistent")).unwrap();
-        let text = std::fs::read_to_string(dir.path().join("dataset_description.json")).unwrap();
+        let text = fs_err::read_to_string(dir.path().join("dataset_description.json")).unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["DatasetType"], "derivative");
         assert_eq!(value["GeneratedBy"][0]["Name"], "qsmxt");

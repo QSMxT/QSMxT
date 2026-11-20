@@ -16,14 +16,14 @@ use super::app::*;
 /// Rows set by [`App::set_special`] rather than by their setting's kind.
 const SPECIAL: &[&str] = &[
     // The picker lists LSQR+HEIDI among the algorithms, so its index is not the setting's.
-    "qsm_algorithm",
+    "inversion.algorithm",
     // The two methods, then every region (`qsm.reference_region`).
-    "qsm_reference",
+    "qsm.reference",
     // 0-based in the config, 1-based on the row.
-    "romeo_template",
+    "field_mapping.romeo.template",
     // A checkbox and a value for one setting, the checkbox off for one value of it.
-    "dl_tiling", "dl_tile_size", "synthseg_smoothing", "synthseg_sigma",
-    "romeo_temporal_uncertain", "romeo_temporal_uncertain_unwrapping",
+    "inversion.tile_size", "inversion.tile_size#value", "segmentation.sigma_smoothing", "segmentation.sigma_smoothing#value",
+    "field_mapping.romeo.temporal_uncertain_unwrapping", "field_mapping.romeo.temporal_uncertain_unwrapping#value",
     // Shows whether a dseg tool is named (`custom_dseg_tool`), which is the setting's own row.
     "segmentation_source",
 ];
@@ -117,10 +117,10 @@ impl App {
                     self.set_field_select(field, i);
                 }
             }
-            // An echo time: the named times, then a time of the user's (`<method>_te_ms`).
+            // An echo time: the named times, then a time of the user's (its value row).
             ValueType::EchoTime { .. } => {
                 let Ok(te) = serde_json::from_value::<EchoTimeChoice>(v.clone()) else { return };
-                if field.ends_with("_ms") {
+                if field.ends_with(VALUE_ROW) {
                     if let EchoTimeChoice::Seconds(_) = te {
                         self.set_text(field, te.to_string());
                     }
@@ -128,10 +128,10 @@ impl App {
                     self.set_field_select(field, echo_time_index(te));
                 }
             }
-            // The echo to align onto: first, last, or an echo by number (`motion_reference_echo`).
+            // The echo to align onto: first, last, or an echo by number (its value row).
             ValueType::EchoReference { .. } => {
                 let Some(r) = v.as_str().and_then(|s| s.parse::<qsmxt_engine::motion::MotionReference>().ok()) else { return };
-                match (field.ends_with("_echo"), r) {
+                match (field.ends_with(VALUE_ROW), r) {
                     (true, qsmxt_engine::motion::MotionReference::Echo(n)) => self.set_text(field, n.to_string()),
                     (true, _) => {}
                     (false, qsmxt_engine::motion::MotionReference::First) => self.set_field_select(field, 0),
@@ -139,10 +139,10 @@ impl App {
                     (false, qsmxt_engine::motion::MotionReference::Echo(_)) => self.set_field_select(field, 2),
                 }
             }
-            // DECOMPOSE's χ bound: a bound in ppm (`sep_decompose_chi_bound`), or from the echoes.
+            // DECOMPOSE's χ bound: from the echoes, or a bound in ppm (its value row).
             ValueType::NumberOrChoice { .. } => {
                 let Ok(b) = serde_json::from_value::<ChiBoundChoice>(v.clone()) else { return };
-                if field.ends_with("_mode") {
+                if !field.ends_with(VALUE_ROW) {
                     self.set_field_select(field, chi_bound_index(b));
                 } else if let ChiBoundChoice::Ppm(x) = b {
                     self.set_text(field, format!("{x}"));
@@ -174,7 +174,7 @@ impl App {
                     .and_then(|r| qsm_ref_options().iter().skip(2).position(|o| *o == r)).map(|i| i + 2),
             };
             if let Some(i) = index {
-                self.set_field_select("qsm_reference", i);
+                self.set_field_select("qsm.reference", i);
             }
         }
         if differs("inversion.algorithm") {
@@ -331,9 +331,9 @@ mod tests {
                     let was = text.clone();
                     *text = match (field, text.as_str()) {
                         // Empty is the whole volume; a patch is three numbers.
-                        ("sep_susepnet_patch" | "sep_chisepnet_frame_patch", "") => "64 64 32".to_string(),
+                        ("separation.susep_net.patch" | "separation.chi_sepnet.frame_patch", "") => "64 64 32".to_string(),
                         // SynthSeg's window is at least 64 voxels.
-                        ("synthseg_patch", "") => "96".to_string(),
+                        ("segmentation.patch", "") => "96".to_string(),
                         (_, t) => bumped(t, 1),
                     };
                     // A value at the top of its range moves down instead.
@@ -389,14 +389,14 @@ mod tests {
         use super::super::explore::Act;
         let forms: [&[Act]; 4] = [
             &[],
-            &[Act::Select("qsm_algorithm", 7)],
-            &[Act::Group, Act::Toggle("cosmos_magnitude_weighting")],
-            &[Act::Toggle("two_pass"), Act::Select("mask_preset", 1)],
+            &[Act::Select("inversion.algorithm", 7)],
+            &[Act::Group, Act::Toggle("multi_orientation.magnitude_weighting")],
+            &[Act::Toggle("masking.two_pass"), Act::Select("mask_preset", 1)],
         ];
         for acts in forms {
             let mut app = build(acts);
             // Hidden unless COSMOS is weighted: not passed on, so the config cannot say it.
-            *app.field_text_mut("cosmos_tol").unwrap() = "5".into();
+            *app.field_text_mut("multi_orientation.cosmos_tol").unwrap() = "5".into();
             let before = app.form_print();
             let config = config_from_app(&app).unwrap();
             app.set_form_from_config(&config);

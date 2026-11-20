@@ -4,8 +4,8 @@ use super::*;
 
 fn update_app() -> App {
     let mut app = App::new();
-    app.update_state = UpdateState::disabled();
-    app.update_modal = Some(UpdateModal {
+    app.update.state = UpdateState::disabled();
+    app.update.modal = Some(UpdateModal {
         tag: "v9.23.0".into(),
         html_url: "https://example.com/r".into(),
     });
@@ -17,7 +17,7 @@ fn update_prompt_enter_hands_over_to_the_installer() {
     let mut app = update_app();
     assert_eq!(app.handle_update_modal_key(key(KeyCode::Enter)), UpdateChoice::Update);
     assert!(app.should_update, "the main loop needs this to run the update");
-    assert!(app.update_modal.is_none(), "the prompt should close");
+    assert!(app.update.modal.is_none(), "the prompt should close");
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn update_prompt_esc_defers_to_the_next_start() {
     let mut app = update_app();
     assert_eq!(app.handle_update_modal_key(key(KeyCode::Esc)), UpdateChoice::Later);
     assert!(!app.should_update);
-    assert!(app.update_modal.is_none());
+    assert!(app.update.modal.is_none());
 }
 
 /// There is no way to skip a release: the prompt comes back at every start until the
@@ -34,7 +34,7 @@ fn update_prompt_esc_defers_to_the_next_start() {
 fn update_prompt_has_no_skip() {
     let mut app = update_app();
     assert_eq!(app.handle_update_modal_key(key(KeyCode::Char('d'))), UpdateChoice::Ignored);
-    assert!(app.update_modal.is_some());
+    assert!(app.update.modal.is_some());
 }
 
 /// An unrelated keystroke must not dismiss the prompt by accident — it is modal,
@@ -43,7 +43,7 @@ fn update_prompt_has_no_skip() {
 fn update_prompt_ignores_keys_it_does_not_bind() {
     let mut app = update_app();
     assert_eq!(app.handle_update_modal_key(key(KeyCode::Down)), UpdateChoice::Ignored);
-    assert!(app.update_modal.is_some());
+    assert!(app.update.modal.is_some());
     assert!(!app.should_update);
 }
 
@@ -56,7 +56,7 @@ fn update_prompt_captures_input_from_the_form() {
     let before = app.active_field;
     app.handle_key(key(KeyCode::Down));
     assert_eq!(app.active_field, before, "the form must not move behind the prompt");
-    assert!(app.update_modal.is_some());
+    assert!(app.update.modal.is_some());
 }
 
 /// A dev build must not spawn a network check just by opening the TUI.
@@ -70,11 +70,11 @@ fn a_dev_build_starts_no_background_check() {
 /// `news` the announcements fetched.
 fn launched(update: Option<&str>, news: Vec<qsmxt_io::news::Announcement>) -> App {
     let mut app = App::new();
-    app.update_state = UpdateState::ready(update.map(|tag| qsmxt_io::release::check::UpdateInfo {
+    app.update.state = UpdateState::ready(update.map(|tag| qsmxt_io::release::check::UpdateInfo {
         tag: tag.into(),
         html_url: "https://example.com/r".into(),
     }));
-    app.news_state = NewsState::ready(qsmxt_io::news::Loaded { items: news, error: None });
+    app.announcements.state = NewsState::ready(qsmxt_io::news::Loaded { items: news, error: None });
     app
 }
 
@@ -91,14 +91,14 @@ fn launch_pop_ups_come_one_at_a_time_in_order() {
         item("crit", "2026-10-01", true, None),
     ]);
     app.poll_launch_checks();
-    let shown = |app: &App| app.news_modal.as_ref().map(|m| m.items[0].id.clone());
+    let shown = |app: &App| app.announcements.modal.as_ref().map(|m| m.items[0].id.clone());
     assert_eq!(shown(&app).as_deref(), Some("crit"), "critical first");
-    assert!(app.update_modal.is_none(), "no pop-up opens over another");
+    assert!(app.update.modal.is_none(), "no pop-up opens over another");
 
     app.handle_key(key(KeyCode::Enter));
     app.poll_launch_checks();
-    assert!(app.update_modal.is_some(), "then the update prompt");
-    assert!(app.news_modal.is_none());
+    assert!(app.update.modal.is_some(), "then the update prompt");
+    assert!(app.announcements.modal.is_none());
 
     app.handle_key(key(KeyCode::Esc));
     app.poll_launch_checks();
@@ -108,7 +108,7 @@ fn launch_pop_ups_come_one_at_a_time_in_order() {
     assert_eq!(shown(&app).as_deref(), Some("old"));
     app.handle_key(key(KeyCode::Char('q')));
     app.poll_launch_checks();
-    assert!(app.news_modal.is_none() && app.update_modal.is_none());
+    assert!(app.announcements.modal.is_none() && app.update.modal.is_none());
 
     // Next start: only the critical one (and the update) come back.
     let mut app = launched(Some("v99.0.0"), vec![
@@ -120,10 +120,10 @@ fn launch_pop_ups_come_one_at_a_time_in_order() {
     assert_eq!(shown(&app).as_deref(), Some("crit"));
     app.handle_key(key(KeyCode::Enter));
     app.poll_launch_checks();
-    assert!(app.update_modal.is_some());
+    assert!(app.update.modal.is_some());
     app.handle_key(key(KeyCode::Esc));
     app.poll_launch_checks();
-    assert!(app.news_modal.is_none(), "ordinary news pops up once");
+    assert!(app.announcements.modal.is_none(), "ordinary news pops up once");
     drop(t);
 }
 
@@ -134,10 +134,10 @@ fn announcements_wait_for_other_pop_ups() {
     let mut app = launched(None, vec![item("crit", "2026-10-01", true, None), item("a", "2026-11-01", false, None)]);
     app.tip_modal = Some(TipModal::new(crate::tips::TIPS[0], true));
     app.poll_launch_checks();
-    assert!(app.news_modal.is_none(), "not over the tip");
+    assert!(app.announcements.modal.is_none(), "not over the tip");
     app.tip_modal = None;
     app.poll_launch_checks();
-    assert_eq!(app.news_modal.as_ref().unwrap().items[0].id, "crit");
+    assert_eq!(app.announcements.modal.as_ref().unwrap().items[0].id, "crit");
 }
 
 /// The update prompt waits for the announcements (a critical one goes first), and ordinary
@@ -147,15 +147,15 @@ fn each_pop_up_waits_for_the_check_that_goes_before_it() {
     let _t = qsmxt_io::news::TestDir::new();
     let mut app = launched(Some("v99.0.0"), Vec::new());
     let (_tx, rx) = std::sync::mpsc::channel();
-    app.news_state = NewsState { receiver: Some(rx), done: false };
+    app.announcements.state = NewsState { receiver: Some(rx), done: false };
     app.poll_launch_checks();
-    assert!(app.update_modal.is_none(), "the announcements are still being fetched");
+    assert!(app.update.modal.is_none(), "the announcements are still being fetched");
 
     let mut app = launched(None, vec![item("a", "2026-11-01", false, None)]);
     let (_tx2, rx2) = std::sync::mpsc::channel();
-    app.update_state = UpdateState { receiver: Some(rx2), done: false };
+    app.update.state = UpdateState { receiver: Some(rx2), done: false };
     app.poll_launch_checks();
-    assert!(app.news_modal.is_none(), "the release check is still running");
+    assert!(app.announcements.modal.is_none(), "the release check is still running");
 }
 
 /// An announcement for other versions does not pop up; nor does a ranged one on a dev build.
@@ -164,8 +164,8 @@ fn announcements_for_other_versions_do_not_pop_up() {
     let _t = qsmxt_io::news::TestDir::new();
     let mut app = launched(None, vec![item("a", "2026-11-01", true, Some(("1.0.0", "2.0.0")))]);
     app.poll_launch_checks();
-    assert!(app.news_modal.is_none());
-    assert!(app.news_queue.is_empty());
+    assert!(app.announcements.modal.is_none());
+    assert!(app.announcements.queue.is_empty());
 }
 
 /// `n` on the tab bar opens every announcement, newest first, including those already
@@ -175,17 +175,17 @@ fn n_on_the_tab_bar_opens_the_history() {
     let _t = qsmxt_io::news::TestDir::new();
     let mut app = launched(None, vec![item("new", "2026-11-05", false, None), item("old", "2026-11-01", false, Some(("1.0.0", "2.0.0")))]);
     app.poll_launch_checks();
-    app.news_modal = None;
-    app.news_queue.clear();
+    app.announcements.modal = None;
+    app.announcements.queue.clear();
     app.tab_focus = true;
     app.handle_key(key(KeyCode::Char('n')));
-    let m = app.news_modal.as_ref().expect("the history should open");
+    let m = app.announcements.modal.as_ref().expect("the history should open");
     assert!(m.history);
     assert_eq!(m.items.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["new", "old"]);
     app.handle_key(key(KeyCode::Down));
-    assert_eq!(app.news_modal.as_ref().unwrap().scroll, 1, "↓ scrolls");
+    assert_eq!(app.announcements.modal.as_ref().unwrap().scroll, 1, "↓ scrolls");
     app.handle_key(key(KeyCode::Esc));
-    assert!(app.news_modal.is_none());
+    assert!(app.announcements.modal.is_none());
     assert!(!app.should_quit, "Esc closes the history, not the TUI");
     assert!(qsmxt_io::news::load_seen().is_empty(), "reading the history records nothing");
 }
@@ -198,7 +198,7 @@ fn the_history_offline_is_the_saved_copy() {
     let mut app = App::new();
     app.receive_news(qsmxt_io::news::load(|| Err("offline".into())));
     app.open_news_history();
-    let m = app.news_modal.as_ref().unwrap();
+    let m = app.announcements.modal.as_ref().unwrap();
     assert_eq!(m.items[0].title, "Saved");
     assert!(m.note.as_deref().is_some_and(|n| n.contains("could not be read")));
 }
@@ -213,7 +213,7 @@ fn c_copies_an_announcements_link() {
     app.poll_launch_checks();
     app.handle_key(key(KeyCode::Char('c')));
     assert_eq!(app.clipboard.as_deref(), Some("https://example.com/a"));
-    assert!(app.news_modal.is_some(), "copying does not close it");
+    assert!(app.announcements.modal.is_some(), "copying does not close it");
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn test_algo_modal_opens_on_enter_over_algoselect() {
 fn test_algo_modal_selects_option() {
     let mut app = App::new();
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
+        target: AlgoModalTarget::Select("inversion.algorithm".to_string()),
         title: "QSM inversion".to_string(),
         options: QSM_ALGO_OPTIONS.iter().map(|s| s.to_string()).collect(),
         help: vec![String::new(); QSM_ALGO_OPTIONS.len()],
@@ -247,15 +247,15 @@ fn test_algo_modal_selects_option() {
     assert_eq!(app.algo_modal.as_ref().unwrap().cursor, 2);
     app.handle_key(key(KeyCode::Enter));
     assert!(app.algo_modal.is_none());
-    assert_eq!(app.field_select("qsm_algorithm"), 2);
+    assert_eq!(app.field_select("inversion.algorithm"), 2);
 }
 
 #[test]
 fn test_algo_modal_cancel_leaves_value() {
     let mut app = App::new();
-    let before = app.field_select("qsm_algorithm");
+    let before = app.field_select("inversion.algorithm");
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
+        target: AlgoModalTarget::Select("inversion.algorithm".to_string()),
         title: "QSM inversion".to_string(),
         options: vec!["a".to_string(), "b".to_string()],
         help: vec![String::new(), String::new()],
@@ -264,7 +264,7 @@ fn test_algo_modal_cancel_leaves_value() {
     });
     app.handle_key(key(KeyCode::Esc));
     assert!(app.algo_modal.is_none());
-    assert_eq!(app.field_select("qsm_algorithm"), before);
+    assert_eq!(app.field_select("inversion.algorithm"), before);
 }
 
 #[test]

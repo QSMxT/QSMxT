@@ -8,10 +8,10 @@ Arguments:
 
 Options:
       --include <INCLUDE>...
-          Include only runs matching these glob patterns
+          Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
 
       --exclude <EXCLUDE>...
-          Exclude runs matching these glob patterns
+          Exclude runs matching these glob patterns (e.g. "*mygrea*")
 
   -h, --help
           Print help

@@ -1,5 +1,5 @@
 use crate::cli::UpdateArgs;
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 pub use qsmxt_io::version::{describe_version, SOURCE_COMMIT};
 use qsmxt_io::version::{strip_v, unreleased};
 // The release lookup and the TUI's check live in qsmxt-io; under the same paths here.
@@ -37,7 +37,7 @@ fn download_to(
     url: &str,
     dest: &std::path::Path,
     on_progress: &mut dyn FnMut(u64, u64),
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     let response = ureq::get(url)
         .set("User-Agent", USER_AGENT)
         .call()
@@ -48,7 +48,7 @@ fn download_to(
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
 
-    let mut file = std::fs::File::create(dest).map_err(|e| {
+    let mut file = fs_err::File::create(dest).map_err(|e| {
         QsmxtError::Update(format!("Failed to create {}: {}", dest.display(), e))
     })?;
     let mut reader = response.into_reader();
@@ -87,7 +87,7 @@ fn download_to(
 }
 
 /// Detects the install directory (directory containing the current executable).
-fn install_dir() -> crate::Result<std::path::PathBuf> {
+fn install_dir() -> qsmxt_io::Result<std::path::PathBuf> {
     let exe = env::current_exe().map_err(|e| {
         QsmxtError::Update(format!("Cannot determine current executable path: {}", e))
     })?;
@@ -97,7 +97,7 @@ fn install_dir() -> crate::Result<std::path::PathBuf> {
 }
 
 /// Detects OS/arch target triple (matching install.sh conventions).
-fn detect_target() -> crate::Result<&'static str> {
+fn detect_target() -> qsmxt_io::Result<&'static str> {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     { return Ok("x86_64-unknown-linux-musl"); }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
@@ -137,7 +137,7 @@ fn archive_name(tag: &str, target: &str, ext: &str) -> String {
 /// ignores blank lines. A malformed line is an error rather than something to skip: a
 /// manifest we cannot read is not one we can trust. So is an asset listed twice with
 /// different digests.
-pub fn expected_sha256(manifest: &str, asset: &str) -> crate::Result<String> {
+pub fn expected_sha256(manifest: &str, asset: &str) -> qsmxt_io::Result<String> {
     let mut found: Option<String> = None;
     for (i, line) in manifest.lines().enumerate() {
         let line = line.trim_end_matches('\r');
@@ -179,7 +179,7 @@ pub fn expected_sha256(manifest: &str, asset: &str) -> crate::Result<String> {
 }
 
 /// Fetches the release's `SHA256SUMS` manifest as text.
-fn fetch_checksums(url: &str) -> crate::Result<String> {
+fn fetch_checksums(url: &str) -> qsmxt_io::Result<String> {
     let response = ureq::get(url).set("User-Agent", USER_AGENT).call().map_err(|e| {
         QsmxtError::Update(format!(
             "Could not download {} ({}): {}. Refusing to install an unverified binary",
@@ -208,17 +208,17 @@ fn download_verified(
     asset: &str,
     dest: &std::path::Path,
     on_progress: &mut dyn FnMut(u64, u64),
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     let manifest = fetch_checksums(&format!("{}/{}", base, CHECKSUMS_ASSET))?;
     let expected = expected_sha256(&manifest, asset)?;
 
     download_to(&format!("{}/{}", base, asset), dest, on_progress)?;
 
-    let actual = crate::example::download::sha256_file(dest).map_err(|e| {
+    let actual = qsmxt_io::example::download::sha256_file(dest).map_err(|e| {
         QsmxtError::Update(format!("Failed to checksum {}: {}", dest.display(), e))
     })?;
     if actual != expected {
-        let _ = std::fs::remove_file(dest);
+        let _ = fs_err::remove_file(dest);
         return Err(QsmxtError::Update(format!(
             "Checksum mismatch for {}: {} says {}, the download is {}. \
              The archive was discarded and nothing was installed",
@@ -229,7 +229,7 @@ fn download_verified(
 }
 
 /// Downloads and installs the release for the given tag.
-fn install_release(tag: &str) -> crate::Result<()> {
+fn install_release(tag: &str) -> qsmxt_io::Result<()> {
     let target = detect_target()?;
 
     #[cfg(target_os = "windows")]
@@ -332,7 +332,7 @@ fn install_release(tag: &str) -> crate::Result<()> {
 }
 
 /// Replaces the running qsmxt with the binary at `extracted`, and returns where it went.
-fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathBuf> {
+fn install_binary(extracted: &std::path::Path) -> qsmxt_io::Result<std::path::PathBuf> {
     let dir = install_dir()?;
 
     #[cfg(target_os = "windows")]
@@ -352,12 +352,12 @@ fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathB
     // while the old binary is still running — the running process keeps the old
     // inode and the path is repointed at the new file.
     let staged = dir.join(format!(".{}.new", bin_name));
-    let _ = std::fs::remove_file(&staged); // discard any leftover from a prior run
+    let _ = fs_err::remove_file(&staged); // discard any leftover from a prior run
     #[cfg(target_os = "windows")]
     {
         // Remove the old binary a previous self-update left behind (it was
         // locked while that qsmxt process was still running).
-        let _ = std::fs::remove_file(dir.join(format!(".{}.old", bin_name)));
+        let _ = fs_err::remove_file(dir.join(format!(".{}.old", bin_name)));
     }
 
     stage_binary(extracted, &staged, &dir)?;
@@ -365,7 +365,7 @@ fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathB
     // Atomically swap the staged binary into place. A plain rename only needs
     // write permission on the directory, so it succeeds even when `dest` is
     // owned by root from a prior sudo install; otherwise fall back to `sudo mv`.
-    if std::fs::rename(&staged, &dest).is_err() {
+    if fs_err::rename(&staged, &dest).is_err() {
         #[cfg(not(target_os = "windows"))]
         {
             let status = Command::new("sudo")
@@ -391,19 +391,19 @@ fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathB
             // staged binary into its place. The .old file stays locked until
             // this process exits; it is cleaned up on the next update.
             let old = dir.join(format!(".{}.old", bin_name));
-            let _ = std::fs::remove_file(&old);
-            if let Err(e) = std::fs::rename(&dest, &old) {
-                let _ = std::fs::remove_file(&staged);
+            let _ = fs_err::remove_file(&old);
+            if let Err(e) = fs_err::rename(&dest, &old) {
+                let _ = fs_err::remove_file(&staged);
                 return Err(QsmxtError::Update(format!(
                     "Failed to move current binary aside ({}): {}",
                     dest.display(),
                     e
                 )));
             }
-            if let Err(e) = std::fs::rename(&staged, &dest) {
+            if let Err(e) = fs_err::rename(&staged, &dest) {
                 // Try to restore the old binary so the install isn't left broken.
-                let _ = std::fs::rename(&old, &dest);
-                let _ = std::fs::remove_file(&staged);
+                let _ = fs_err::rename(&old, &dest);
+                let _ = fs_err::remove_file(&staged);
                 return Err(QsmxtError::Update(format!(
                     "Failed to install binary to {}: {}",
                     dest.display(),
@@ -417,10 +417,10 @@ fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathB
     #[cfg(not(target_os = "windows"))]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&dest) {
+        if let Ok(meta) = fs_err::metadata(&dest) {
             let mut perms = meta.permissions();
             perms.set_mode(perms.mode() | 0o111);
-            let _ = std::fs::set_permissions(&dest, perms);
+            let _ = fs_err::set_permissions(&dest, perms);
         }
     }
 
@@ -430,11 +430,11 @@ fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathB
 /// Copy `extracted` to `staged`, in the destination directory `dir`.
 fn stage_binary(
     extracted: &std::path::Path, staged: &std::path::Path, dir: &std::path::Path,
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     // Stage next to `dest`, falling back to sudo when the directory isn't
-    // writable by the current user. std::fs::copy preserves the file mode, so
+    // writable by the current user. fs_err::copy preserves the file mode, so
     // the staged binary keeps its executable bit.
-    if std::fs::copy(extracted, staged).is_err() {
+    if fs_err::copy(extracted, staged).is_err() {
         #[cfg(not(target_os = "windows"))]
         {
             println!("Installing to {} (requires sudo)...", dir.display());
@@ -478,18 +478,18 @@ fn install_bundled_dcm2niix(extract_dir: &std::path::Path) {
         return; // no bundled dcm2niix for this target
     }
 
-    let Some(bin_dir) = crate::dicom::convert::qsmxt_bin_dir() else {
+    let Some(bin_dir) = qsmxt_io::dicom::convert::qsmxt_bin_dir() else {
         eprintln!("Warning: could not determine ~/.qsmxt/bin; skipping bundled dcm2niix install");
         return;
     };
 
-    if let Err(e) = std::fs::create_dir_all(&bin_dir) {
+    if let Err(e) = fs_err::create_dir_all(&bin_dir) {
         eprintln!("Warning: failed to create {}: {}", bin_dir.display(), e);
         return;
     }
 
     let dest = bin_dir.join(dcm_name);
-    if let Err(e) = std::fs::copy(&src, &dest) {
+    if let Err(e) = fs_err::copy(&src, &dest) {
         eprintln!("Warning: failed to install bundled dcm2niix to {}: {}", dest.display(), e);
         return;
     }
@@ -497,17 +497,17 @@ fn install_bundled_dcm2niix(extract_dir: &std::path::Path) {
     #[cfg(not(target_os = "windows"))]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&dest) {
+        if let Ok(meta) = fs_err::metadata(&dest) {
             let mut perms = meta.permissions();
             perms.set_mode(perms.mode() | 0o111);
-            let _ = std::fs::set_permissions(&dest, perms);
+            let _ = fs_err::set_permissions(&dest, perms);
         }
     }
 
     println!("Installed bundled dcm2niix to {}", dest.display());
 }
 
-pub fn execute(args: UpdateArgs) -> crate::Result<()> {
+pub fn execute(args: UpdateArgs) -> qsmxt_io::Result<()> {
     if args.main {
         return execute_main_with(args.yes, BUILD_COMMIT, find_cargo, fetch_main_commit, build_main, |built| {
             install_binary(built).map(|_| ())
@@ -547,7 +547,7 @@ fn is_commit_hash(s: &str) -> bool {
 }
 
 /// Asks GitHub for the commit at the head of main.
-fn fetch_main_commit() -> crate::Result<String> {
+fn fetch_main_commit() -> qsmxt_io::Result<String> {
     let url = format!("https://api.github.com/repos/{}/commits/main", REPO);
     let mut req = ureq::get(&url)
         // Asks for the bare commit hash rather than the whole commit as JSON.
@@ -613,22 +613,22 @@ const BUILD_CACHE_LIMIT_BYTES: u64 = 10 << 30;
 /// [`BUILD_CACHE_LIMIT_BYTES`] is emptied and rebuilt once.
 fn prune_build_cache(dir: &std::path::Path) {
     fn size(p: &std::path::Path) -> u64 {
-        match std::fs::symlink_metadata(p) {
-            Ok(m) if m.is_dir() => std::fs::read_dir(p).into_iter().flatten().flatten().map(|e| size(&e.path())).sum(),
+        match fs_err::symlink_metadata(p) {
+            Ok(m) if m.is_dir() => fs_err::read_dir(p).into_iter().flatten().flatten().map(|e| size(&e.path())).sum(),
             Ok(m) => m.len(),
             Err(_) => 0,
         }
     }
     if size(dir) > BUILD_CACHE_LIMIT_BYTES {
-        let _ = std::fs::remove_dir_all(dir);
+        let _ = fs_err::remove_dir_all(dir);
         return;
     }
     let ours = |name: &str| ["qsmxt-", "qsmxt_engine-", "libqsmxt_engine-"].iter().any(|p| name.starts_with(p));
     for sub in ["deps", ".fingerprint", "build", "incremental"] {
-        for e in std::fs::read_dir(dir.join("release").join(sub)).into_iter().flatten().flatten() {
+        for e in fs_err::read_dir(dir.join("release").join(sub)).into_iter().flatten().flatten() {
             if e.file_name().to_str().is_some_and(ours) {
                 let p = e.path();
-                let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+                let _ = if p.is_dir() { fs_err::remove_dir_all(&p) } else { fs_err::remove_file(&p) };
             }
         }
     }
@@ -640,8 +640,8 @@ fn prune_build_cache(dir: &std::path::Path) {
 fn build_main(
     cargo: &std::path::Path,
     commit: &str,
-    install: &mut dyn FnMut(&std::path::Path) -> crate::Result<()>,
-) -> crate::Result<()> {
+    install: &mut dyn FnMut(&std::path::Path) -> qsmxt_io::Result<()>,
+) -> qsmxt_io::Result<()> {
     let root = tempfile::tempdir()
         .map_err(|e| QsmxtError::Update(format!("Failed to create temp directory: {}", e)))?;
     // With the temporary bin directory on cargo's PATH, cargo doesn't tell the user to add
@@ -678,10 +678,10 @@ fn execute_main_with(
     yes: bool,
     running_commit: &str,
     find_cargo: impl FnOnce() -> Option<std::path::PathBuf>,
-    fetch_commit: impl FnOnce() -> crate::Result<String>,
-    build: impl FnOnce(&std::path::Path, &str, &mut dyn FnMut(&std::path::Path) -> crate::Result<()>) -> crate::Result<()>,
-    mut install: impl FnMut(&std::path::Path) -> crate::Result<()>,
-) -> crate::Result<()> {
+    fetch_commit: impl FnOnce() -> qsmxt_io::Result<String>,
+    build: impl FnOnce(&std::path::Path, &str, &mut dyn FnMut(&std::path::Path) -> qsmxt_io::Result<()>) -> qsmxt_io::Result<()>,
+    mut install: impl FnMut(&std::path::Path) -> qsmxt_io::Result<()>,
+) -> qsmxt_io::Result<()> {
     if running_commit.is_empty() {
         println!("Current version: {}", current_version());
     } else {
@@ -731,9 +731,9 @@ fn execute_main_with(
 fn execute_with(
     args: UpdateArgs,
     current_version: &str,
-    fetch: impl FnOnce() -> crate::Result<Release>,
-    install: impl FnOnce(&str) -> crate::Result<()>,
-) -> crate::Result<()> {
+    fetch: impl FnOnce() -> qsmxt_io::Result<Release>,
+    install: impl FnOnce(&str) -> qsmxt_io::Result<()>,
+) -> qsmxt_io::Result<()> {
     let dev = strip_v(current_version) == DEV_VERSION;
 
     println!("Current version: {}", current_version);
@@ -916,7 +916,7 @@ mod tests {
         let mut seen: Vec<(u64, u64)> = Vec::new();
         download_to(&server.base, &dest, &mut |done, total| seen.push((done, total))).unwrap();
 
-        assert_eq!(std::fs::read(&dest).unwrap(), body);
+        assert_eq!(fs_err::read(&dest).unwrap(), body);
         assert_eq!(seen.first(), Some(&(0, body.len() as u64)), "starts at zero of the total");
         assert_eq!(
             seen.last(),
@@ -1028,7 +1028,7 @@ mod tests {
         assert!(msg.contains(&sha256_hex(&genuine)), "the message names the expected digest: {msg}");
         assert!(!dest.exists(), "a mismatching archive must be deleted, not left to extract");
         assert_eq!(
-            std::fs::read_dir(dir.path()).unwrap().count(),
+            fs_err::read_dir(dir.path()).unwrap().count(),
             0,
             "nothing may be extracted or staged after a mismatch"
         );
@@ -1042,7 +1042,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("qsmxt.tar.gz");
         download_verified(&server.base, ASSET, &dest, &mut |_, _| {}).unwrap();
-        assert_eq!(std::fs::read(&dest).unwrap(), genuine);
+        assert_eq!(fs_err::read(&dest).unwrap(), genuine);
     }
 
     #[test]
@@ -1170,13 +1170,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deps = dir.path().join("release").join("deps");
         let prints = dir.path().join("release").join(".fingerprint");
-        std::fs::create_dir_all(&deps).unwrap();
-        std::fs::create_dir_all(prints.join("qsmxt-0123abcd")).unwrap();
+        fs_err::create_dir_all(&deps).unwrap();
+        fs_err::create_dir_all(prints.join("qsmxt-0123abcd")).unwrap();
         for f in ["qsmxt-0123abcd", "libqsmxt_engine-0123abcd.rlib", "libtract_core-0123abcd.rlib", "libqsm_core-0123abcd.rlib"] {
-            std::fs::write(deps.join(f), b"x").unwrap();
+            fs_err::write(deps.join(f), b"x").unwrap();
         }
         prune_build_cache(dir.path());
-        let left: Vec<String> = std::fs::read_dir(&deps).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
+        let left: Vec<String> = fs_err::read_dir(&deps).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
         assert!(left.contains(&"libtract_core-0123abcd.rlib".to_string()) && left.contains(&"libqsm_core-0123abcd.rlib".to_string()), "{left:?}");
         assert!(!left.iter().any(|f| f.starts_with("qsmxt-") || f.starts_with("libqsmxt_engine-")), "{left:?}");
         assert!(!prints.join("qsmxt-0123abcd").exists());

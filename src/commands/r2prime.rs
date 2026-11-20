@@ -1,9 +1,9 @@
 use log::{info, warn};
 use super::common::{load_mask, load_nifti, save_mask, save_nifti};
 use crate::cli::R2primeArgs;
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 
-pub fn execute(args: R2primeArgs) -> crate::Result<()> {
+pub fn execute(args: R2primeArgs) -> qsmxt_io::Result<()> {
     if args.r2primenet {
         return estimate(&args);
     }
@@ -81,7 +81,7 @@ fn r2primenet_config(args: &R2primeArgs) -> qsmxt_engine::R2primenetConfig {
 
 /// `--r2primenet`: R2' estimated from R2* inside the mask, as `qsmxt run --r2prime-strategy
 /// r2primenet` estimates it.
-fn estimate(args: &R2primeArgs) -> crate::Result<()> {
+fn estimate(args: &R2primeArgs) -> qsmxt_io::Result<()> {
     let config = r2primenet_config(args);
     config.validate().map_err(QsmxtError::Config)?;
     let field_strength = args.field_strength.expect("clap requires --field-strength with --r2primenet");
@@ -103,7 +103,7 @@ fn estimate(args: &R2primeArgs) -> crate::Result<()> {
         return Err(QsmxtError::Config(format!(
             "mask is {:?} but the R2* map is {:?}", mask_nifti.dims, r2star.dims)));
     }
-    crate::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
+    qsmxt_io::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
     info!("Estimating R2' from R2* with R2PRIMEnet");
     let r2prime = run_r2primenet(&r2star, &mask, field_strength, &config)?;
     save_nifti(&args.output, &r2prime, &r2star)?;
@@ -115,7 +115,7 @@ fn estimate(args: &R2primeArgs) -> crate::Result<()> {
 fn run_r2primenet(
     r2star: &qsm_core::io::NiftiData, mask: &[u8], field_strength: f64,
     config: &qsmxt_engine::R2primenetConfig,
-) -> crate::Result<Vec<f64>> {
+) -> qsmxt_io::Result<Vec<f64>> {
     let params = qsmxt_engine::stages::r2::r2primenet_params(config)
         .map_err(|e| QsmxtError::Config(e.to_string()))?;
     let weights = qsm_core::models::primary_weight("r2primenet")
@@ -132,7 +132,7 @@ fn run_r2primenet(
 fn run_r2primenet(
     _r2star: &qsm_core::io::NiftiData, _mask: &[u8], _field_strength: f64,
     _config: &qsmxt_engine::R2primenetConfig,
-) -> crate::Result<Vec<f64>> {
+) -> qsmxt_io::Result<Vec<f64>> {
     Err(QsmxtError::Config("R2PRIMEnet needs a build with deep-learning support".into()))
 }
 

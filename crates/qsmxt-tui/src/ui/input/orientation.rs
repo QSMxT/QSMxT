@@ -53,10 +53,10 @@ pub(super) fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
         return lines;
     }
 
-    let algorithm = app.field_select("orientation_algorithm");
+    let algorithm = app.field_select("multi_orientation.algorithm");
     let algo = app.form.settings.get("multi_orientation.algorithm").as_str().unwrap_or_default().to_uppercase();
 
-    let preview = fs.orientation_preview(&app.field_text("orientation_reference"));
+    let preview = fs.orientation_preview(&app.field_text("multi_orientation.reference"));
     if let Some(err) = preview.error {
         lines.push(Line::from(Span::styled(
             format!("    ✗ {err}"),

@@ -4,13 +4,15 @@
 //!
 //! A registry setting's flag is derived from its entry ([`super::table`]): `.flag("--x")` names it,
 //! and the setting's type says what it takes ([`derive`]): a switch for a yes/no setting, one
-//! number for a number, three for a vector, one of the options for a choice. The entry's help
-//! is the flag's help unless `.cli(..)` words it for the command line. The builder methods below
+//! number for a number, three for a vector, one of the options for a choice. The flag's help is
+//! the entry's front-end help with its units, after the method it belongs to (`RTS: ...`), unless
+//! `.cli(..)` words it for the command line; either way it ends with the setting's default, taken
+//! from the registry ([`super::Setting::default`]), so the wording does not name it. The builder methods below
 //! give the rest where it differs from what the type implies: the value's name, how it is read,
 //! a value list of its own, the opposite switch (`.negated("--no-x", ..)`), and so on.
 //!
-//! The flags that set no one setting are [`OTHER_FLAGS`]; [`CLI_ORDER`] puts every flag in its
-//! place in `--help`.
+//! The flags that set no one setting are [`OTHER_FLAGS`]. Every flag takes its place from the
+//! registry's order ([`build`]), in `--help` and in a generated command.
 
 use std::sync::LazyLock;
 
@@ -103,7 +105,7 @@ impl Flag {
 #[derive(Default)]
 pub(super) struct FlagSpec {
     id: Option<&'static str>,
-    help: Option<&'static str>,
+    pub(super) help: Option<&'static str>,
     value_names: Option<&'static [&'static str]>,
     num_args: Option<(usize, usize)>,
     parse: Option<FlagParse>,
@@ -119,6 +121,9 @@ pub(super) struct FlagSpec {
     /// The opposite switch (`--no-x` of `--x`) and its help.
     negated: Option<(&'static str, &'static str)>,
     negated_conflicts: bool,
+    /// The default as the flag's help gives it, where the flag counts otherwise than the config
+    /// (`--romeo-template` counts echoes from 1).
+    pub(super) default: Option<&'static str>,
 }
 
 impl Def {
@@ -155,6 +160,8 @@ impl Def {
     pub(super) fn attrs(mut self, a: &'static [&'static str]) -> Self { self.cli.attrs = a; self }
     /// The switch's opposite (`--no-x` of `--x`, or `--x` of `--no-x`), with its help.
     pub(super) fn negated(mut self, long: &'static str, help: &'static str) -> Self { self.cli.negated = Some((long, help)); self }
+    /// The default the flag's help names, where the flag counts otherwise than the config.
+    pub(super) fn cli_default(mut self, words: &'static str) -> Self { self.cli.default = Some(words); self }
     /// The opposite cannot be given with the switch.
     pub(super) fn negated_conflicts(mut self) -> Self { self.cli.negated_conflicts = true; self }
 }
@@ -225,7 +232,7 @@ fn derive(d: &'static Def) -> Flag {
         num_args,
         action,
         parse,
-        help: Some(s.help.unwrap_or(d.gui_help.unwrap_or(d.help))),
+        help: Some(flag_help(d, switch)),
         long_help: None,
         values: Box::leak(values.into_boxed_slice()),
         defaults: if switch { &["false"] } else { &[] },
@@ -233,6 +240,60 @@ fn derive(d: &'static Def) -> Flag {
         conflicts: s.conflicts,
         requires: s.requires,
         attrs: if s.attrs.is_empty() && signed { &["allow_negative_numbers"] } else { s.attrs },
+    }
+}
+
+/// A setting's flag help: its `.cli(..)` wording, else the front-end help with its units, after
+/// the method it belongs to (`RTS: ...`), then the default, from the setting's own (`(default: 0 0 0)`) unless
+/// the text already says what it is. A switch is off unless given, so it names none.
+fn flag_help(d: &'static Def, switch: bool) -> &'static str {
+    let setting = super::settings().iter().find(|s| s.path == d.path).expect("every entry is a setting");
+    let text = match d.cli.help {
+        Some(h) => h.to_string(),
+        None => {
+            // The front-end help leaves the units to the schema; the command line has no other
+            // place to say them.
+            let help = d.gui_help.unwrap_or(d.help);
+            let help = match setting.units {
+                Some(u) if !help.contains(u) => format!("{help}, in {u}"),
+                _ => help.to_string(),
+            };
+            match setting.context {
+                // "RTS: ADMM penalty parameter", but "LSQR convergence tolerance" under LSQR.
+                Some(context) if !help.starts_with(context) => format!("{context}: {help}"),
+                _ => help,
+            }
+        }
+    };
+    let rendered = match d.cli.default {
+        Some(words) => Some(words.to_string()),
+        None if switch => None,
+        None => render_default(&setting.default),
+    };
+    match rendered {
+        Some(r) if !text.to_lowercase().contains("default") => leak(format!("{text} (default: {r})")),
+        _ => leak(text),
+    }
+}
+
+/// A default as the command line takes it: `0 0 0`, `0.0003`, `1e-5`, `vsharp`, `true`. `None`
+/// for a value with no words of its own (unset, empty), which a setting's help describes.
+pub(crate) fn render_default(v: &serde_json::Value) -> Option<String> {
+    use serde_json::Value as V;
+    let number = |x: f64| {
+        if x.fract() == 0.0 && x.abs() < 1e15 {
+            format!("{}", x as i64)
+        } else {
+            let plain = format!("{x}");
+            if plain.len() <= 6 { plain } else { format!("{x:e}") }
+        }
+    };
+    match v {
+        V::Bool(b) => Some(b.to_string()),
+        V::Number(n) => n.as_f64().map(number),
+        V::String(s) if !s.is_empty() => Some(s.clone()),
+        V::Array(a) if !a.is_empty() => a.iter().map(|x| x.as_f64().map(number)).collect::<Option<Vec<_>>>().map(|w| w.join(" ")),
+        _ => None,
     }
 }
 
@@ -260,149 +321,45 @@ fn opposite(switch: &Flag, long: &'static str, help: &'static str, conflicts: bo
     }
 }
 
-/// Every flag, in [`CLI_ORDER`]. A registry flag it does not list follows the flag of the entry
-/// before it in the registry, and an opposite its switch, so a new setting needs no entry there.
+/// Where the flags that set no one setting ([`OTHER_FLAGS`]) go among the registry's: each
+/// before the flag of the setting named, or where that setting's flag would be when it has none.
+/// `--pipeline` comes first and `--dismiss-recommendation` last.
+const PLACES: &[(&str, &str)] = &[
+    ("mask-preset", "masking.sections"), ("masking-input", "masking.sections"), ("mask", "masking.sections"),
+    ("mask-combine", "masking.combine"), ("mask-refine", "masking.refinements"),
+    ("two-pass-mask", "masking.two_pass_sections"),
+    ("bet-fractional-intensity", "bet.smoothness"), ("bet-voxel-scale", "bet.smoothness"),
+];
+
+/// Every flag: the registry's in its order (the TUI's, which groups each method's settings after
+/// the setting that chooses it), each opposite switch after its switch, and [`OTHER_FLAGS`] at
+/// their [`PLACES`]. `--help` lists them in this order and a generated command says them in it.
 fn build() -> Vec<Flag> {
-    // In the registry's order, each opposite after its switch. A flag two entries name (the
-    // reference and its region) is the first one's.
-    let mut registry: Vec<Flag> = Vec::new();
-    for d in defs().iter().filter(|d| d.flag.is_some()) {
-        if registry.iter().any(|f| d.flag.is_some_and(|l| l.trim_start_matches("--") == f.long)) {
+    let other = |long: &str| *OTHER_FLAGS.iter().find(|f| f.long == long).unwrap_or_else(|| panic!("--{long} is no flag"));
+    let mut flags: Vec<Flag> = vec![other("pipeline")];
+    for d in defs() {
+        flags.extend(PLACES.iter().filter(|(_, at)| *at == d.path).map(|(long, _)| other(long)));
+        // A flag two entries name (the reference and its region) is the first one's.
+        let Some(long) = d.flag.map(|l| l.trim_start_matches("--")) else { continue };
+        if flags.iter().any(|f| f.long == long) {
             continue;
         }
         let f = derive(d);
-        registry.push(f);
+        flags.push(f);
         if let Some((long, help)) = d.cli.negated {
-            registry.push(opposite(&f, long, help, d.cli.negated_conflicts));
+            flags.push(opposite(&f, long, help, d.cli.negated_conflicts));
         }
     }
-    let every: Vec<Flag> = OTHER_FLAGS.iter().copied().chain(registry.iter().copied()).collect();
-    let longs: Vec<&'static str> = registry.iter().map(|f| f.long).collect();
-    let ordered: Vec<Flag> = in_registry_place(CLI_ORDER, &longs).into_iter().map(|long| {
-        *every.iter().find(|f| f.long == long).unwrap_or_else(|| panic!("CLI_ORDER lists --{long}, which is no flag"))
-    }).collect();
-    assert_eq!(ordered.len(), every.len(), "CLI_ORDER lists every flag the registry does not give once");
-    ordered
-}
-
-/// `listed`, with each name of `registry` it does not list placed after the name before it in
-/// `registry` (last, when none before it is placed): a flag's place in an ordered list of flags
-/// when nobody gave it one, so that a new setting's flag needs no line in the list.
-pub(crate) fn in_registry_place(listed: &[&'static str], registry: &[&'static str]) -> Vec<&'static str> {
-    let mut ordered = listed.to_vec();
-    for (i, name) in registry.iter().enumerate() {
-        if ordered.contains(name) {
-            continue;
-        }
-        let at = registry[..i].iter().rev().find_map(|p| ordered.iter().position(|o| o == p)).map_or(ordered.len(), |p| p + 1);
-        ordered.insert(at, name);
+    flags.push(other("dismiss-recommendation"));
+    for f in OTHER_FLAGS {
+        assert_eq!(flags.iter().filter(|g| g.long == f.long).count(), 1, "--{} has one place", f.long);
     }
-    ordered
+    flags
 }
 
 /// `qsmxt run`'s settings flags, in the order `--help` lists them: built once from the registry
 /// and [`OTHER_FLAGS`] ([`build`]).
 pub static PIPELINE_FLAGS: LazyLock<Vec<Flag>> = LazyLock::new(build);
-
-/// `qsmxt run`'s settings flags in the order `--help` lists them, by name: registry flags and
-/// [`OTHER_FLAGS`]. A registry flag not listed here follows its registry neighbour ([`build`]).
-pub const CLI_ORDER: &[&str] = &[
-    "pipeline", "qsm-algorithm", "heidi", "orientation-group", "orientation-reference",
-    "no-orientation-registration", "multi-orientation-algorithm", "multi-orientation-lambda",
-    "multi-orientation-force", "cosmos-magnitude-weighting", "cosmos-tol", "cosmos-max-iter",
-    "unwrapping-algorithm", "bf-algorithm", "bf-erode-voxels", "bf-polish-mask",
-    "no-bf-polish-mask", "bf-ukb-mask-trim", "no-bf-ukb-mask-trim",
-    "masking-input", "phase-offset-removal", "phase-offset-sigma-mm",
-    "coil-combination-sigma", "bipolar-correction", "b0-estimation",
-    "qsmart-fit-threshold-mode", "qsmart-fit-percentile", "qsmart-fit-threshold",
-    "b0-weight-type", "b0-weight-assumed-t2star", "laplacian-solver", "laplacian-fft-pad", "laplacian-unmasked",
-    "no-laplacian-unmasked", "laplacian-keep-outside", "no-laplacian-keep-outside",
-    "bet-fractional-intensity", "bet-smoothness", "bet-gradient-threshold", "bet-iterations", "bet-subdivisions",
-    "bet-voxel-scale", "bet-orientation", "qsm-reference", "qsm-per-echo",
-    "rts-delta", "rts-mu", "rts-tol", "rts-rho", "rts-max-iter", "rts-lsmr-iter", "rts-tau", "rts-gamma", "rts-pad",
-    "tv-lambda", "tv-rho", "tv-tol", "tv-max-iter", "tv-pad", "tkd-threshold", "tkd-pad",
-    "tsvd-threshold", "tsvd-pad", "tgv-iterations", "tgv-erosions", "tgv-alpha1", "tgv-alpha0", "tgv-step-size",
-    "tgv-te", "tikhonov-lambda", "tikhonov-pad", "nltv-lambda", "nltv-rho", "nltv-mu", "nltv-tol", "nltv-max-iter",
-    "nltv-tol-newton", "nltv-newton-iter", "nltv-te", "nltv-pad",
-    "medi-lambda", "medi-merit", "medi-csf", "medi-lambda-csf", "medi-csf-r2s-threshold", "medi-csf-erode",
-    "medi-zeropad", "medi-smv", "no-medi-smv", "medi-smv-radius", "medi-smv-shrink-mask",
-    "no-medi-smv-shrink-mask", "medi-msmv", "medi-msmv-maxk", "medi-msmv-vessel-radius",
-    "no-medi-msmv-prefilter", "medi-data-weighting", "medi-percentage", "medi-cg-tol", "medi-cg-max-iter",
-    "medi-max-iter", "medi-tol", "medi-te", "tfi-lambda", "tfi-precond", "tfi-merit", "tfi-linear",
-    "tfi-data-weighting", "tfi-percentage", "tfi-cg-tol", "tfi-cg-max-iter", "tfi-max-iter", "tfi-tol", "tfi-te",
-    "ilsqr-tol", "ilsqr-max-iter", "ilsqr-pad-mm", "ilsqr-precision",
-    "star-pad", "star-te", "lsqr-residual-weighting", "no-lsqr-global-offset",
-    "lsqr-tol", "lsqr-max-iter", "heidi-cone-threshold", "heidi-gradient-threshold",
-    "no-heidi-laplacian-correction", "heidi-laplacian-threshold", "heidi-gradient-mask-floor",
-    "heidi-continuation-steps", "heidi-inner-iterations", "heidi-mu-min", "heidi-tol",
-    "no-heidi-denoise", "heidi-denoise-iterations", "heidi-denoise-time-step", "heidi-denoise-conductance",
-    "heidi-denoise-reference-itk", "no-heidi-denoise-reference-itk",
-    "heidi-te", "qsmart-ilsqr-max-iter", "qsmart-ilsqr-pad-mm", "qsmart-vasc-sphere-radius", "qsmart-inversion",
-    "qsmart-sdf-sigma1-stage1", "qsmart-sdf-sigma2-stage1", "qsmart-sdf-sigma1-stage2", "qsmart-sdf-sigma2-stage2",
-    "qsmart-sdf-lower-lim", "qsmart-sdf-curv-constant", "qsmart-frangi-scale-min", "qsmart-frangi-scale-max",
-    "qsmart-frangi-scale-ratio", "qsmart-frangi-c", "qsmart-frangi-c-mode", "qsmart-frangi-c-factor",
-    "qsmart-vessel-units", "qsmart-vessel-magnitude", "qsmart-offset-grid",
-    "ndi-tau", "ndi-alpha", "ndi-max-iter", "ndi-auto-stop", "ndi-te", "ndi-weight-norm",
-    "fansi-alpha1", "fansi-mu1", "fansi-mu2", "fansi-alpha0", "fansi-mu0", "fansi-max-iter", "fansi-tol-update",
-    "fansi-tol-delta", "fansi-te", "l1qsm-alpha1", "l1qsm-mu1", "l1qsm-mu2", "l1qsm-mu3", "l1qsm-lambda",
-    "l1qsm-max-iter", "l1qsm-tol-update", "l1qsm-tol-delta", "l1qsm-te",
-    "whqsm-alpha1", "whqsm-mu1", "whqsm-mu2", "whqsm-beta", "whqsm-muh", "whqsm-max-iter", "whqsm-tol-update",
-    "whqsm-tol-delta", "whqsm-weight", "whqsm-te", "hdqsm-alpha-l2", "hdqsm-mu1-l2", "hdqsm-mu2",
-    "hdqsm-max-iter-l1", "hdqsm-max-iter-l2", "hdqsm-tol-update",
-    "amp-pe-wave-order", "amp-pe-nlevel", "amp-pe-wave-pec", "amp-pe-simulated-te", "amp-pe-max-linearization-ite",
-    "amp-pe-damp-rate-sig", "amp-pe-damp-rate-par", "amp-pe-max-pe-spar-ite", "amp-pe-max-pe-est-ite",
-    "amp-pe-cvg-thd", "amp-pe-tikhonov-beta", "r2star-qsm-r-const-3t",
-    "decompose-n-inner", "decompose-chi-bound", "decompose-unwrap-phase", "decompose-fit",
-    "decompose-max-iterations", "decompose-max-function-evaluations", "decompose-function-tolerance",
-    "decompose-step-tolerance", "decompose-optimality-tolerance", "decompose-finite-difference-step",
-    "decompose-typical-x", "chi-sep-ilsqr-dr-pos", "chi-sep-ilsqr-dr-neg", "chi-sep-ilsqr-pad",
-    "chi-sep-ilsqr-cg-max-iter-lsqr", "chi-sep-ilsqr-cg-tol-lsqr", "chi-sep-ilsqr-cg-max-iter-sa",
-    "chi-sep-ilsqr-cg-tol-sa", "chi-sep-ilsqr-d2-thr", "chi-sep-ilsqr-prc-w-i-min", "chi-sep-ilsqr-prc-w-i-max",
-    "chi-sep-ilsqr-prc-w-g-min", "chi-sep-ilsqr-prc-w-g-max", "chi-sep-ilsqr-qsm-max-iter", "chi-sep-ilsqr-qsm-tol",
-    "chi-sep-ilsqr-qsm-pad-mm", "chi-sep-ilsqr-qsm-precision", "chi-sep-medi-lambda", "chi-sep-medi-lambda-csf",
-    "chi-sep-medi-dr-pos", "chi-sep-medi-dr-neg", "chi-sep-medi-pad", "chi-sep-medi-tol", "chi-sep-medi-max-iter",
-    "chi-sep-medi-cg-tol", "chi-sep-medi-cg-max-iter", "chi-sep-medi-qsm-max-iter", "chi-sep-medi-qsm-tol",
-    "chi-sep-medi-qsm-pad-mm", "chi-sep-medi-qsm-precision", "chi-sep-medi-csf-r2star",
-    "wavesep-dr-pos", "wavesep-dr-neg", "wavesep-alpha", "wavesep-lambda", "wavesep-wavelet-order",
-    "wavesep-max-iter", "wavesep-tol", "hc-chisep-dr-pos-3t", "hc-chisep-bin-hz",
-    "chi-sepnet-route", "chi-sepnet-patch", "chi-sepnet-frame-patch",
-    "susep-net-patch", "motion-correction", "motion-reference", "no-motion-chain",
-    "motion-chain-levels", "motion-min-ncc", "registration-levels", "registration-max-samples",
-    "registration-max-iterations", "registration-max-evaluations", "registration-tolerance",
-    "registration-rotation-step-deg", "registration-translation-step-mm", "registration-min-overlap",
-    "vsharp-deconvolve", "vsharp-threshold", "vsharp-max-radius", "vsharp-min-radius", "vsharp-radius-step",
-    "vsharp-grid", "vsharp-grid-spacing", "pdf-tol", "pdf-n-cg", "pdf-space", "pdf-n-pad",
-    "lbv-tol", "lbv-depth", "lbv-peel", "lbv-n1", "lbv-n2", "lbv-n3", "lbv-precision",
-    "ismv-variant", "ismv-tol", "ismv-max-iter", "ismv-radius", "sharp-threshold", "sharp-radius",
-    "resharp-radius", "resharp-tik-reg", "resharp-tol", "resharp-max-iter",
-    "harperella-radius", "harperella-max-iter", "harperella-tol", "harperella-pad", "harperella-rim",
-    "iharperella-max-iter", "iharperella-tol", "iharperella-pad", "iharperella-rim",
-    "no-romeo-phase-coherence", "no-romeo-phase-gradient-coherence", "no-romeo-phase-linearity",
-    "romeo-phase-linearity", "no-romeo-mag-coherence", "romeo-mag-weight",
-    "no-romeo-mag-weight", "romeo-mag-weight2", "romeo-bestpath", "romeo-template", "romeo-individual",
-    "no-romeo-individual", "romeo-correct-global", "no-romeo-correct-global",
-    "romeo-temporal-uncertain-unwrapping", "romeo-max-seeds", "romeo-merge-regions", "romeo-correct-regions",
-    "romeo-wrap-addition", "prelude-labelling", "prelude-partitions",
-    "swi-unwrapping", "swi-hp-sigma", "swi-scaling", "swi-strength", "swi-mip-window",
-    "smwi-threshold", "smwi-power", "smwi-mip-window", "synthseg-version", "synthseg-crop", "synthseg-patch",
-    "no-synthseg-flip-averaging", "no-synthseg-topology-cleanup",
-    "synthseg-sigma", "use-custom-dseg", "tile-size", "tile-halo",
-    "inhomogeneity-method", "homogeneity-sigma-mm", "homogeneity-nbox",
-    "n4-shrink-factor", "n4-max-iterations", "n4-convergence-threshold", "n4-mesh", "n4-spline-order",
-    "n4-bias-field-fwhm", "n4-wiener-noise", "n4-histogram-bins", "n4-geometry",
-    "linear-fit-estimate-offset", "robust-fit-loss", "robust-fit-tuning", "robust-fit-iterations",
-    "robust-fit-downweight-level", "robust-fit-flag-ratio", "complex-fit-reltol", "complex-fit-max-iter",
-    "no-qsm", "do-swi", "swi-filtered-phase", "no-magnitude", "do-segmentation", "do-analysis", "do-smwi",
-    "do-t2starmap", "do-r2starmap", "do-r2map", "do-r2primemap", "do-chisep",
-    "chisep", "use-custom-qsm", "use-custom-r2", "use-custom-r2prime",
-    "r2prime-strategy", "r2primenet-ignore-field-mismatch", "r2primenet-patch",
-    "export-dicom", "inhomogeneity-correction", "no-inhomogeneity-correction",
-    "axial-resampling", "no-axial-resampling", "obliquity-threshold",
-    "crop-to-mask", "ignore-slice-gap", "fft-padding", "tukey-window",
-    "crop-margin-mm", "output-space", "mask-preset", "use-custom-masks",
-    "mask", "mask-combine", "mask-refine", "two-pass", "two-pass-mask", "two-pass-mask-combine", "two-pass-mode",
-    "dismiss-recommendation",
-];
 
 /// The flags that set no one registry setting: `qsmxt` applies them itself (a pipeline to start
 /// from, the mask grammar and presets, the BET overrides, dismissals).
@@ -464,10 +421,27 @@ mod tests {
         }
     }
 
-    /// A name the list leaves out follows its registry neighbour, or comes last.
+    /// The flags come in the registry's order, each opposite after its switch, with
+    /// `--pipeline` first and `--dismiss-recommendation` last.
     #[test]
-    fn an_unlisted_name_follows_its_registry_neighbour() {
-        assert_eq!(in_registry_place(&["c", "a"], &["a", "b", "c", "d"]), ["c", "d", "a", "b"]);
-        assert_eq!(in_registry_place(&["c"], &["x", "c"]), ["c", "x"]);
+    fn the_flags_follow_the_registry() {
+        let longs: Vec<&str> = PIPELINE_FLAGS.iter().map(|f| f.long).collect();
+        assert_eq!(longs.first(), Some(&"pipeline"));
+        assert_eq!(longs.last(), Some(&"dismiss-recommendation"));
+        let at = |l: &str| longs.iter().position(|x| *x == l).unwrap_or_else(|| panic!("--{l}"));
+        let mut registry: Vec<&str> = Vec::new();
+        for long in defs().iter().filter_map(|d| d.flag).map(|f| f.trim_start_matches("--")) {
+            if !registry.contains(&long) {
+                registry.push(long);
+            }
+        }
+        for w in registry.windows(2) {
+            assert!(at(w[0]) < at(w[1]), "--{} before --{}", w[0], w[1]);
+        }
+        for d in defs() {
+            if let (Some(f), Some((no, _))) = (d.flag, d.cli.negated) {
+                assert_eq!(at(no.trim_start_matches("--")), at(f.trim_start_matches("--")) + 1, "{no} after {f}");
+            }
+        }
     }
 }

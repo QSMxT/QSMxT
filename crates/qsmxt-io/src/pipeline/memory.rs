@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-pub use qsmxt_engine::memory::*;
+use qsmxt_engine::memory::*;
 
 /// Memory this process can use, and what limited it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +50,7 @@ pub fn available_memory_bytes() -> u64 {
 pub fn available_memory() -> Available {
     #[cfg(target_os = "linux")]
     {
-        let read = |p: &Path| std::fs::read_to_string(p).ok();
+        let read = |p: &Path| fs_err::read_to_string(p).ok();
         let system = read(Path::new("/proc/meminfo")).as_deref().and_then(parse_meminfo_available);
         let cgroup = read(Path::new("/proc/self/cgroup"))
             .and_then(|own| cgroup_headroom(&own, Path::new("/sys/fs/cgroup"), read));
@@ -144,7 +144,7 @@ fn cgroup_headroom(own: &str, root: &Path, read: impl Fn(&Path) -> Option<String
 pub fn process_rss_bytes() -> u64 {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(contents) = std::fs::read_to_string("/proc/self/status") {
+        if let Ok(contents) = fs_err::read_to_string("/proc/self/status") {
             for line in contents.lines() {
                 if let Some(rest) = line.strip_prefix("VmRSS:") {
                     if let Some(kb_str) = rest.split_whitespace().next() {

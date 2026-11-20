@@ -7,6 +7,11 @@ use super::*;
 
 // ── Mask ──
 
+crate::flag_set! {
+    /// BET's settings for every BET step, as `qsmxt run` names them (`--bet-orientation`).
+    BetFlags = ["bet."];
+}
+
 #[derive(Args, Debug, Clone)]
 pub struct MaskCommonArgs {
     /// Input NIfTI file (an image for the generating subcommands, a mask for the rest)
@@ -115,17 +120,16 @@ pub struct MaskBetArgs {
     #[command(flatten)]
     pub common: MaskCommonArgs,
     /// Fractional intensity (0.0-1.0, smaller = larger brain)
-    #[arg(long, default_value_t = 0.5)]
+    #[arg(long, default_value_t = qsmxt_engine::BetConfig::default().fractional_intensity)]
     pub fractional_intensity: f64,
     /// Factor applied to the voxel sizes before BET runs — 10 for mouse data, 1 for the
     /// acquisition's own geometry (see --bet-voxel-scale). Prefer `mask rs2-net`, which masks
     /// rodent brains without the trick
     #[arg(long, value_name = "FACTOR")]
     pub voxel_scale: Option<f64>,
-    /// Which way round BET sees the left-right axis: fsl (default) or as-stored (see
-    /// --bet-orientation)
-    #[arg(long, value_name = "ORIENTATION", value_parser = parse_bet_orientation)]
-    pub orientation: Option<qsmxt_engine::BetOrientation>,
+    // The settings flags (`qsmxt run`'s, from the flag table).
+    #[command(flatten)]
+    pub settings: crate::cli_settings::SettingsOf<BetFlags>,
 }
 
 #[derive(Parser, Debug)]
@@ -196,8 +200,7 @@ pub struct MaskPresetArgs {
     /// phase-quality map rates that flat phase as reliable, so give this with `--quality`
     #[arg(long)]
     pub phase: Option<PathBuf>,
-    /// Which way round the recipe's BET steps see the left-right axis: fsl (default) or
-    /// as-stored (see `run --bet-orientation`)
-    #[arg(long, value_name = "ORIENTATION", value_parser = parse_bet_orientation)]
-    pub bet_orientation: Option<qsmxt_engine::BetOrientation>,
+    // The settings flags (`qsmxt run`'s, from the flag table).
+    #[command(flatten)]
+    pub settings: crate::cli_settings::SettingsOf<BetFlags>,
 }

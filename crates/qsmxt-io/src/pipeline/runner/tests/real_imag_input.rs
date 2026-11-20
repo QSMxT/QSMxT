@@ -15,7 +15,7 @@ fn config() -> PipelineConfig {
     use qsmxt_engine::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
     let mut config = PipelineConfig::default();
     config.inversion.algorithm = QsmAlgorithm::Tkd;
-    config.field_mapping.unwrapping_algorithm = crate::pipeline::config::UnwrappingAlgorithm::Laplacian;
+    config.field_mapping.unwrapping_algorithm = qsmxt_engine::UnwrappingAlgorithm::Laplacian;
     config.masking.sections = vec![MaskSection {
         input: MaskingInput::Magnitude,
         generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
@@ -60,7 +60,7 @@ fn chopped_real_imag_matches_mag_phase() {
     assert!(worst < 1e-4, "χ differs by up to {worst} ppm");
 
     let prov: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(ri.provenance_path(&ri_run.key, "scale_phase")).unwrap()).unwrap();
+        &fs_err::read_to_string(ri.provenance_path(&ri_run.key, "scale_phase")).unwrap()).unwrap();
     let params = &prov["parameters"];
     assert_eq!(params["input"], "real_imaginary");
     let conv = &params["real_imaginary_conversion"];
@@ -76,9 +76,9 @@ fn ge_real_imag_phase_is_negated() {
     let dir = tempfile::tempdir().unwrap();
     let ge = testutils::create_real_imag_bids(&dir.path().join("ge"), true);
     for p in glob::glob(&format!("{}/sub-1/anat/*.json", ge.display())).unwrap().flatten() {
-        let mut j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        let mut j: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(&p).unwrap()).unwrap();
         j["Manufacturer"] = serde_json::json!("GE");
-        std::fs::write(&p, j.to_string()).unwrap();
+        fs_err::write(&p, j.to_string()).unwrap();
     }
     let other = testutils::create_real_imag_bids(&dir.path().join("other"), true);
     let (ge_run, ge_out) = run_on(&ge, &dir.path().join("ge-out"));
@@ -90,7 +90,7 @@ fn ge_real_imag_phase_is_negated() {
         .fold(0.0, f64::max);
     assert!(worst < 1e-6, "GE phase is not the negation: up to {worst} rad off");
     let prov: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(ge_out.provenance_path(&ge_run.key, "scale_phase")).unwrap()).unwrap();
+        &fs_err::read_to_string(ge_out.provenance_path(&ge_run.key, "scale_phase")).unwrap()).unwrap();
     assert_eq!(prov["parameters"]["negate_phase"], true);
 }
 
@@ -102,11 +102,11 @@ fn unchopped_real_imag_is_not_corrected_and_caches() {
     let complex = testutils::create_real_imag_bids(&dir.path().join("ri"), false);
     let (run, output) = run_on(&complex, &dir.path().join("out"));
     let prov_path = output.provenance_path(&run.key, "scale_phase");
-    let prov: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&prov_path).unwrap()).unwrap();
+    let prov: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(&prov_path).unwrap()).unwrap();
     assert_eq!(prov["parameters"]["real_imaginary_conversion"]["corrected"],
         serde_json::json!({ "x": false, "y": false, "z": false }));
 
-    let before = std::fs::metadata(&prov_path).unwrap().modified().unwrap();
+    let before = fs_err::metadata(&prov_path).unwrap().modified().unwrap();
     run_pipeline_cached(&run, &config(), &output, false, &|_| {}).unwrap();
-    assert_eq!(std::fs::metadata(&prov_path).unwrap().modified().unwrap(), before, "scale_phase re-ran");
+    assert_eq!(fs_err::metadata(&prov_path).unwrap().modified().unwrap(), before, "scale_phase re-ran");
 }

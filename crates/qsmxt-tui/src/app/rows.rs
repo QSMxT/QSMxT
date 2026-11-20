@@ -77,7 +77,7 @@ impl App {
     /// reconstructed anyway.
     fn compute_qsm_rows(&self, ctx: &RowContext, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::Toggle {
-            label: "Compute QSM", field: "do_qsm",
+            label: "Compute QSM", field: "pipeline.do_qsm",
             help: "Enable QSM reconstruction (disable to only run the other outputs)",
         });
         if !self.form.settings.toggle("pipeline.do_qsm") {

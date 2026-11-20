@@ -95,6 +95,22 @@ pub enum Stage {
 }
 
 impl Stage {
+    /// Every step a run can have, each pass of a two-pass step.
+    pub const ALL: [Stage; 29] = [
+        Stage::Load, Stage::ScalePhase, Stage::TukeyWindow, Stage::ResampleAxial, Stage::InhomogeneityCorrection,
+        Stage::Magnitude, Stage::Mask(Pass::Main), Stage::Mask(Pass::Reliable), Stage::Motion, Stage::Swi,
+        Stage::Segmentation, Stage::Relaxometry, Stage::R2, Stage::FieldMap, Stage::BackgroundRemoval(Pass::Main),
+        Stage::BackgroundRemoval(Pass::Reliable), Stage::Inversion(Pass::Main), Stage::Inversion(Pass::Reliable),
+        Stage::Tgv(Pass::Main), Stage::Tgv(Pass::Reliable), Stage::Qsmart(Pass::Main), Stage::Qsmart(Pass::Reliable),
+        Stage::TwoPassCombination, Stage::Reference, Stage::SinglePassReference, Stage::Smwi, Stage::ChiSeparation,
+        Stage::Analysis, Stage::OutputSpace,
+    ];
+
+    /// The step a name ([`Stage::name`]) is, as a store or provenance records it.
+    pub fn from_name(name: &str) -> Option<Stage> {
+        Stage::ALL.into_iter().find(|s| s.name() == name)
+    }
+
     /// The step's name in a front end's cache and in provenance (`mask`, `invert-reliable`, ...).
     pub fn name(&self) -> String {
         let (base, pass) = match *self {
@@ -565,6 +581,28 @@ fn estimate_memory(plan: &mut Plan, facts: &ScanFacts, profile: &MemoryProfile) 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// [`Stage::ALL`] lists every step once, so [`Stage::from_name`] reads every name back. A new
+    /// variant fails the match below until it is listed.
+    #[test]
+    fn every_stage_is_listed_once() {
+        let passes = |s: Stage| match s {
+            Stage::Load | Stage::ScalePhase | Stage::TukeyWindow | Stage::ResampleAxial | Stage::InhomogeneityCorrection
+            | Stage::Magnitude | Stage::Motion | Stage::Swi | Stage::Segmentation | Stage::Relaxometry | Stage::R2
+            | Stage::FieldMap | Stage::TwoPassCombination | Stage::Reference | Stage::SinglePassReference | Stage::Smwi
+            | Stage::ChiSeparation | Stage::Analysis | Stage::OutputSpace => 1,
+            Stage::Mask(_) | Stage::BackgroundRemoval(_) | Stage::Inversion(_) | Stage::Tgv(_) | Stage::Qsmart(_) => 2,
+        };
+        let mut names: Vec<String> = Stage::ALL.iter().map(Stage::name).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), Stage::ALL.len(), "a stage is listed twice");
+        // Each one-pass step once and each pass step twice: 19 and 5.
+        assert_eq!(Stage::ALL.iter().map(|s| 2 / passes(*s)).sum::<usize>(), 19 * 2 + 5 * 2);
+        for s in Stage::ALL {
+            assert_eq!(Stage::from_name(&s.name()), Some(s));
+        }
+    }
 
     /// A 5-echo, 3 T scan with magnitude: what the example data looks like.
     pub(crate) fn facts() -> ScanFacts {

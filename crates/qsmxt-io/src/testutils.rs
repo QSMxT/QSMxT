@@ -109,7 +109,7 @@ pub fn write_dseg_on(path: &Path, n: usize) {
         }
     }
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap();
+        fs_err::create_dir_all(parent).unwrap();
     }
     qsm_core::io::save_nifti_to_file(path, &data, (n, n, n), VOXEL_SIZE, &IDENTITY_AFFINE)
         .expect("write dseg");
@@ -125,7 +125,7 @@ pub fn write_sidecar(path: &Path, echo_time: f64, field_strength: f64) {
         "EchoTime": echo_time,
         "MagneticFieldStrength": field_strength,
     });
-    std::fs::write(path, serde_json::to_string_pretty(&json).unwrap())
+    fs_err::write(path, serde_json::to_string_pretty(&json).unwrap())
         .expect("write sidecar");
 }
 
@@ -141,7 +141,7 @@ pub fn write_sidecar_with_b0(
     if let Some((x, y, z)) = b0_dir {
         json["B0_dir"] = serde_json::json!([x, y, z]);
     }
-    std::fs::write(path, serde_json::to_string_pretty(&json).unwrap()).expect("write sidecar");
+    fs_err::write(path, serde_json::to_string_pretty(&json).unwrap()).expect("write sidecar");
 }
 
 // --- BIDS directory builders ---
@@ -149,7 +149,7 @@ pub fn write_sidecar_with_b0(
 /// Minimal single-echo BIDS dataset (T2starw suffix, like the minimal example).
 pub fn create_single_echo_bids(root: &Path) -> PathBuf {
     let anat = root.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
 
     write_phase(&anat.join("sub-1_part-phase_T2starw.nii"));
     write_sidecar(&anat.join("sub-1_part-phase_T2starw.json"), 0.02, 3.0);
@@ -167,7 +167,7 @@ pub fn create_multi_echo_bids(root: &Path) -> PathBuf {
 /// [`create_multi_echo_bids`] on an `n`³ grid.
 pub fn create_multi_echo_bids_on(root: &Path, n: usize) -> PathBuf {
     let anat = root.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
 
     let echo_times = [0.004, 0.008, 0.012];
     // A plausible grey-matter R2* at 3 T, so the echoes decay instead of repeating.
@@ -195,7 +195,7 @@ pub fn create_multi_orientation_bids(root: &Path) -> PathBuf {
 /// [`create_multi_orientation_bids`] on an `n`³ grid.
 pub fn create_multi_orientation_bids_on(root: &Path, n: usize) -> PathBuf {
     let anat = root.join("sub-1/ses-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
 
     let dirs = [(0.0, 0.0, 1.0), (0.0, 0.5, 0.866), (0.5, 0.0, 0.866)];
     for (i, &b0) in dirs.iter().enumerate() {
@@ -223,7 +223,7 @@ pub fn create_multi_orientation_bids_on(root: &Path, n: usize) -> PathBuf {
 /// the layout `qsmxt dicom-convert` produces for a Siemens "save uncombined" SWI export.
 pub fn create_multi_coil_bids(root: &Path, n_coils: u32) -> PathBuf {
     let anat = root.join("sub-1/ses-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     let echo_times = [0.009, 0.020];
     for (i, &te) in echo_times.iter().enumerate() {
         let echo = i + 1;
@@ -261,7 +261,7 @@ fn complex_echo(e: usize) -> (Vec<f64>, Vec<f64>) {
 /// alternate-slice π chopping some GE reconstructions leave in.
 pub fn create_real_imag_bids(root: &Path, chop_z: bool) -> PathBuf {
     let anat = root.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     for (e, &te) in COMPLEX_ECHO_TIMES.iter().enumerate() {
         let (mag, phase) = complex_echo(e);
         let sign = |i: usize| if chop_z && (i / (NX * NY)) % 2 == 1 { -1.0 } else { 1.0 };
@@ -280,7 +280,7 @@ pub fn create_real_imag_bids(root: &Path, chop_z: bool) -> PathBuf {
 /// The [`create_real_imag_bids`] echoes as magnitude and phase (`part-mag` / `part-phase`).
 pub fn create_mag_phase_twin_bids(root: &Path) -> PathBuf {
     let anat = root.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     for (e, &te) in COMPLEX_ECHO_TIMES.iter().enumerate() {
         let (mag, phase) = complex_echo(e);
         for (part, data) in [("mag", &mag), ("phase", &phase)] {
@@ -297,34 +297,14 @@ pub fn create_mag_phase_twin_bids(root: &Path) -> PathBuf {
 pub fn create_multi_session_bids(root: &Path) -> PathBuf {
     let ses1 = root.join("sub-1/ses-pre/anat");
     let ses2 = root.join("sub-1/ses-post/anat");
-    std::fs::create_dir_all(&ses1).unwrap();
-    std::fs::create_dir_all(&ses2).unwrap();
+    fs_err::create_dir_all(&ses1).unwrap();
+    fs_err::create_dir_all(&ses2).unwrap();
 
     for (anat, ses) in [(&ses1, "ses-pre"), (&ses2, "ses-post")] {
         write_phase(&anat.join(format!("sub-1_{}_part-phase_T2starw.nii", ses)));
         write_sidecar(&anat.join(format!("sub-1_{}_part-phase_T2starw.json", ses)), 0.02, 3.0);
         write_magnitude(&anat.join(format!("sub-1_{}_part-mag_T2starw.nii", ses)));
         write_sidecar(&anat.join(format!("sub-1_{}_part-mag_T2starw.json", ses)), 0.02, 3.0);
-    }
-
-    root.to_path_buf()
-}
-
-/// Multi-acquisition BIDS dataset (two acquisitions, each with 2 echoes).
-#[allow(dead_code)]
-pub fn create_multi_acq_bids(root: &Path) -> PathBuf {
-    let anat = root.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
-
-    for acq in ["mygrea", "mygreb"] {
-        for echo in 1..=2 {
-            let te = echo as f64 * 0.004;
-            let base = format!("sub-1_acq-{}_echo-{}", acq, echo);
-            write_phase(&anat.join(format!("{}_part-phase_MEGRE.nii", base)));
-            write_sidecar(&anat.join(format!("{}_part-phase_MEGRE.json", base)), te, 3.0);
-            write_magnitude(&anat.join(format!("{}_part-mag_MEGRE.nii", base)));
-            write_sidecar(&anat.join(format!("{}_part-mag_MEGRE.json", base)), te, 3.0);
-        }
     }
 
     root.to_path_buf()

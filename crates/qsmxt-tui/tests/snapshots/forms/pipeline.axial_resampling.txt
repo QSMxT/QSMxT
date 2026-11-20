@@ -1,4 +1,4 @@
-## toggle axial_resampling
+## toggle pipeline.axial_resampling
 config:
   /pipeline/axial_resampling: false -> true
 command:

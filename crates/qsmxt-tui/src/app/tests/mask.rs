@@ -177,34 +177,34 @@ fn the_reference_has_one_row_on_the_qsm_tab() {
     let mut app = App::new();
     let thalamus = qsm_ref_options().iter().position(|o| *o == "thalamus")
         .expect("thalamus should be offered");
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "qsm_reference"));
-    let copies = app.all_pages().iter().filter(|(_, _, rows)| rows.iter().any(|r| row_field(r) == Some("qsm_reference"))).count();
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "qsm.reference"));
+    let copies = app.all_pages().iter().filter(|(_, _, rows)| rows.iter().any(|r| row_field(r) == Some("qsm.reference"))).count();
     assert_eq!(copies, 1, "one copy only");
-    focus_on(&mut app, TAB_RECONSTRUCTION, "qsm_reference");
-    app.set_field_select("qsm_reference", thalamus);
+    focus_on(&mut app, TAB_RECONSTRUCTION, "qsm.reference");
+    app.set_field_select("qsm.reference", thalamus);
     // A region needs segmentation: the run makes one, so its settings show, but the checkbox
     // reads as the user left it until the required change is applied.
-    assert!(!app.field_toggle("do_segmentation") && app.output_made("do_segmentation"));
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "synthseg_version"));
+    assert!(!app.field_toggle("pipeline.do_segmentation") && app.output_made("pipeline.do_segmentation"));
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "segmentation.version"));
 }
 
 #[test]
 fn a_region_reference_needs_segmentation_visibly() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
-    assert!(!app.field_toggle("do_segmentation"), "off by default");
+    assert!(!app.field_toggle("pipeline.do_segmentation"), "off by default");
 
     let region = qsm_ref_options().iter().position(|o| *o == "ventricles").unwrap();
-    app.set_field_select("qsm_reference", region);
-    assert!(!app.field_toggle("do_segmentation"), "the checkbox reads as the user left it");
-    assert!(app.output_made("do_segmentation"), "a region reference needs SynthSeg, which the run makes");
+    app.set_field_select("qsm.reference", region);
+    assert!(!app.field_toggle("pipeline.do_segmentation"), "the checkbox reads as the user left it");
+    assert!(app.output_made("pipeline.do_segmentation"), "a region reference needs SynthSeg, which the run makes");
     for f in SYNTHSEG_ROWS {
         assert!(shows(&mut app, TAB_RECONSTRUCTION, f),
                 "{f} shapes the parcellation the reference is measured on");
     }
 
     // Ticking it is the required change; unticking it again is refused, and says why.
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_segmentation");
     app.handle_key(key(KeyCode::Enter));
     assert!(app.form.settings.toggle("pipeline.do_segmentation"), "{:?}", app.error_message);
     app.handle_key(key(KeyCode::Enter));
@@ -215,8 +215,8 @@ fn a_region_reference_needs_segmentation_visibly() {
     // `mean` and `none` need nothing.
     app.form.settings.set("pipeline.do_segmentation", false);
     for idx in [0, 1] {
-        app.set_field_select("qsm_reference", idx);
-        assert!(!app.output_made("do_segmentation"), "option {idx} needs nothing");
+        app.set_field_select("qsm.reference", idx);
+        assert!(!app.output_made("pipeline.do_segmentation"), "option {idx} needs nothing");
     }
 }
 
@@ -225,12 +225,12 @@ fn a_region_reference_needs_segmentation_visibly() {
 fn a_region_reference_reaches_the_command() {
     let mut app = App::new();
     let idx = qsm_ref_options().iter().position(|o| *o == "left-thalamus").unwrap();
-    app.set_field_select("qsm_reference", idx);
+    app.set_field_select("qsm.reference", idx);
     let cmd = crate::command::build_command_string(&app);
     assert!(cmd.contains("--qsm-reference left-thalamus"), "cmd: {cmd}");
 
     // The default stays off the command line.
-    app.set_field_select("qsm_reference", 0);
+    app.set_field_select("qsm.reference", 0);
     assert!(!crate::command::build_command_string(&app).contains("--qsm-reference"));
 }
 
@@ -243,16 +243,16 @@ fn statistics_force_segmentation_visibly() {
     app.active_tab = TAB_RECONSTRUCTION;
 
     // Off by default: unchecked, and its settings hidden.
-    assert!(!app.field_toggle("do_segmentation"));
+    assert!(!app.field_toggle("pipeline.do_segmentation"));
     for f in SYNTHSEG_ROWS {
         assert!(!shows(&mut app, TAB_RECONSTRUCTION, f), "{f} should be hidden");
     }
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "do_analysis"), "the statistics are reachable on their own");
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "pipeline.do_analysis"), "the statistics are reachable on their own");
 
     // A config or CLI run can arrive with the statistics already on; segmentation is then in
     // force, so the block must be visible rather than hiding a setting that is taking effect.
     app.form.settings.set("pipeline.do_analysis", true);
-    assert!(!app.field_toggle("do_segmentation") && app.output_made("do_segmentation"),
+    assert!(!app.field_toggle("pipeline.do_segmentation") && app.output_made("pipeline.do_segmentation"),
             "segmentation is needed: made by the run, but not shown as ticked");
     for f in SYNTHSEG_ROWS {
         assert!(shows(&mut app, TAB_RECONSTRUCTION, f),
@@ -260,7 +260,7 @@ fn statistics_force_segmentation_visibly() {
     }
 
     // Ticking it is the required change; it then cannot be turned off from under them.
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_segmentation");
     app.handle_key(key(KeyCode::Enter));
     assert!(app.form.settings.toggle("pipeline.do_segmentation"));
     app.handle_key(key(KeyCode::Enter));
@@ -296,31 +296,31 @@ fn heidi_shows_the_lsqr_group_and_its_own() {
 
     let mut app = with("lsqr", false);
     let f = fields(&app);
-    assert!(f.contains(&"lsqr_tol".to_string()), "{f:?}");
-    assert!(f.contains(&"lsqr_fit_global_offset".to_string()), "{f:?}");
-    assert!(f.contains(&"heidi_enabled".to_string()), "the HEIDI checkbox: {f:?}");
-    assert!(!f.iter().any(|x| x.starts_with("heidi_") && x != "heidi_enabled"),
+    assert!(f.contains(&"inversion.lsqr.tol".to_string()), "{f:?}");
+    assert!(f.contains(&"inversion.lsqr.fit_global_offset".to_string()), "{f:?}");
+    assert!(f.contains(&"inversion.heidi.enabled".to_string()), "the HEIDI checkbox: {f:?}");
+    assert!(!f.iter().any(|x| x.starts_with("inversion.heidi.") && x != "inversion.heidi.enabled"),
         "plain LSQR must not show HEIDI's settings: {f:?}");
 
     // Ticked after another inversion, HEIDI's settings follow.
-    assert!(fields(&with("tkd", true)).contains(&"heidi_cone_threshold".to_string()));
-    assert!(!fields(&with("tgv", false)).contains(&"heidi_enabled".to_string()), "not offered without a local field");
+    assert!(fields(&with("tkd", true)).contains(&"inversion.heidi.cone_threshold".to_string()));
+    assert!(!fields(&with("tgv", false)).contains(&"inversion.heidi.enabled".to_string()), "not offered without a local field");
 
     // LSQR+HEIDI: LSQR with the checkbox ticked.
     app.form.settings.set("inversion.heidi.enabled", true);
     let f = fields(&app);
-    assert!(f.contains(&"lsqr_tol".to_string()), "HEIDI seeds with LSQR: {f:?}");
-    assert!(f.contains(&"heidi_cone_threshold".to_string()), "{f:?}");
-    assert!(f.contains(&"heidi_continuation_steps".to_string()), "{f:?}");
+    assert!(f.contains(&"inversion.lsqr.tol".to_string()), "HEIDI seeds with LSQR: {f:?}");
+    assert!(f.contains(&"inversion.heidi.cone_threshold".to_string()), "{f:?}");
+    assert!(f.contains(&"inversion.heidi.continuation_steps".to_string()), "{f:?}");
 
     // The sub-parameters follow their switches.
-    assert!(f.contains(&"heidi_denoise_iterations".to_string()), "denoise is on by default: {f:?}");
-    assert!(f.contains(&"heidi_laplacian_threshold".to_string()), "{f:?}");
-    app.toggle_field("heidi_denoise");
-    app.toggle_field("heidi_apply_laplacian_correction");
+    assert!(f.contains(&"inversion.heidi.denoise_iterations".to_string()), "denoise is on by default: {f:?}");
+    assert!(f.contains(&"inversion.heidi.laplacian_threshold".to_string()), "{f:?}");
+    app.toggle_field("inversion.heidi.denoise");
+    app.toggle_field("inversion.heidi.apply_laplacian_correction");
     let f = fields(&app);
-    assert!(!f.contains(&"heidi_denoise_iterations".to_string()), "{f:?}");
-    assert!(!f.contains(&"heidi_laplacian_threshold".to_string()), "{f:?}");
+    assert!(!f.contains(&"inversion.heidi.denoise_iterations".to_string()), "{f:?}");
+    assert!(!f.contains(&"inversion.heidi.laplacian_threshold".to_string()), "{f:?}");
 }
 
 /// Inserting an algorithm mid-list used to shift the hardcoded indices that decide which
@@ -369,9 +369,9 @@ fn stage_visibility_follows_the_algorithm_not_its_index() {
     app.pipeline_state.ctx.num_echoes = None;
     // iQFM makes the local field from phase: no field mapping in front of it.
     app.set_qsm_algorithm(idx("rts"));
-    app.set_field_select("bf_algorithm", BF_OPTIONS.iter().position(|o| *o == "iqfm").unwrap());
+    app.set_field_select("bg_removal.algorithm", BF_OPTIONS.iter().position(|o| *o == "iqfm").unwrap());
     assert!(!has_section(&app, "fieldmap"), "iQFM unwraps and removes the background itself");
-    app.set_field_select("bf_algorithm", 0);
+    app.set_field_select("bg_removal.algorithm", 0);
     // LSQR (and LSQR+HEIDI) is an ordinary local-field inversion.
     app.set_qsm_algorithm(idx("lsqr"));
     app.form.settings.set("inversion.heidi.enabled", true);
@@ -389,24 +389,24 @@ fn qsm_off_keeps_the_preprocessing_rows() {
     goto_page(&mut app, Page::Masking);
     app.form.settings.set("pipeline.do_qsm", false);
     let f = fields(&mut app);
-    for kept in ["axial_resampling", "inhomogeneity_correction", "ignore_slice_gap",
-                 "motion_correction", "coil_combination_sigma",
-                 "mask_preset", "custom_mask_tool", "two_pass"] {
+    for kept in ["pipeline.axial_resampling", "masking.inhomogeneity_correction", "pipeline.ignore_slice_gap",
+                 "motion_correction.enabled", "field_mapping.coil_combination_sigma",
+                 "mask_preset", "masking.custom_mask_tool", "masking.two_pass"] {
         assert!(f.contains(&kept.to_string()), "{kept} hidden with QSM off: {f:?}");
     }
     // The QSM sections stay listed but hold only a note.
-    for gone in ["unwrapping_algorithm", "bf_algorithm", "qsm_algorithm", "qsm_reference", "crop_to_mask", "fft_padding"] {
+    for gone in ["field_mapping.unwrapping_algorithm", "bg_removal.algorithm", "inversion.algorithm", "qsm.reference", "pipeline.crop_to_mask", "pipeline.fft_padding"] {
         assert!(!f.contains(&gone.to_string()), "{gone} shown with QSM off: {f:?}");
     }
     // Motion correction's own settings follow it, not QSM.
-    app.toggle_field("motion_correction");
+    app.toggle_field("motion_correction.enabled");
     let f = fields(&mut app);
-    assert!(f.contains(&"motion_reference".to_string()) && f.contains(&"reg_levels".to_string()), "{f:?}");
+    assert!(f.contains(&"motion_correction.reference".to_string()) && f.contains(&"registration.levels".to_string()), "{f:?}");
 
     // SMWI needs a χ map: QSM runs regardless, and its settings are on show, with the reason.
     app.form.settings.set("pipeline.do_smwi", true);
     let f = fields(&mut app);
-    assert!(f.contains(&"qsm_algorithm".to_string()) && f.contains(&"unwrapping_algorithm".to_string()), "{f:?}");
+    assert!(f.contains(&"inversion.algorithm".to_string()) && f.contains(&"field_mapping.unwrapping_algorithm".to_string()), "{f:?}");
     assert!(app.pipeline_rows().iter().any(|r|
         matches!(r, PipelineRow::Note { text } if text.contains("SMWI"))), "the forced QSM says why");
 }
@@ -416,15 +416,15 @@ fn qsm_off_keeps_the_preprocessing_rows() {
 fn bipolar_correction_needs_offset_removal() {
     let mut app = App::new();
     let shows = |app: &App| app.pipeline_rows().iter().any(|r|
-        matches!(r, PipelineRow::Toggle { field: "bipolar_correction", .. }));
-    app.toggle_field("bipolar_correction");
+        matches!(r, PipelineRow::Toggle { field: "field_mapping.bipolar_correction", .. }));
+    app.toggle_field("field_mapping.bipolar_correction");
     let passed = |app: &App| super::super::super::command::config_from_app(app).unwrap().field_mapping.bipolar_correction;
-    assert!(app.field_toggle("phase_offset_removal") && app.field_select("unwrapping_algorithm") == 0);
+    assert!(app.field_toggle("field_mapping.phase_offset_removal") && app.field_select("field_mapping.unwrapping_algorithm") == 0);
     assert!(shows(&app) && passed(&app));
-    app.toggle_field("phase_offset_removal");
+    app.toggle_field("field_mapping.phase_offset_removal");
     assert!(!shows(&app) && !passed(&app), "no offset removal, no bipolar correction");
-    app.toggle_field("phase_offset_removal");
-    app.set_field_select("unwrapping_algorithm", 1);
+    app.toggle_field("field_mapping.phase_offset_removal");
+    app.set_field_select("field_mapping.unwrapping_algorithm", 1);
     assert!(shows(&app) && passed(&app), "Laplacian unwrapping removes offsets first too");
 }
 
@@ -436,30 +436,30 @@ fn supplied_inputs_follow_the_maps_that_read_them() {
     let has = |f: &[String], x: &str| f.iter().any(|y| y == x);
     let mut app = App::new();
     let f = fields(&mut app);
-    for x in ["custom_qsm_tool", "custom_r2_tool", "custom_r2prime_tool", "r2prime_strategy"] {
+    for x in ["separation.custom_qsm_tool", "separation.custom_r2_tool", "separation.custom_r2prime_tool", "separation.r2prime_strategy"] {
         assert!(!has(&f, x), "nothing reads a supplied map: {x}");
     }
 
     app.form.settings.set("pipeline.do_r2primemap", true);
     let f = fields(&mut app);
-    assert!(has(&f, "custom_r2prime_tool") && has(&f, "custom_r2_tool") && has(&f, "r2prime_strategy"), "{f:?}");
-    assert!(!has(&f, "custom_qsm_tool"), "{f:?}");
+    assert!(has(&f, "separation.custom_r2prime_tool") && has(&f, "separation.custom_r2_tool") && has(&f, "separation.r2prime_strategy"), "{f:?}");
+    assert!(!has(&f, "separation.custom_qsm_tool"), "{f:?}");
     // R2PRIMEnet predicts R2' from R2*: no R2 is read.
-    app.set_field_select("r2prime_strategy", 2);
-    assert!(!has(&fields(&mut app), "custom_r2_tool"));
+    app.set_field_select("separation.r2prime_strategy", 2);
+    assert!(!has(&fields(&mut app), "separation.custom_r2_tool"));
     // A supplied R2' replaces the computation: its source no longer applies, its row stays.
-    app.set_field_select("r2prime_strategy", 0);
-    *app.field_text_mut("custom_r2prime_tool").unwrap() = "*".into();
+    app.set_field_select("separation.r2prime_strategy", 0);
+    *app.field_text_mut("separation.custom_r2prime_tool").unwrap() = "*".into();
     let f = fields(&mut app);
-    assert!(has(&f, "custom_r2prime_tool") && !has(&f, "r2prime_strategy") && !has(&f, "custom_r2_tool"), "{f:?}");
+    assert!(has(&f, "separation.custom_r2prime_tool") && !has(&f, "separation.r2prime_strategy") && !has(&f, "separation.custom_r2_tool"), "{f:?}");
 
     let mut app = App::new();
     app.form.settings.set("pipeline.do_analysis", true);
-    assert!(has(&fields(&mut app), "custom_qsm_tool"), "the statistics can read a supplied χ map");
+    assert!(has(&fields(&mut app), "separation.custom_qsm_tool"), "the statistics can read a supplied χ map");
     let mut app = App::new();
     app.form.settings.set("pipeline.do_r2map", true);
     let f = fields(&mut app);
-    assert!(has(&f, "custom_r2_tool") && !has(&f, "custom_r2prime_tool"), "{f:?}");
+    assert!(has(&f, "separation.custom_r2_tool") && !has(&f, "separation.custom_r2prime_tool"), "{f:?}");
 }
 
 /// A supplied segmentation satisfies the statistics and a region reference: SynthSeg is not
@@ -468,28 +468,28 @@ fn supplied_inputs_follow_the_maps_that_read_them() {
 fn a_custom_dseg_is_the_segmentation_source() {
     let mut app = App::new();
     app.form.settings.set("pipeline.do_analysis", true);
-    assert!(app.output_made("do_segmentation"), "needed without a supplied dseg");
+    assert!(app.output_made("pipeline.do_segmentation"), "needed without a supplied dseg");
     assert_eq!(app.field_select("segmentation_source"), 0, "SynthSeg");
-    *app.field_text_mut("custom_dseg_tool").unwrap() = "freesurfer".into();
-    assert!(app.field_toggle("do_segmentation"), "a supplied segmentation is a segmentation");
+    *app.field_text_mut("segmentation.custom_dseg_tool").unwrap() = "freesurfer".into();
+    assert!(app.field_toggle("pipeline.do_segmentation"), "a supplied segmentation is a segmentation");
     assert_eq!(app.field_select("segmentation_source"), 1);
-    assert!(!shows(&mut app, TAB_RECONSTRUCTION, "synthseg_version"), "no SynthSeg settings to show");
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "custom_dseg_tool"));
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "do_analysis"), "the statistics stay reachable");
+    assert!(!shows(&mut app, TAB_RECONSTRUCTION, "segmentation.version"), "no SynthSeg settings to show");
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "segmentation.custom_dseg_tool"));
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "pipeline.do_analysis"), "the statistics stay reachable");
     // The statistics need one, whichever the source: turning it off is refused.
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_segmentation");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_segmentation");
     app.handle_key(key(KeyCode::Enter));
-    assert!(app.error_message.is_some() && app.field_text("custom_dseg_tool") == "freesurfer");
+    assert!(app.error_message.is_some() && app.field_text("segmentation.custom_dseg_tool") == "freesurfer");
     // Back to SynthSeg: the supplied one is dropped, SynthSeg asked for.
     app.set_field_select("segmentation_source", 0);
-    assert!(app.field_text("custom_dseg_tool").is_empty() && app.form.settings.toggle("pipeline.do_segmentation"));
+    assert!(app.field_text("segmentation.custom_dseg_tool").is_empty() && app.form.settings.toggle("pipeline.do_segmentation"));
     app.set_field_select("segmentation_source", 1);
-    assert_eq!(app.field_text("custom_dseg_tool"), "*");
+    assert_eq!(app.field_text("segmentation.custom_dseg_tool"), "*");
     assert!(!app.form.settings.toggle("pipeline.do_segmentation"), "one representation per choice");
     // Unforced: off clears whichever source.
     app.form.settings.set("pipeline.do_analysis", false);
-    app.toggle_field("do_segmentation");
-    assert!(!app.field_toggle("do_segmentation") && app.field_text("custom_dseg_tool").is_empty());
+    app.toggle_field("pipeline.do_segmentation");
+    assert!(!app.field_toggle("pipeline.do_segmentation") && app.field_text("segmentation.custom_dseg_tool").is_empty());
 }
 
 /// R2* is needed by what reads it (R2*-QSM, a computed R2'): made by the run, shown as the
@@ -497,11 +497,11 @@ fn a_custom_dseg_is_the_segmentation_source() {
 #[test]
 fn r2star_is_made_when_needed_and_reads_as_set() {
     let mut app = App::new();
-    assert!(!app.field_toggle("do_r2starmap"));
+    assert!(!app.field_toggle("pipeline.do_r2starmap"));
     app.form.settings.set("pipeline.do_r2primemap", true);
-    assert!(!app.field_toggle("do_r2starmap") && app.output_made("do_r2starmap"), "R2' = R2* - R2");
+    assert!(!app.field_toggle("pipeline.do_r2starmap") && app.output_made("pipeline.do_r2starmap"), "R2' = R2* - R2");
     app.active_tab = TAB_RECONSTRUCTION;
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_r2starmap");
     app.handle_key(key(KeyCode::Enter));
     assert!(app.form.settings.toggle("pipeline.do_r2starmap"), "{:?}", app.error_message);
     app.handle_key(key(KeyCode::Enter));
@@ -546,10 +546,10 @@ fn two_pass_toggle_reveals_the_reliable_mask_editor() {
         app.focusable_rows().iter().position(|&ri| pred(&rows[ri]))
     };
     app.pipeline_state.focus =
-        focus_on(&app, |r| matches!(r, PipelineRow::Toggle { field: "two_pass", .. }))
+        focus_on(&app, |r| matches!(r, PipelineRow::Toggle { field: "masking.two_pass", .. }))
             .expect("two-pass toggle not focusable");
     app.handle_key(key(KeyCode::Enter));
-    assert!(app.field_toggle("two_pass"));
+    assert!(app.field_toggle("masking.two_pass"));
     assert!(reliable_rows(&app) > 0, "the reliable mask editor appears with the toggle");
 
     // It starts as the default recipe: an unfilled Otsu threshold on phase quality.
@@ -601,7 +601,7 @@ fn qsmart_keeps_the_mask() {
     let qsmart = QSM_PICKER_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
     let mut app = App::new();
     let before = app.mask().sections.clone();
-    app.set_field_select("qsm_algorithm", qsmart);
+    app.set_field_select("inversion.algorithm", qsmart);
     assert_eq!(app.mask().sections, before, "choosing QSMART changes no mask");
     assert!(!app.pipeline_rows().iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("brain mask"))));
     app.set_field_select("mask_preset", 1);
@@ -619,8 +619,8 @@ fn two_pass_remembers_its_mask_while_off() {
     app.mask_mut().two_pass_sections[0].generator =
         MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(40.0) };
 
-    app.toggle_field("two_pass");
-    assert!(!app.field_toggle("two_pass"));
+    app.toggle_field("masking.two_pass");
+    assert!(!app.field_toggle("masking.two_pass"));
     // Off, so it contributes nothing to the config...
     let config = crate::command::config_from_app(&app).unwrap();
     assert!(!config.masking.two_pass);

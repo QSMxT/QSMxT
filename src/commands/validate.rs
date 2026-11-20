@@ -1,13 +1,13 @@
 use std::path::Path;
 
-use crate::bids::discovery::{self, DiscoveryFilter, QsmRun};
+use qsmxt_io::bids::discovery::{self, DiscoveryFilter, QsmRun};
 use crate::cli::ValidateArgs;
 
 /// Tool (derivatives subdirectory) names that provide a matching file for this run.
 fn deriv_tools_with(bids_dir: &Path, run: &QsmRun, suffix_glob: &str, skip_desc: bool) -> Vec<String> {
     let deriv = bids_dir.join("derivatives");
     let mut tools = Vec::new();
-    let entries = match std::fs::read_dir(&deriv) {
+    let entries = match fs_err::read_dir(&deriv) {
         Ok(e) => e,
         Err(_) => return tools,
     };
@@ -55,10 +55,10 @@ fn fmt_list(tools: &[String]) -> String {
     }
 }
 
-pub fn execute(args: ValidateArgs) -> crate::Result<()> {
+pub fn execute(args: ValidateArgs) -> qsmxt_io::Result<()> {
     let filter = DiscoveryFilter {
-        include: args.include,
-        exclude: args.exclude,
+        include: args.filter.include,
+        exclude: args.filter.exclude,
         ..Default::default()
     };
 
@@ -141,15 +141,15 @@ fn print_run(bids_dir: &Path, run: &QsmRun) {
     let custom_r2prime = deriv_tools_with(bids_dir, run, "*_R2primemap.nii*", false);
 
     // Capability derivations: the same rules `qsmxt run` refuses requested outputs by.
-    let config = crate::pipeline::config::PipelineConfig::default();
-    let facts = crate::pipeline::requirements::scan_facts(run, &config);
-    let arlo = crate::pipeline::requirements::arlo_problem(&facts);
+    let config = qsmxt_engine::PipelineConfig::default();
+    let facts = qsmxt_io::pipeline::requirements::scan_facts(run, &config);
+    let arlo = qsmxt_engine::requirements::arlo_problem(&facts);
     let r2star_ok = arlo.is_none();
 
     println!("    Capabilities:");
     println!("      QSM reconstruction:  yes");
     println!("      R2*/T2* mapping:     {}", yes_no(r2star_ok, arlo.as_deref().unwrap_or("")));
-    if let (Some(_), Some(why)) = (mese, crate::pipeline::requirements::mese_problem(&facts)) {
+    if let (Some(_), Some(why)) = (mese, qsmxt_engine::requirements::mese_problem(&facts)) {
         println!("      R2 from the MESE:    no  — {why}");
     }
     println!("      SWI:                 {}", yes_no(has_mag, "needs magnitude"));
@@ -164,7 +164,7 @@ fn print_run(bids_dir: &Path, run: &QsmRun) {
     let r2prime_how = if !custom_r2prime.is_empty() {
         format!("yes (custom R2' map: {})", fmt_list(&custom_r2prime))
     } else if mese.is_some() && r2star_ok
-        && crate::pipeline::requirements::mese_problem(&facts).is_none() {
+        && qsmxt_engine::requirements::mese_problem(&facts).is_none() {
         "yes (R2' computed from MESE)".to_string()
     } else if r2star_ok && !custom_r2.is_empty() {
         format!("yes (R2* + custom R2 map: {})", fmt_list(&custom_r2))

@@ -31,23 +31,21 @@ Options:
       --qsm <QSM>
           Conventional QSM (χ_total) NIfTI in ppm; `--route native` only (the toolbox route makes its own with QSMnetME)
 
-      --route <ROUTE>
-          Input route: `toolbox` (default; the authors': training frame, QSMnetME susceptibility channel) or `native` (the network alone on the acquired grid, given --qsm)
+      --chi-sepnet-route <CHI_SEPNET_ROUTE>
+          χ-sepnet's input route. `toolbox` (default), the authors': the inputs resampled to 1 mm with B0 along z, the susceptibility channel computed by QSMnetME, R2' measured or predicted from R2* by R2PRIMEnet, the maps resampled back. `native`: the network alone on the acquired grid, given this run's QSM and R2'
 
           Possible values:
           - toolbox: The authors' route (training frame, QSMnetME susceptibility channel)
           - native:  The network alone on the acquired grid, given the QSM
 
-          [default: toolbox]
+      --chi-sepnet-patch <D> <H> <W>
+          χ-sepnet (`--chi-sepnet-route native`) sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors')
 
-      --patch <D> <H> <W>
-          `--route native`: sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors')
+      --chi-sepnet-frame-patch <D> <H> <W>
+          χ-sepnet (`--chi-sepnet-route toolbox`): run the networks as a sliding window of patches this size over the 1 mm frame, D H W, each a multiple of 16, so memory follows the patch. Omit to run the whole frame at once, as the authors do
 
-      --frame-patch <D> <H> <W>
-          `--route toolbox`: run the networks as a sliding window of this patch over the 1 mm frame, D H W, each a multiple of 16 (default: the whole frame at once, as the authors do)
-
-      --ignore-field-mismatch
-          With --r2star: run R2PRIMEnet even when the field strength is not 3 T (uncalibrated)
+      --r2primenet-ignore-field-mismatch
+          Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its weights were trained at; the predicted R2' is then uncalibrated. Without it, an explicit `--r2prime-strategy r2primenet` refuses a non-3 T run and `auto` skips R2' with a warning
 
   -h, --help
           Print help (see a summary with '-h')

@@ -28,41 +28,41 @@ Options:
       --r2prime <R2PRIME>
           R2' map NIfTI in Hz
 
-      --dr-pos <DR_POS>
-          Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
+      --chi-sep-ilsqr-dr-pos <HZ_PER_PPM>
+          χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto)
 
-      --dr-neg <DR_NEG>
-          Diamagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
+      --chi-sep-ilsqr-dr-neg <HZ_PER_PPM>
+          χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto)
 
-      --pad <X> <Y> <Z>
-          Zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16)
+      --chi-sep-ilsqr-pad <X> <Y> <Z>
+          χ-sep iLSQR zero-padding at both ends of each axis in voxels, X Y Z (default: 16 16 16)
 
-      --cg-max-iter-lsqr <CG_MAX_ITER_LSQR>
-          Maximum CG iterations of the LSQR step (default: 50)
+      --chi-sep-ilsqr-cg-max-iter-lsqr <CHI_SEP_ILSQR_CG_MAX_ITER_LSQR>
+          χ-sep iLSQR: maximum CG iterations of the LSQR step (default: 50)
 
-      --cg-tol-lsqr <CG_TOL_LSQR>
-          CG relative tolerance of the LSQR step (default: 0.02)
+      --chi-sep-ilsqr-cg-tol-lsqr <CHI_SEP_ILSQR_CG_TOL_LSQR>
+          χ-sep iLSQR: CG relative tolerance of the LSQR step (default: 0.02)
 
-      --cg-max-iter-sa <CG_MAX_ITER_SA>
-          Maximum CG iterations of the streaking-removal step (default: 50)
+      --chi-sep-ilsqr-cg-max-iter-sa <CHI_SEP_ILSQR_CG_MAX_ITER_SA>
+          χ-sep iLSQR: maximum CG iterations of the streaking-removal step (default: 50)
 
-      --cg-tol-sa <CG_TOL_SA>
-          CG relative tolerance of the streaking-removal step (default: 0.02)
+      --chi-sep-ilsqr-cg-tol-sa <CHI_SEP_ILSQR_CG_TOL_SA>
+          χ-sep iLSQR: CG relative tolerance of the streaking-removal step (default: 0.02)
 
-      --d2-thr <D2_THR>
-          The streaking cone is where |D| is below this (default: 0.11)
+      --chi-sep-ilsqr-d2-thr <CHI_SEP_ILSQR_D2_THR>
+          χ-sep iLSQR: the streaking cone is where |D| is below this (default: 0.11)
 
-      --prc-w-i-min <PRC_W_I_MIN>
-          Percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60)
+      --chi-sep-ilsqr-prc-w-i-min <CHI_SEP_ILSQR_PRC_W_I_MIN>
+          χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 1 (default: 60)
 
-      --prc-w-i-max <PRC_W_I_MAX>
-          Percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8)
+      --chi-sep-ilsqr-prc-w-i-max <CHI_SEP_ILSQR_PRC_W_I_MAX>
+          χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8)
 
-      --prc-w-g-min <PRC_W_G_MIN>
-          Percentile of each gradient's magnitude at which the streaking-removal weight is 1 (default: 50)
+      --chi-sep-ilsqr-prc-w-g-min <CHI_SEP_ILSQR_PRC_W_G_MIN>
+          χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 1 (default: 50)
 
-      --prc-w-g-max <PRC_W_G_MAX>
-          Percentile of each gradient's magnitude at which the streaking-removal weight is 0 (default: 70)
+      --chi-sep-ilsqr-prc-w-g-max <CHI_SEP_ILSQR_PRC_W_G_MAX>
+          χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 0 (default: 70)
 
   -h, --help
           Print help

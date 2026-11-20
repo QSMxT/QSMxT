@@ -14,7 +14,7 @@ use qsm_core::geometry::{
 
 use super::common::{load_nifti, save_nifti};
 use crate::cli::ResampleArgs;
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 
 /// `<stem>_axial.nii` next to the input, used when no explicit output is given.
 fn default_out(input: &std::path::Path) -> std::path::PathBuf {
@@ -35,7 +35,7 @@ fn report(label: &str, affine: &[f64; 16], dims: (usize, usize, usize)) {
     );
 }
 
-pub fn execute(args: ResampleArgs) -> crate::Result<()> {
+pub fn execute(args: ResampleArgs) -> qsmxt_io::Result<()> {
     let params = AxialResampleParams {
         noise_fill_fraction: args.noise_fill.then_some(QSMXT8_NOISE_FILL_FRACTION),
     };
@@ -52,7 +52,7 @@ pub fn execute(args: ResampleArgs) -> crate::Result<()> {
         report("Input", &phase.affine, phase.dims);
 
         let mut phase_data = phase.data.clone();
-        crate::pipeline::phase::scale_phase_to_pi(&mut phase_data);
+        qsm_core::pipeline::scale_phase_to_pi(&mut phase_data);
         let out = resample_complex_to_axial(&mag.data, &phase_data, nx, ny, nz, &phase.affine, &params);
         report("Output", &out.affine, out.dims);
 

@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::testutils::multiorient as mo;
+use qsmxt_io::testutils::multiorient as mo;
 use std::path::{Path, PathBuf};
 
 /// Three orientations spanning a realistic in-vivo range (0–30°).
@@ -195,7 +195,7 @@ fn cosmos_reads_directions_from_a_file() {
     let mask_path = dir.path().join("mask.nii");
     mo::write_mask(&mask_path);
     let dirs_file = dir.path().join("dirs.txt");
-    std::fs::write(
+    fs_err::write(
         &dirs_file,
         "# B0 directions, one per orientation\n0 0 1\n0, 0.5, 0.8660254\n0.5 0 0.8660254\n",
     )
@@ -237,12 +237,12 @@ fn sti_writes_the_tensor_and_its_derived_maps() {
         assert!(p.exists(), "missing {}", p.display());
     }
     // One 4D tensor (6 components, their order in the sidecar) and one 4D eigenvector.
-    let bytes = std::fs::read(dir.path().join("sti_desc-sti_Chimap.nii")).unwrap();
+    let bytes = fs_err::read(dir.path().join("sti_desc-sti_Chimap.nii")).unwrap();
     assert_eq!(qsm_core::io::load_nifti_4d(&bytes).unwrap().1 .3, 6);
     let sidecar: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(dir.path().join("sti_desc-sti_Chimap.json")).unwrap()).unwrap();
+        &fs_err::read_to_string(dir.path().join("sti_desc-sti_Chimap.json")).unwrap()).unwrap();
     assert_eq!(sidecar["TensorComponents"], serde_json::json!(["X11", "X12", "X13", "X22", "X23", "X33"]));
-    let bytes = std::fs::read(dir.path().join("sti_desc-sti_evec.nii")).unwrap();
+    let bytes = fs_err::read(dir.path().join("sti_desc-sti_evec.nii")).unwrap();
     assert_eq!(qsm_core::io::load_nifti_4d(&bytes).unwrap().1 .3, 3);
 
     // The maps are qsm-core's STI of every orientation with its direction, and `--lambda`.
@@ -258,8 +258,8 @@ fn sti_writes_the_tensor_and_its_derived_maps() {
 /// the files the pipeline would publish for that run — the same entities and suffixes.
 #[test]
 fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
-    use crate::bids::derivatives::DerivativeOutputs;
-    use crate::bids::entities::AcquisitionKey;
+    use qsmxt_io::bids::derivatives::DerivativeOutputs;
+    use qsmxt_io::bids::entities::AcquisitionKey;
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     let key = AcquisitionKey {
@@ -297,7 +297,7 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
             qsm, mask: mask_path.clone(), output: prefix.clone(), field_strength: 3.0,
             b0_direction: vec![0.0, 0.0, 1.0],
         },
-        r2star: Some(r2star), magnitude: vec![], echo_times: vec![], r_const_3t: None,
+        r2star: Some(r2star), magnitude: vec![], echo_times: vec![], settings: Default::default(),
     })).unwrap();
     for p in [pipeline.chi_para_path(&key), pipeline.chi_dia_path(&key), pipeline.chi_sep_total_path(&key)] {
         exists(name(p));
@@ -306,15 +306,15 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
     // swi --mip, with the projection left to its default name
     let swi = pipeline.swi_path(&key);
     let (phase, mag) = (d.join("phase.nii"), d.join("mag.nii"));
-    crate::testutils::write_phase(&phase);
-    crate::testutils::write_magnitude(&mag);
+    qsmxt_io::testutils::write_phase(&phase);
+    qsmxt_io::testutils::write_magnitude(&mag);
     let small_mask = d.join("small_mask.nii");
-    crate::testutils::write_mask(&small_mask);
+    qsmxt_io::testutils::write_mask(&small_mask);
     super::swi::execute(SwiArgs {
         phase: vec![phase.clone()], magnitude: vec![mag.clone()], tes: None, mask: Some(small_mask.clone()),
         output: d.join(name(swi.clone())),
         mip: true, mip_output: None, filtered_phase: true, filtered_phase_output: None,
-        swi_params: Default::default(),
+        settings: Default::default(),
     }).unwrap();
     exists(name(swi));
     exists(name(pipeline.swi_mip_path(&key)));
@@ -323,15 +323,15 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
     // combine mcpc3ds, on a per-coil run (`rec-uncombined`) like the pipeline's
     let unc = AcquisitionKey { reconstruction: Some("uncombined".into()), ..key.clone() };
     let coil_dir = d.join("coils");
-    std::fs::create_dir_all(&coil_dir).unwrap();
+    fs_err::create_dir_all(&coil_dir).unwrap();
     let (mut phases, mut mags) = (vec![], vec![]);
     for c in 1..=2 {
         for e in 1..=2 {
             let stem = format!("{}_coil-0{c}_echo-{e}", unc.basename());
             let p = coil_dir.join(format!("{stem}_part-phase_MEGRE.nii"));
             let m = coil_dir.join(format!("{stem}_part-mag_MEGRE.nii"));
-            crate::testutils::write_phase(&p);
-            crate::testutils::write_magnitude(&m);
+            qsmxt_io::testutils::write_phase(&p);
+            qsmxt_io::testutils::write_magnitude(&m);
             phases.push(p);
             mags.push(m);
         }
@@ -339,7 +339,7 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
     super::combine::execute(CombineCommand::Mcpc3ds(CombineMcpc3dsArgs {
         phase: phases, magnitude: mags, output: d.join(unc.basename()),
         tes: Some(vec![0.005, 0.010]), num_echoes: None, sigma: None,
-        hip_unwrapping: UnwrapAlgorithmArg::Laplacian, prelude_params: Default::default(),
+        hip_unwrapping: UnwrapAlgorithmArg::Laplacian, settings: Default::default(),
     })).unwrap();
     for e in 1..=2 {
         exists(name(pipeline.combined_phase_path(&unc, e)));

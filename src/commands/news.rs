@@ -74,7 +74,7 @@ fn render(loaded: &Loaded, url: &str, version: &str) -> String {
 
 /// `qsmxt news`: fetch the announcements and print them, newest first; offline, print the copy
 /// saved last time and say so.
-pub fn execute() -> crate::Result<()> {
+pub fn execute() -> qsmxt_io::Result<()> {
     let url = url();
     let loaded = load(|| fetch(&url));
     print!("{}", render(&loaded, &url, current_version()));
@@ -91,7 +91,7 @@ mod tests {
     fn news_prints_every_announcement_newest_first() {
         let t = TestDir::new();
         let path = t.dir.path().join("news.toml");
-        std::fs::write(&path, EXAMPLE).unwrap();
+        fs_err::write(&path, EXAMPLE).unwrap();
         let url = format!("file://{}", path.display());
         let out = render(&load(|| fetch(&url)), &url, "10.2.0");
         let bug = out.find("A bug in 10.x  [important]").expect(&out);

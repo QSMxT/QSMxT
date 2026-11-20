@@ -1,4 +1,4 @@
-## toggle romeo_temporal_uncertain
+## toggle field_mapping.romeo.temporal_uncertain_unwrapping
 config:
   /field_mapping/romeo/temporal_uncertain_unwrapping: 0.0 -> 0.5
 command:

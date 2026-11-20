@@ -20,7 +20,7 @@ use crate::multiorient::{
     check_directions, direction_table, resolve_directions_registered, DirectionSource, MultiOrientKind,
     Orientation, OrientationCheck,
 };
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
 /// The log target these messages had before they moved into this module.
 const LOG_TARGET: &str = "qsmxt_io::pipeline::multiorient";
@@ -314,7 +314,7 @@ fn acquired_grid(
     // went there, so the group map lies on the same grid as the reference member's maps and
     // segmentation. `None` = they stay on the working grid.
     (config.pipeline.output_space
-        == crate::pipeline::config::OutputSpace::Acquired
+        == qsmxt_engine::OutputSpace::Acquired
         && returned_to_acquired(output, &members[0].key))
         .then(|| members[0].echoes.first()
             .and_then(|e| qsm_core::io::read_nifti_file(&e.phase_nifti).ok())
@@ -382,7 +382,7 @@ fn write_cosmos(
     };
 
     // Referenced like a single-orientation map, over the voxels every orientation covers.
-    let dseg = if config.qsm.reference == crate::pipeline::config::QsmReference::Region {
+    let dseg = if config.qsm.reference == qsmxt_engine::QsmReference::Region {
         let d = qsm_core::io::read_nifti_file(reference_dseg).map_err(|e| QsmxtError::Config(format!(
             "--qsm-reference: the group is referenced on {}'s segmentation, which could not \
              be read at {}: {e}", members[0].key, reference_dseg.display())))?;
@@ -441,7 +441,7 @@ fn write_sti(r: &Recon, s: &Solve, written: &mut Vec<PathBuf>) -> crate::Result<
     let path = r.output.sti_eigenvector_path(key);
     crate::nifti::write::write_volumes_4d(&path, &pev, dims, voxel_size, affine)?;
     if let Some(sidecar) = crate::bids::entities::sidecar_path(&path) {
-        std::fs::write(&sidecar, serde_json::to_string_pretty(&eigenvector_sidecar())
+        fs_err::write(&sidecar, serde_json::to_string_pretty(&eigenvector_sidecar())
             .map_err(|e| QsmxtError::Config(format!("STI eigenvector sidecar: {e}")))?)?;
         written.push(sidecar);
     }
@@ -511,11 +511,11 @@ fn write_group_sidecar(
 
     let sidecar_path = r.output.multiorient_sidecar_path(r.key, desc);
     if let Some(parent) = sidecar_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        fs_err::create_dir_all(parent)?;
     }
     let text = serde_json::to_string_pretty(&sidecar)
         .map_err(|e| QsmxtError::Config(format!("multi-orientation sidecar: {e}")))?;
-    std::fs::write(&sidecar_path, text)?;
+    fs_err::write(&sidecar_path, text)?;
     Ok(sidecar_path)
 }
 
@@ -585,7 +585,7 @@ fn group_statistics(
     let mut table = String::from(stats::HEADER);
     table.push_str(&stats::map_rows(spec.name, spec.unit, &map, &seg, labels, None, reference.as_ref()));
     let out = output.segmentation_stats_path(key);
-    std::fs::write(&out, table)?;
+    fs_err::write(&out, table)?;
     info!(target: LOG_TARGET, "  per-structure statistics -> {}", out.display());
     Ok(Some(out))
 }

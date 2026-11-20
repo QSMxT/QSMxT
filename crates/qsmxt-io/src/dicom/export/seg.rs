@@ -223,7 +223,7 @@ pub(super) fn export_segmentation(s: SegExport) -> crate::Result<usize> {
     let sop_uid = format!("{series_uid}.1");
     let obj = build_seg(&s, &segments, &frames, bits, &geometry, &series_uid, &sop_uid, (nx, ny));
 
-    std::fs::create_dir_all(s.out_dir)?;
+    fs_err::create_dir_all(s.out_dir)?;
     let file_obj = obj
         .with_meta(
             FileMetaTableBuilder::new()
@@ -239,7 +239,7 @@ pub(super) fn export_segmentation(s: SegExport) -> crate::Result<usize> {
 
 /// The `index` → `name` pairs of a BIDS `dseg.tsv`; empty when it cannot be read.
 fn read_lookup(path: &Path) -> BTreeMap<i64, String> {
-    let Ok(text) = std::fs::read_to_string(path) else { return BTreeMap::new() };
+    let Ok(text) = fs_err::read_to_string(path) else { return BTreeMap::new() };
     let mut lines = text.lines();
     let header: Vec<&str> = lines.next().unwrap_or("").split('\t').collect();
     let (Some(ix), Some(nx)) = (header.iter().position(|h| *h == "index"), header.iter().position(|h| *h == "name")) else {

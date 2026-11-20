@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::bids::entities::AcquisitionKey;
 use crate::error::QsmxtError;
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 use qsmxt_engine::cache::config_hash;
 pub use qsmxt_engine::cache::step_params_hash;
 
@@ -43,9 +43,7 @@ pub struct PipelineState {
     pub version: String,
     pub config_hash: String,
     pub run_key: String,
-    pub status: String,
-    #[serde(default)]
-    pub current_step: Option<String>,
+    pub status: RunStatus,
     pub completed_steps: HashMap<String, StepRecord>,
     #[serde(default)]
     pub run_metadata: Option<RunMetadata>,
@@ -63,6 +61,19 @@ pub struct PipelineState {
     pub naming: u32,
 }
 
+/// Where a run's per-run pipeline got to, as written to its state file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    /// Started, not finished.
+    Pending,
+    /// Every step ran ([`PipelineState::mark_run_complete`]).
+    Complete,
+    /// Any other status a state file holds (none is written today).
+    #[serde(other)]
+    Other,
+}
+
 /// The version of the output names (`bids::naming`). A state recorded under another one names
 /// files the pipeline no longer writes or reads, so it is discarded and the run recomputed once.
 /// 0: before #275; 1: #275's BIDS names.
@@ -75,8 +86,7 @@ impl PipelineState {
             version: env!("CARGO_PKG_VERSION").to_string(),
             config_hash: config_hash(config),
             run_key: format!("{}", run_key),
-            status: "pending".to_string(),
-            current_step: None,
+            status: RunStatus::Pending,
             completed_steps: HashMap::new(),
             run_metadata: None,
             config_unchanged: false,
@@ -96,7 +106,7 @@ impl PipelineState {
             return Self::new(config, run_key);
         }
 
-        if let Ok(text) = std::fs::read_to_string(state_path) {
+        if let Ok(text) = fs_err::read_to_string(state_path) {
             if let Ok(mut state) = serde_json::from_str::<PipelineState>(&text) {
                 if state.naming != NAMING_VERSION {
                     log::info!(
@@ -130,12 +140,12 @@ impl PipelineState {
         for rec in self.completed_steps.values() {
             for p in &rec.outputs {
                 if p.starts_with(deriv) && p.is_file() {
-                    if let Err(e) = std::fs::remove_file(p) {
+                    if let Err(e) = fs_err::remove_file(p) {
                         log::warn!("could not remove {}: {e}", p.display());
                     }
                     // ...and the sidecar provenance gave it.
                     if let Some(js) = crate::bids::entities::sidecar_path(p).filter(|j| j.is_file()) {
-                        let _ = std::fs::remove_file(js);
+                        let _ = fs_err::remove_file(js);
                     }
                 }
             }
@@ -143,7 +153,7 @@ impl PipelineState {
         if let Some(run_dir) = state_path.parent() {
             let stash = run_dir.join("working-grid");
             if stash.is_dir() {
-                let _ = std::fs::remove_dir_all(stash);
+                let _ = fs_err::remove_dir_all(stash);
             }
         }
     }
@@ -151,11 +161,11 @@ impl PipelineState {
     /// Save state to disk.
     pub fn save(&self, state_path: &Path) -> crate::Result<()> {
         if let Some(parent) = state_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            fs_err::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| QsmxtError::Config(format!("Failed to serialize state: {}", e)))?;
-        std::fs::write(state_path, json)?;
+        fs_err::write(state_path, json)?;
         Ok(())
     }
 
@@ -211,13 +221,6 @@ impl PipelineState {
         self.is_step_cached_with_hash(step_name, None)
     }
 
-    /// Mark a step as the current one being processed.
-    #[allow(dead_code)]
-    pub fn set_current(&mut self, step_name: &str) {
-        self.status = "in_progress".to_string();
-        self.current_step = Some(step_name.to_string());
-    }
-
     /// Mark a step as completed with its output paths and parameter hash.
     pub fn mark_completed(&mut self, step_name: &str, outputs: Vec<PathBuf>, params_hash: Option<String>) {
         self.mark_completed_with_metadata(step_name, outputs, params_hash, None);
@@ -239,7 +242,6 @@ impl PipelineState {
             step_name.to_string(),
             StepRecord { outputs, metadata, params_hash, outputs_removed: false, decisions: Vec::new(), inputs: None },
         );
-        self.current_step = None;
     }
 
     /// Keep the files a completed step read when it was computed.
@@ -258,13 +260,11 @@ impl PipelineState {
 
     /// Mark the entire run as complete, under the configuration it ran with.
     pub fn mark_run_complete(&mut self, config: &PipelineConfig) {
-        self.status = "complete".to_string();
-        self.current_step = None;
+        self.status = RunStatus::Complete;
         self.config_hash = config_hash(config);
     }
 
     /// Get output paths for a completed step.
-    #[allow(dead_code)]
     pub fn step_outputs(&self, step_name: &str) -> Option<&[PathBuf]> {
         self.completed_steps
             .get(step_name)
@@ -290,12 +290,6 @@ impl PipelineState {
         qsmxt_engine::graph::readers(step_name, outputs,
             self.completed_steps.iter().map(|(s, r)| (s.as_str(), r.inputs.as_deref())))
     }
-
-    /// Get all completed step names.
-    #[allow(dead_code)]
-    pub fn completed_step_names(&self) -> HashSet<&str> {
-        self.completed_steps.keys().map(|s| s.as_str()).collect()
-    }
 }
 
 /// Has `key`'s per-run pipeline completed under `config`? `qsmxt aggregate` asks this of every run
@@ -307,15 +301,12 @@ pub fn run_completed_under(output_dir: &Path, key: &AcquisitionKey, config: &Pip
 
 /// [`run_completed_under`], for the state file at `path`.
 pub fn state_completed_under(path: &Path, config: &PipelineConfig) -> Result<(), String> {
-    let text = std::fs::read_to_string(path)
+    let text = fs_err::read_to_string(path)
         .map_err(|_| format!("has not been processed (no {})", path.display()))?;
     let state: PipelineState = serde_json::from_str(&text)
         .map_err(|e| format!("has an unreadable pipeline state {}: {e}", path.display()))?;
-    if state.status != "complete" {
-        return Err(match state.current_step {
-            Some(step) => format!("did not complete (stopped in step '{step}')"),
-            None => format!("did not complete (status '{}')", state.status),
-        });
+    if state.status != RunStatus::Complete {
+        return Err("did not complete".to_string());
     }
     if state.config_hash != config_hash(config) {
         return Err("was processed with a different configuration".to_string());
@@ -361,7 +352,7 @@ pub fn state_file_path(output_dir: &Path, key: &AcquisitionKey) -> PathBuf {
 /// each member's local field), not at the end of each run.
 pub fn clean_intermediates(output_dir: &Path, key: &AcquisitionKey) -> crate::Result<()> {
     let state_path = state_file_path(output_dir, key);
-    let text = std::fs::read_to_string(&state_path)?;
+    let text = fs_err::read_to_string(&state_path)?;
     let mut state: PipelineState = serde_json::from_str(&text)
         .map_err(|e| QsmxtError::Config(format!("{}: {e}", state_path.display())))?;
     let workflow = output_dir.join("workflow");
@@ -370,7 +361,7 @@ pub fn clean_intermediates(output_dir: &Path, key: &AcquisitionKey) -> crate::Re
         for path in record.outputs.iter().filter(|p| p.starts_with(&workflow)) {
             if path.exists() {
                 log::info!("Cleaning intermediate: {}", path.display());
-                std::fs::remove_file(path)?;
+                fs_err::remove_file(path)?;
             }
             removed = true;
         }
@@ -417,7 +408,7 @@ mod tests {
             suffix: "MEGRE".to_string(),
         };
         let state = PipelineState::new(&config, &key);
-        assert_eq!(state.status, "pending");
+        assert_eq!(state.status, RunStatus::Pending);
         assert!(state.completed_steps.is_empty());
         assert!(!state.config_hash.is_empty());
     }
@@ -459,7 +450,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (raw, chi, swi) = (dir.path().join("chi_raw.nii"), dir.path().join("Chimap.nii"), dir.path().join("swi.nii"));
         for p in [&raw, &chi, &swi] {
-            std::fs::write(p, b"").unwrap();
+            fs_err::write(p, b"").unwrap();
         }
         let mut state = PipelineState::new(&PipelineConfig::default(), &key);
         state.mark_completed("invert", vec![raw.clone()], Some("a".into()));
@@ -583,7 +574,7 @@ mod tests {
     fn test_config_change_preserves_state_with_per_step_invalidation() {
         let config1 = PipelineConfig::default();
         let mut config2 = PipelineConfig::default();
-        config2.inversion.algorithm = crate::pipeline::config::QsmAlgorithm::Tkd;
+        config2.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Tkd;
 
         let key = AcquisitionKey {
             subject: "01".to_string(),
@@ -615,23 +606,6 @@ mod tests {
         assert!(!loaded.is_step_cached_with_hash("load", Some(&different_hash)));
     }
 
-    #[test]
-    fn test_set_current() {
-        let config = PipelineConfig::default();
-        let key = AcquisitionKey {
-            subject: "01".to_string(),
-            session: None,
-            acquisition: None,
-            reconstruction: None,
-            inversion: None,
-            run: None,
-            suffix: "MEGRE".to_string(),
-        };
-        let mut state = PipelineState::new(&config, &key);
-        state.set_current("mask");
-        assert_eq!(state.status, "in_progress");
-        assert_eq!(state.current_step, Some("mask".to_string()));
-    }
 
     #[test]
     fn test_step_outputs() {
@@ -653,26 +627,6 @@ mod tests {
         assert_eq!(outputs[0], PathBuf::from("/tmp/mask.nii"));
     }
 
-    #[test]
-    fn test_completed_step_names() {
-        let config = PipelineConfig::default();
-        let key = AcquisitionKey {
-            subject: "01".to_string(),
-            session: None,
-            acquisition: None,
-            reconstruction: None,
-            inversion: None,
-            run: None,
-            suffix: "MEGRE".to_string(),
-        };
-        let mut state = PipelineState::new(&config, &key);
-        state.mark_completed("load", vec![], None);
-        state.mark_completed("mask", vec![], None);
-        let names = state.completed_step_names();
-        assert!(names.contains("load"));
-        assert!(names.contains("mask"));
-        assert!(!names.contains("unwrap"));
-    }
 
     #[test]
     fn test_mark_run_complete() {
@@ -688,8 +642,7 @@ mod tests {
         };
         let mut state = PipelineState::new(&config, &key);
         state.mark_run_complete(&config);
-        assert_eq!(state.status, "complete");
-        assert!(state.current_step.is_none());
+        assert_eq!(state.status, RunStatus::Complete);
     }
 
     #[test]
@@ -723,18 +676,18 @@ mod tests {
         let mut state = PipelineState::new(&config, &key);
 
         // Create a fake intermediate file
-        std::fs::create_dir_all(dir.path().join("workflow")).unwrap();
+        fs_err::create_dir_all(dir.path().join("workflow")).unwrap();
         let intermediate = dir.path().join("workflow/unwrapped.nii");
-        std::fs::write(&intermediate, "fake").unwrap();
+        fs_err::write(&intermediate, "fake").unwrap();
         // ...and a published output of a step that is otherwise intermediate.
         let published = dir.path().join("desc-motioncoverage_mask.nii");
-        std::fs::write(&published, "fake").unwrap();
+        fs_err::write(&published, "fake").unwrap();
         state.mark_completed("unwrap", vec![intermediate.clone()], None);
         state.mark_completed("motion", vec![published.clone()], None);
 
         // Create a fake final output
         let final_output = dir.path().join("qsm.nii");
-        std::fs::write(&final_output, "fake").unwrap();
+        fs_err::write(&final_output, "fake").unwrap();
         state.mark_completed("reference", vec![final_output.clone()], None);
         state.mark_run_complete(&config);
         let state_path = state_file_path(dir.path(), &key);
@@ -753,7 +706,7 @@ mod tests {
         assert!(!back.completed_steps["reference"].outputs_removed);
         assert!(back.is_step_cached("unwrap"));
         let mut other = config.clone();
-        other.inversion.algorithm = crate::pipeline::config::QsmAlgorithm::Tkd;
+        other.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Tkd;
         let mut back = PipelineState::load_or_create(&state_path, &other, &key, false);
         assert!(!back.is_step_cached("unwrap"));
         assert!(back.is_step_cached("reference"), "a final step's own cache is not touched");
@@ -763,7 +716,7 @@ mod tests {
     fn test_load_or_create_corrupt_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
-        std::fs::write(&path, "not valid json").unwrap();
+        fs_err::write(&path, "not valid json").unwrap();
         let config = PipelineConfig::default();
         let key = AcquisitionKey {
             subject: "01".to_string(),
@@ -776,7 +729,7 @@ mod tests {
         };
         let state = PipelineState::load_or_create(&path, &config, &key, false);
         // Should create fresh state
-        assert_eq!(state.status, "pending");
+        assert_eq!(state.status, RunStatus::Pending);
         assert!(state.completed_steps.is_empty());
     }
 

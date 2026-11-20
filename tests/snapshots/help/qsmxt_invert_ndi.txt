@@ -24,26 +24,6 @@ Options:
       --tile-halo <TILE_HALO>
           DL tiling: context margin per side, in voxels (default 8)
 
-      --tau <TAU>
-          Gradient-descent step size (tau)
-
-      --alpha <ALPHA>
-          L2 regularization weight (alpha)
-
-      --max-iter <MAX_ITER>
-          Max iterations (the maximum, with --auto-stop)
-
-      --auto-stop <AUTO_STOP>
-          Stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto)
-
-          [possible values: true, false]
-
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
-
-      --weight-norm <NORM>
-          Magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo)
-
       --field-strength <FIELD_STRENGTH>
           B0 field strength in Tesla
 
@@ -52,6 +32,26 @@ Options:
 
       --magnitude <MAGNITUDE>...
           Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
+
+      --ndi-tau <NDI_TAU>
+          NDI gradient-descent step size (tau) (default: 2)
+
+      --ndi-alpha <NDI_ALPHA>
+          NDI L2 regularization weight (alpha) (default: 1e-5)
+
+      --ndi-max-iter <NDI_MAX_ITER>
+          NDI: Number of iterations (default: 100)
+
+      --ndi-auto-stop <NDI_AUTO_STOP>
+          NDI: stop automatically once noise starts to build up along the dipole cone (FANSI ndi_auto); --ndi-max-iter is then the maximum (default: false)
+
+          [possible values: true, false]
+
+      --ndi-te <TE>
+          NDI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
+
+      --ndi-weight-norm <NORM>
+          NDI magnitude-weight normaliser: global-max (the magnitude's maximum, as FANSI; default) or mask-p999 (its 99.9th percentile inside the mask; more consistent in vivo)
 
   -h, --help
           Print help

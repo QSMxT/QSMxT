@@ -3,6 +3,7 @@
 use log::Level;
 use serde_json::json;
 
+use crate::plan::Stage;
 use crate::plan::Step;
 use crate::record::{Choice, Decision, Topic};
 use crate::run::{Done, Run};
@@ -34,7 +35,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                                    (sep.custom_r2prime_tool.is_some(), Item::SuppliedR2prime)]
             .into_iter().filter_map(|(read, item)| read.then_some(item)).collect();
         let params = self.with_supplied(stages::r2::params(self.config, &self.meta, mese.as_ref()), &supplied);
-        let Some(key) = self.begin("r2_r2prime", Some("epg"), &params, "Skipping r2_r2prime (cached)",
+        let Some(key) = self.begin(Stage::R2, Some("epg"), &params, "Skipping r2_r2prime (cached)",
                                    "Computing R2/R2' maps") else { return Ok(()) };
         let mask_item = self.mask_item();
         let mask = self.store.mask(&mask_item)?;
@@ -64,7 +65,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             return Ok(());
         }
         self.complete(Done {
-            step: "r2_r2prime", algorithm: Some("epg"), params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage: Stage::R2, algorithm: Some("epg"), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "R2/R2' mapping")
     }
 

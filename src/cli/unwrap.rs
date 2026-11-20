@@ -52,9 +52,9 @@ pub struct CombineMcpc3dsArgs {
     /// Unwrapping used on the coil-summed HIP phase
     #[arg(long, value_enum, default_value = "romeo")]
     pub hip_unwrapping: UnwrapAlgorithmArg,
-    /// PRELUDE's settings, with `--hip-unwrapping prelude`
+    // The settings flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]
-    pub prelude_params: PreludeParamArgs,
+    pub settings: crate::cli_settings::SettingsOf<PreludeFlags>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -89,10 +89,9 @@ pub struct UnwrapRomeoArgs {
     /// Magnitude image (improves quality)
     #[arg(long)]
     pub magnitude: Option<PathBuf>,
-    /// The ROMEO settings `qsmxt run` takes. The multi-echo ones are refused here: this unwraps
-    /// a single 3D phase.
+    // The settings flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]
-    pub romeo_params: RomeoParamArgs,
+    pub settings: crate::cli_settings::SettingsOf<RomeoFlags>,
 }
 
 #[derive(Parser, Debug)]
@@ -105,6 +104,7 @@ pub struct UnwrapLaplacianArgs {
 pub struct UnwrapPreludeArgs {
     #[command(flatten)]
     pub common: UnwrapCommonArgs,
+    // The settings flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]
-    pub prelude_params: PreludeParamArgs,
+    pub settings: crate::cli_settings::SettingsOf<PreludeFlags>,
 }

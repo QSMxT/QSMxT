@@ -4,7 +4,7 @@ use std::process::Command;
 use log::info;
 
 use crate::bids::discovery::QsmRun;
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
 /// Shell-quote a string for safe interpolation into bash scripts.
 /// Uses single quotes and escapes any embedded single quotes.
@@ -13,6 +13,12 @@ fn shell_quote(s: &str) -> String {
 }
 
 /// Scheduler settings shared by every generated job.
+/// A job's wall time when none is asked for (`qsmxt slurm --time`, the TUI's SLURM time).
+pub const DEFAULT_TIME: &str = "02:00:00";
+
+/// CPUs per job when none are asked for (`qsmxt slurm --cpus-per-task`, the TUI's SLURM CPUs).
+pub const DEFAULT_CPUS: usize = 4;
+
 pub struct SlurmOptions<'a> {
     pub account: &'a str,
     pub partition: Option<&'a str>,
@@ -55,7 +61,7 @@ fn mem_gb_for(estimate_bytes: u64) -> usize {
 
 fn run_estimate(run: &QsmRun, config: &PipelineConfig) -> u64 {
     let (nx, ny, nz) = run.dims;
-    crate::pipeline::memory::estimate_peak_memory_bytes(
+    qsmxt_engine::memory::estimate_peak_memory_bytes(
         nx, ny, nz, run.echoes.len(), run.coils.as_ref().map_or(1, |c| c.len()), run.has_magnitude, config,
     )
 }
@@ -102,11 +108,11 @@ pub fn generate_all_slurm(
 ) -> crate::Result<SlurmJobs> {
     let derivatives_dir = output_dir.join("derivatives").join("qsmxt");
     let slurm_dir = derivatives_dir.join("slurm");
-    std::fs::create_dir_all(&slurm_dir)?;
+    fs_err::create_dir_all(&slurm_dir)?;
 
     // The jobs all run against this file, so they cannot disagree about the configuration.
     let config_path = derivatives_dir.join("pipeline_config.toml");
-    std::fs::write(&config_path, config.to_toml().unwrap_or_default())?;
+    fs_err::write(&config_path, config.to_toml().unwrap_or_default())?;
 
     let qsmxt_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("qsmxt"));
     let q = |p: &Path| shell_quote(&p.display().to_string());
@@ -140,7 +146,7 @@ pub fn generate_all_slurm(
                     log::warn!(
                         "{}: estimated to peak at {}, more than --mem {gb}G; the job may be killed \
                          for exceeding its memory",
-                        run.key, crate::pipeline::memory::format_bytes(estimate)
+                        run.key, qsmxt_engine::memory::format_bytes(estimate)
                     );
                 }
                 gb
@@ -155,7 +161,7 @@ pub fn generate_all_slurm(
             cpus = opts.cpus,
         );
         let script_path = slurm_dir.join(format!("{job_name}.sh"));
-        std::fs::write(&script_path, script)?;
+        fs_err::write(&script_path, script)?;
         run_scripts.push(script_path);
     }
 
@@ -173,7 +179,7 @@ pub fn generate_all_slurm(
         cmd = shell_quote(&opts.command_line),
     );
     let aggregate_script = slurm_dir.join("qsmxt_aggregate.sh");
-    std::fs::write(&aggregate_script, aggregate)?;
+    fs_err::write(&aggregate_script, aggregate)?;
 
     let mut submit = String::from(
         "#!/bin/bash\n\
@@ -193,12 +199,12 @@ pub fn generate_all_slurm(
         q(&aggregate_script),
     ));
     let submit_script = slurm_dir.join("submit.sh");
-    std::fs::write(&submit_script, submit)?;
+    fs_err::write(&submit_script, submit)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         for p in run_scripts.iter().chain([&aggregate_script, &submit_script]) {
-            let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755));
+            let _ = fs_err::set_permissions(p, std::fs::Permissions::from_mode(0o755));
         }
     }
 
@@ -279,7 +285,7 @@ mod tests {
         .unwrap();
 
         for script in [&jobs.run_scripts[0], &jobs.aggregate_script] {
-            let content = std::fs::read_to_string(script).unwrap();
+            let content = fs_err::read_to_string(script).unwrap();
             assert!(content.contains("#SBATCH --job-name="));
             assert!(content.contains("#SBATCH --account=myaccount"));
             assert!(content.contains("#SBATCH --partition=gpu"));
@@ -298,7 +304,7 @@ mod tests {
         let config = PipelineConfig::default();
         let jobs = generate_all_slurm(&runs, Path::new("/bids"), dir.path(), &config, &opts("acct", None, Some(16))).unwrap();
 
-        let content = std::fs::read_to_string(&jobs.run_scripts[0]).unwrap();
+        let content = fs_err::read_to_string(&jobs.run_scripts[0]).unwrap();
         assert!(!content.contains("--partition"), "Partition should be omitted");
     }
 
@@ -309,7 +315,7 @@ mod tests {
         let config = PipelineConfig::default();
         let jobs = generate_all_slurm(&runs, Path::new("/bids"), dir.path(), &config, &opts("acct", None, Some(16))).unwrap();
 
-        let content = std::fs::read_to_string(&jobs.run_scripts[0]).unwrap();
+        let content = fs_err::read_to_string(&jobs.run_scripts[0]).unwrap();
         assert!(content.contains("--include 'sub-01_ses-pre_MEGRE'"), "Should contain --include with run key");
     }
 
@@ -335,7 +341,7 @@ mod tests {
         let config = PipelineConfig::default();
         let jobs = generate_all_slurm(&runs, Path::new("/bids/my data"), dir.path(), &config, &opts("acct", None, Some(16))).unwrap();
 
-        let content = std::fs::read_to_string(&jobs.run_scripts[0]).unwrap();
+        let content = fs_err::read_to_string(&jobs.run_scripts[0]).unwrap();
         assert!(content.contains("'/bids/my data'"), "Paths with spaces should be quoted");
     }
 
@@ -352,7 +358,7 @@ mod tests {
         let jobs = generate_all_slurm(&[small.clone(), big.clone()], Path::new("/bids"), dir.path(), &config, &opts("acct", None, None)).unwrap();
 
         let mem_of = |p: &Path| -> usize {
-            let text = std::fs::read_to_string(p).unwrap();
+            let text = fs_err::read_to_string(p).unwrap();
             let line = text.lines().find(|l| l.starts_with("#SBATCH --mem=")).unwrap();
             line.trim_start_matches("#SBATCH --mem=").trim_end_matches('G').parse().unwrap()
         };
@@ -390,7 +396,7 @@ mod tests {
 
         assert_eq!(jobs.run_scripts.len(), 2, "one job per run");
         for (run, script) in runs.iter().zip(&jobs.run_scripts) {
-            let text = std::fs::read_to_string(script).unwrap();
+            let text = fs_err::read_to_string(script).unwrap();
             assert!(text.contains(" run "), "{text}");
             assert!(text.contains(&format!("--include '{}'", run.key)), "{text}");
             assert!(text.contains("--no-dataset-steps"), "a run job must not do dataset-level steps:\n{text}");
@@ -398,7 +404,7 @@ mod tests {
             assert!(!text.contains("--clean-intermediates"), "cleaning waits for the aggregation:\n{text}");
         }
 
-        let agg = std::fs::read_to_string(&jobs.aggregate_script).unwrap();
+        let agg = fs_err::read_to_string(&jobs.aggregate_script).unwrap();
         assert!(agg.contains(" aggregate "), "{agg}");
         let includes = format!("--include '{}' '{}'", runs[0].key, runs[1].key);
         assert!(agg.contains(&includes), "the aggregation covers every run:\n{agg}");
@@ -407,7 +413,7 @@ mod tests {
         assert!(agg.contains(&format!("--config '{}'", out.join("derivatives/qsmxt/pipeline_config.toml").display())));
         assert!(agg.contains("--command-line 'qsmxt slurm /bids --account acct'"), "{agg}");
 
-        let submit = std::fs::read_to_string(&jobs.submit_script).unwrap();
+        let submit = fs_err::read_to_string(&jobs.submit_script).unwrap();
         for s in &jobs.run_scripts {
             assert!(submit.contains(&format!("sbatch --parsable '{}'", s.display())), "{submit}");
         }
@@ -419,29 +425,29 @@ mod tests {
         // and records each call.
         let calls = dir.path().join("calls.txt");
         let fake = dir.path().join("sbatch");
-        std::fs::write(&fake, format!(
+        fs_err::write(&fake, format!(
             "#!/bin/sh\necho \"$@\" >> '{c}'\nn=$(wc -l < '{c}')\necho $((100 + n))\n",
             c = calls.display()
         )).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+            fs_err::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
             let (ids, agg_id) = submit_jobs_with(fake.as_os_str(), &jobs).unwrap();
             assert_eq!(ids, ["101", "102"]);
             assert_eq!(agg_id, "103");
-            let log = std::fs::read_to_string(&calls).unwrap();
+            let log = fs_err::read_to_string(&calls).unwrap();
             let lines: Vec<&str> = log.lines().collect();
             assert_eq!(lines.len(), 3);
             assert_eq!(lines[2], format!("--parsable --dependency=afterok:101:102 {}", jobs.aggregate_script.display()));
 
             // The generated submit.sh does the same.
-            std::fs::remove_file(&calls).unwrap();
+            fs_err::remove_file(&calls).unwrap();
             let status = Command::new("bash").arg(&jobs.submit_script)
                 .env("PATH", format!("{}:{}", dir.path().display(), std::env::var("PATH").unwrap_or_default()))
                 .output().unwrap();
             assert!(status.status.success(), "{}", String::from_utf8_lossy(&status.stderr));
-            let log = std::fs::read_to_string(&calls).unwrap();
+            let log = fs_err::read_to_string(&calls).unwrap();
             assert_eq!(log.lines().last().unwrap(), format!("--parsable --dependency=afterok:101:102 {}", jobs.aggregate_script.display()));
         }
     }
@@ -457,11 +463,11 @@ mod tests {
         let jobs = generate_all_slurm(&runs, Path::new("/bids"), dir.path(), &PipelineConfig::default(), &opts("acct", None, Some(4))).unwrap();
         let fake = dir.path().join("sbatch");
         let marker = dir.path().join("once");
-        std::fs::write(&fake, format!(
+        fs_err::write(&fake, format!(
             "#!/bin/sh\nif [ -e '{m}' ]; then echo 'quota exceeded' >&2; exit 1; fi\ntouch '{m}'\necho 7\n",
             m = marker.display()
         )).unwrap();
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        fs_err::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
         let err = submit_jobs_with(fake.as_os_str(), &jobs).unwrap_err().to_string();
         assert!(err.contains("quota exceeded") && err.contains("scancel 7"), "{err}");
     }

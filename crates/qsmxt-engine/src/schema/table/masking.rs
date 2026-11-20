@@ -81,8 +81,7 @@ pub(super) fn defs() -> Vec<Def> {
         // N4's settings: QSM.rs utils/n4.rs asserts each range below (a shrink factor, mesh and
         // spline order it can use, at least two histogram bins); FWHM 0 divides by zero.
         d("n4.shrink_factor", Masking, "Shrink factor", "Subsample the image by this factor before fitting the bias field", Int).min(1.0).flag("--n4-shrink-factor").parent("masking.inhomogeneity_method")
-        .when(n4_on).context("N4")
-        .cli("N4: subsample the image by this factor before fitting the bias field (default 4)"),
+        .when(n4_on).context("N4"),
         d("n4.max_iterations", Masking, "Iterations", "Maximum iterations at each fitting level, one number a level (e.g. 50 50 50 50); the B-spline mesh doubles from one level to the next", IntList).flag("--n4-max-iterations").parent("masking.inhomogeneity_method")
         .when(n4_on).full("Iterations per level").context("N4")
         .cli("N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next")
@@ -91,20 +90,16 @@ pub(super) fn defs() -> Vec<Def> {
         .when(n4_on).full("Convergence threshold").context("N4")
         .cli("N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs)"),
         d("n4.mesh", Masking, "Mesh", "B-spline mesh elements per axis at the first level (x y z)", IntVec3).min(1.0).flag("--n4-mesh").parent("masking.inhomogeneity_method")
-        .when(n4_on).full("B-spline mesh").context("N4")
-        .cli("N4: B-spline mesh elements per axis at the first level, X Y Z (default 1 1 1)"),
+        .when(n4_on).full("B-spline mesh").context("N4"),
         d("n4.spline_order", Masking, "Spline order", "Order of the B-spline bias field: 1, 2 or 3", Int).min(1.0).max(3.0).flag("--n4-spline-order").parent("masking.inhomogeneity_method")
         .when(n4_on).full("B-spline order").context("N4")
-        .cli("N4: order of the B-spline bias field, 1 to 3 (default 3)"),
+        .cli("N4: order of the B-spline bias field, 1 to 3"),
         d("n4.bias_field_fwhm", Masking, "Bias FWHM", "FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram", Float).above(0.0).flag("--n4-bias-field-fwhm").parent("masking.inhomogeneity_method")
-        .when(n4_on).full("Bias field FWHM").context("N4")
-        .cli("N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15)"),
+        .when(n4_on).full("Bias field FWHM").context("N4"),
         d("n4.wiener_noise", Masking, "Wiener noise", "Noise term of the Wiener deconvolution of the histogram", Float).min(0.0).flag("--n4-wiener-noise").parent("masking.inhomogeneity_method")
-        .when(n4_on).context("N4")
-        .cli("N4: noise term of the Wiener deconvolution of the histogram (default 0.01)"),
+        .when(n4_on).context("N4"),
         d("n4.histogram_bins", Masking, "Histogram bins", "Bins of the log-intensity histogram", Int).min(2.0).flag("--n4-histogram-bins").parent("masking.inhomogeneity_method")
-        .when(n4_on).context("N4")
-        .cli("N4: bins of the log-intensity histogram (default 200)"),
+        .when(n4_on).context("N4"),
         d("masking.n4_geometry", Masking, "Geometry", "", Enum(vec![
             o("scanner", "scanner", "Scanner", "The scan's header, as ANTs reads the acquired NIfTI (default)"),
             o("make-nii", "make-nii", "make_nii", "The axis-aligned header MATLAB's make_nii writes, as QSMART runs N4"),

@@ -147,9 +147,9 @@ impl App {
 }
 
 /// The field of the `nth` row editing a setting: its own row (0), or its value's row (1). A row of
-/// a choice the TUI makes about the setting ([`TUI_CHOICES`]) is neither.
+/// a choice the TUI makes about the setting ([`is_choice`]) is neither.
 pub(super) fn row_field(path: &str, nth: usize) -> Option<&'static str> {
-    FIELD_PATHS.iter().filter(|(f, p)| *p == path && !TUI_CHOICES.contains(f)).nth(nth).map(|(f, _)| *f)
+    FIELD_PATHS.iter().filter(|(f, p)| *p == path && !is_choice(f)).nth(nth).map(|(f, _)| *f)
 }
 
 /// Whether `field` is the value row of the setting at `path` (an echo reference's number, the

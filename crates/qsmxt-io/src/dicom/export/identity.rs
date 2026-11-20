@@ -108,7 +108,7 @@ impl DicomIdentity {
 /// `Manufacturer`; and the study's `StudyInstanceUID`, `FrameOfReferenceUID` and `StudyID` when
 /// the conversion kept them. Never patient identity. `None` when the file cannot be read.
 fn read_sidecar_acquisition(path: &Path) -> Option<DicomIdentity> {
-    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(path).ok()?).ok()?;
     let text = |k: &str| json.get(k).and_then(|v| v.as_str()).map(|s| s.trim().to_string()).unwrap_or_default();
     let number = |k: &str| json.get(k).and_then(|v| v.as_f64());
     Some(DicomIdentity {
@@ -163,7 +163,7 @@ fn str_tag(obj: &dicom::object::FileDicomObject<InMemDicomObject>, tag: dicom::c
 fn find_first_dicom(dir: &Path) -> Option<std::path::PathBuf> {
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        let entries = std::fs::read_dir(&d).ok()?;
+        let entries = fs_err::read_dir(&d).ok()?;
         let mut files: Vec<std::path::PathBuf> = Vec::new();
         for e in entries.flatten() {
             let p = e.path();

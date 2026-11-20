@@ -11,6 +11,33 @@ pub use regularised::*;
 
 // ── Invert ──
 
+crate::flag_set! {
+    /// The deep-learning inversions' overlap-tiling, under its `qsmxt run` names.
+    TileFlags = ["inversion.tile_size", "inversion.tile_halo"], short = false;
+    RtsFlags = ["inversion.rts."];
+    TvFlags = ["inversion.tv."];
+    TkdFlags = ["inversion.tkd."];
+    TsvdFlags = ["inversion.tsvd."];
+    TgvFlags = ["inversion.tgv."];
+    TikhonovFlags = ["inversion.tikhonov."];
+    NltvFlags = ["inversion.nltv."], aliases = [("nltv-max-iter-newton", "newton-iter")];
+    MediFlags = ["inversion.medi."];
+    TfiFlags = ["inversion.tfi."];
+    IlsqrFlags = ["inversion.ilsqr."];
+    StarFlags = ["inversion.star."];
+    NdiFlags = ["inversion.ndi."];
+    /// FANSI's, for nlTV and nlTGV.
+    FansiFlags = ["inversion.fansi."];
+    L1qsmFlags = ["inversion.l1qsm."];
+    WhqsmFlags = ["inversion.whqsm."];
+    HdqsmFlags = ["inversion.hdqsm."];
+    AmpPeFlags = ["inversion.amp_pe."];
+    /// LSQR's, which have always had their `--lsqr-` names here.
+    LsqrFlags = ["inversion.lsqr."], short = false;
+    /// HEIDI's and its LSQR seed's (HEIDI is on: `--heidi` is not one).
+    HeidiFlags = ["inversion.lsqr.", "inversion.heidi.", "!inversion.heidi.enabled"], short = false;
+}
+
 #[derive(Args, Debug, Clone)]
 pub struct InvertCommonArgs {
     /// Input local field NIfTI file
@@ -26,7 +53,7 @@ pub struct InvertCommonArgs {
     pub b0_direction: Vec<f64>,
     /// Deep-learning overlap-tiling (opt-in; ignored by classical algorithms).
     #[command(flatten)]
-    pub tiling_params: TilingParamArgs,
+    pub tiling: crate::cli_settings::SettingsOf<TileFlags>,
 }
 
 /// The scan parameters a standalone step takes from its acquisition: what `qsmxt run` reads from
@@ -144,7 +171,7 @@ pub struct PhaseNetArgs {
     pub b0_direction: Vec<f64>,
     /// Deep-learning overlap-tiling (opt-in).
     #[command(flatten)]
-    pub tiling_params: TilingParamArgs,
+    pub tiling: crate::cli_settings::SettingsOf<TileFlags>,
 }
 
 /// Args for iQSM (`qsmxt invert iqsm`) and iQFM (`qsmxt bgremove iqfm`): [`PhaseNetArgs`] and

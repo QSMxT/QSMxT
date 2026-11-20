@@ -599,7 +599,7 @@ mod tests {
         let mut app = four_echoes();
         app.choose_pipeline("medi-toolbox").unwrap();
         assert!(super::super::command::build_command_string(&app).contains("--pipeline medi-toolbox"));
-        *app.field_text_mut("medi_lambda").expect("MEDI's lambda row") = "500".into();
+        *app.field_text_mut("inversion.medi.lambda").expect("MEDI's lambda row") = "500".into();
         assert_eq!(app.pipeline_status().text(), "MEDI toolbox · 1 departure");
         let header = screen(&mut app).lines().nth(1).unwrap_or_default().to_string();
         assert!(header.contains("Pipeline: MEDI toolbox · 1 departure"), "{header}");

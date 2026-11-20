@@ -1,11 +1,11 @@
-## toggle do_chi_separation
+## toggle pipeline.do_chi_separation
 config:
   /pipeline/do_chi_separation: false -> true
 command:
   + --do-chisep
 methods: 3e270d20b342d219 (39 lines)
 
-## toggle do_chi_separation, separation_algorithm = decompose
+## toggle pipeline.do_chi_separation, separation.algorithm = decompose
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "decompose"
@@ -14,7 +14,7 @@ command:
   + --chisep decompose
 methods: b1bb9769d7ff82f1 (40 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sep-ilsqr
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sep-ilsqr
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "chi-sep-ilsqr"
@@ -23,7 +23,7 @@ command:
   + --chisep chi-sep-ilsqr
 methods: 4474b3de1be26783 (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sep-medi
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sep-medi
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "chi-sep-medi"
@@ -32,7 +32,7 @@ command:
   + --chisep chi-sep-medi
 methods: c94ff1a115c06226 (35 lines)
 
-## toggle do_chi_separation, separation_algorithm = wavesep
+## toggle pipeline.do_chi_separation, separation.algorithm = wavesep
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "wavesep"
@@ -41,7 +41,7 @@ command:
   + --chisep wavesep
 methods: 1cc9aa28bec40875 (39 lines)
 
-## toggle do_chi_separation, separation_algorithm = hc-chisep
+## toggle pipeline.do_chi_separation, separation.algorithm = hc-chisep
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "hc-chisep"
@@ -50,7 +50,7 @@ command:
   + --chisep hc-chisep
 methods: ac07362c60dfb122 (40 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "susep-net"
@@ -59,7 +59,7 @@ command:
   + --chisep susep-net
 methods: 08ba85056ef35d2f (40 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
@@ -68,7 +68,7 @@ command:
   + --chisep chi-sepnet
 methods: af24a2d683ae7e03 (29 lines)
 
-## toggle do_chi_separation, toggle export_dicom
+## toggle pipeline.do_chi_separation, toggle export_dicom
 config:
   /pipeline/do_chi_separation: false -> true
   /pipeline/export_dicom: false -> true
@@ -77,150 +77,150 @@ command:
   + --export-dicom
 methods: b45a2cc8182b6cef (39 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
+  + --do-chisep
   + --chisep susep-net
 methods: 80bf17225c84e9bf (40 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = xqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = xqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "xqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm xqsm
+  + --do-chisep
   + --chisep susep-net
 methods: b309b79136641c53 (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = qsmnet
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm qsmnet
+  + --do-chisep
   + --chisep susep-net
 methods: d51eeb35435be366 (31 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet-plus
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = qsmnet-plus
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm qsmnet-plus
+  + --do-chisep
   + --chisep susep-net
 methods: 11162a7b8a6b7ef7 (31 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = autoqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = autoqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "autoqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm autoqsm
+  + --do-chisep
   + --chisep susep-net
 methods: ed3500c7aead7fa1 (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmgan
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = qsmgan
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmgan"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm qsmgan
+  + --do-chisep
   + --chisep susep-net
 methods: dd55bec65d8be7ce (31 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = ir2qsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = ir2qsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm ir2qsm
+  + --do-chisep
   + --chisep susep-net
 methods: e86c7b99009850ed (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = lpcnn
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = lpcnn
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "lpcnn"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm lpcnn
+  + --do-chisep
   + --chisep susep-net
 methods: cc5a54e07e145a33 (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = modl-qsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = modl-qsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "modl-qsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm modl-qsm
+  + --do-chisep
   + --chisep susep-net
 methods: 840823af9a226d6a (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = nextqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = nextqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "nextqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm nextqsm
+  + --do-chisep
   + --chisep susep-net
 methods: ba9c70a1a00ed488 (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = iqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm iqsm
+  + --do-chisep
   + --chisep susep-net
 methods: 3c362e2f2e838da4 (28 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm-plus
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = iqsm-plus
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm-plus"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --qsm-algorithm iqsm-plus
+  + --do-chisep
   + --chisep susep-net
 methods: ffd08f8e18d6c36a (27 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
   + --do-chisep
-  + --r2prime-strategy mese
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: 427af48f799caa6b (39 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
@@ -231,410 +231,410 @@ command:
   + --chi-sepnet-route native
 methods: 63f3d66e960feddc (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = xqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = xqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "xqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
+  + --do-chisep
   + --chisep susep-net
 methods: 81e16fca6a013513 (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "qsmnet"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
+  + --do-chisep
   + --chisep susep-net
 methods: 9941c753b479bb83 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet-plus
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
+  + --do-chisep
   + --chisep susep-net
 methods: bc0d3aa9851fc3dd (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmgan
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = qsmgan
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "qsmgan"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
+  + --do-chisep
   + --chisep susep-net
 methods: 9891d938f4349860 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = ir2qsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = ir2qsm
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
+  + --do-chisep
   + --chisep susep-net
 methods: 0ae35493df042a5d (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = lpcnn
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = lpcnn
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "lpcnn"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
+  + --do-chisep
   + --chisep susep-net
 methods: 3fbc6c2931a8b3f7 (31 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = modl-qsm
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = modl-qsm
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "modl-qsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
+  + --do-chisep
   + --chisep susep-net
 methods: 51235bbb4393f710 (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: 9007f86c11fcaa57 (39 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = xqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = xqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "xqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm xqsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: a47504b15a6be5f3 (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = qsmnet, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm qsmnet
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: 79b1dd733dbfc0fc (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = qsmnet-plus, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm qsmnet-plus
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: 74289e821de87c87 (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = autoqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = autoqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "autoqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm autoqsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: e977c0c7b5cdc829 (28 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = qsmgan, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = qsmgan, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmgan"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm qsmgan
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: 7bbbefb3168c6c20 (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = ir2qsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = ir2qsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm ir2qsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: ca83d3baccda1f91 (28 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = lpcnn, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = lpcnn, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "lpcnn"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm lpcnn
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: f30505d829232033 (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = modl-qsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = modl-qsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "modl-qsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm modl-qsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: c3efcac4f611d0c8 (28 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = nextqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = nextqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "nextqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm nextqsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: 791402ff829be62a (28 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = iqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm iqsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: e726f24641814d0e (27 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, qsm_algorithm = iqsm-plus, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, inversion.algorithm = iqsm-plus, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm-plus"
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm iqsm-plus
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: ffbdb9f08cf3bff0 (26 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: b10a36ac4c48dd6d (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = xqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = xqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "xqsm"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm xqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 468b50c6679f6ff5 (33 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = qsmnet
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm qsmnet
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 83e6e0e80d3212e1 (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet-plus
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = qsmnet-plus
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm qsmnet-plus
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 818df0009e76486b (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = autoqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = autoqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "autoqsm"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm autoqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 39ef7f18f693fd32 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmgan
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = qsmgan
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmgan"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm qsmgan
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: ce8e7b22b95902f2 (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = ir2qsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = ir2qsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm ir2qsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 4ab2d879aeec99b4 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = lpcnn
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = lpcnn
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "lpcnn"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm lpcnn
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 14174abd11d6e5b7 (33 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = modl-qsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = modl-qsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "modl-qsm"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm modl-qsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 24352970c788f9ef (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = nextqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = nextqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "nextqsm"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm nextqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 3e40483f37d9221b (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = iqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm iqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 405845f86d1e3488 (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm-plus
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = iqsm-plus
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm-plus"
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --qsm-algorithm iqsm-plus
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 876c5f5de476e2de (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
@@ -642,12 +642,12 @@ config:
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
   + --do-chisep
-  + --r2prime-strategy mese
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 0ac7885260fe2e64 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = xqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = xqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -655,14 +655,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: 5e9b4f59afd9cad7 (29 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -670,14 +670,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: b53fe5b0ebef405b (31 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet-plus, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -685,14 +685,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: f7ff7419d4153349 (31 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = qsmgan, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = qsmgan, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -700,14 +700,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: 42e8d59979d5567e (31 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = ir2qsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = ir2qsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -715,14 +715,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: a6b957bf81867fdd (28 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = lpcnn, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = lpcnn, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -730,14 +730,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: ff1dced22b81872b (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = susep-net, bf_algorithm = iqfm, qsm_algorithm = modl-qsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = susep-net, bg_removal.algorithm = iqfm, inversion.algorithm = modl-qsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -745,14 +745,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "susep-net"
   /separation/r2prime_strategy: "auto" -> "mese"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
+  + --do-chisep
   + --chisep susep-net
+  + --r2prime-strategy mese
 methods: cbb7024564598832 (28 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = xqsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = xqsm
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -760,14 +760,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 8d41f364d75e52c2 (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -775,14 +775,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 01992524154a26b5 (36 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet-plus
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -790,14 +790,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: a06f8a5e9522c4ec (36 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmgan
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = qsmgan
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -805,14 +805,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 19ded1e1ba30408d (36 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = ir2qsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = ir2qsm
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -820,14 +820,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 80f926884a84b39d (33 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = lpcnn
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = lpcnn
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -835,14 +835,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: f13c76ddb10e3e28 (35 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = modl-qsm
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = modl-qsm
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -850,14 +850,14 @@ config:
   /separation/algorithm: "r2star-qsm" -> "chi-sepnet"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
 methods: 92c22b85eaeca65c (33 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -865,14 +865,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 1e7441e0dc66a5f1 (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = xqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = xqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "xqsm"
@@ -880,14 +880,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm xqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 69cac36e7f7c0401 (33 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = qsmnet, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet"
@@ -895,14 +895,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm qsmnet
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: dde9b3b8371ee2c1 (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = qsmnet-plus, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
@@ -910,14 +910,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm qsmnet-plus
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 7ba6b735ba3e8577 (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = autoqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = autoqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "autoqsm"
@@ -925,14 +925,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm autoqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 57712759d16ebb26 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = qsmgan, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = qsmgan, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmgan"
@@ -940,14 +940,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm qsmgan
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 96ad3541c51286ae (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = ir2qsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = ir2qsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
@@ -955,14 +955,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm ir2qsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: ce6e3622a2fa3cb0 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = lpcnn, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = lpcnn, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "lpcnn"
@@ -970,14 +970,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm lpcnn
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: d609193c4c24fc4b (33 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = modl-qsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = modl-qsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "modl-qsm"
@@ -985,14 +985,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm modl-qsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 306b067d6bea7547 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = nextqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = nextqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "nextqsm"
@@ -1000,14 +1000,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm nextqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: c081d88953cda357 (32 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = iqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm"
@@ -1015,14 +1015,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm iqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 40fd075f41d09284 (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, qsm_algorithm = iqsm-plus, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, inversion.algorithm = iqsm-plus, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm-plus"
@@ -1030,14 +1030,14 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --qsm-algorithm iqsm-plus
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 56b6417842968a2e (30 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = xqsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = xqsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -1046,15 +1046,15 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 1fe358994ed0d052 (34 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -1063,15 +1063,15 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 2e7d9d4898c4feb1 (36 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmnet-plus, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet-plus, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -1080,15 +1080,15 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 6bd5fee10b330364 (36 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = qsmgan, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = qsmgan, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -1097,15 +1097,15 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 5e3ca6104ef79de5 (36 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = ir2qsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = ir2qsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -1114,15 +1114,15 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: eda611ca3932ce0d (33 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = lpcnn, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = lpcnn, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -1131,15 +1131,15 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 6f0f395bc13b1428 (35 lines)
 
-## toggle do_chi_separation, separation_algorithm = chi-sepnet, sep_chisepnet_route = native, bf_algorithm = iqfm, qsm_algorithm = modl-qsm, r2prime_strategy = mese
+## toggle pipeline.do_chi_separation, separation.algorithm = chi-sepnet, separation.chi_sepnet.route = native, bg_removal.algorithm = iqfm, inversion.algorithm = modl-qsm, separation.r2prime_strategy = mese
 config:
   /pipeline/do_chi_separation: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
@@ -1148,11 +1148,11 @@ config:
   /separation/r2prime_strategy: "auto" -> "mese"
   /separation/chi_sepnet/route: "toolbox" -> "native"
 command:
-  + --do-chisep
-  + --r2prime-strategy mese
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
+  + --do-chisep
   + --chisep chi-sepnet
   + --chi-sepnet-route native
+  + --r2prime-strategy mese
 methods: 79e2df3e740ad210 (33 lines)
 

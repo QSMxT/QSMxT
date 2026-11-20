@@ -3,6 +3,7 @@
 use log::Level;
 use serde_json::json;
 
+use crate::plan::Stage;
 use crate::plan::{Pass, Step};
 use crate::record::{Choice, Decision, Topic};
 use crate::run::{Done, Run, chi_bound_decision};
@@ -48,7 +49,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let route_estimates_r2prime = self.chisepnet_route_estimates_r2prime();
         self.decide_chisepnet_r2prime(route_estimates_r2prime);
         let params = self.with_supplied(sep::params(self.config, &self.meta, mese.is_some()), &supplied);
-        let Some(key) = self.begin("chi_separation", Some(&alg_name), &params, "Skipping chi_separation (cached)",
+        let Some(key) = self.begin(Stage::ChiSeparation, Some(&alg_name), &params, "Skipping chi_separation (cached)",
                                    "Chi-separation") else { return Ok(()) };
         self.log(Level::Info, &format!("Chi-separation ({alg_name})"));
         let (nx, ny, nz) = self.meta.dims;
@@ -140,7 +141,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::SeparatedTotalChi, Data::Real(&separated.total))?;
         self.annotate_chisepnet_route(route_estimates_r2prime)?;
         self.complete(Done {
-            step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key,
+            stage: Stage::ChiSeparation, algorithm: Some(&alg_name), params: &params, outcome: None, key: &key,
             outputs: &[Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
                        Item::SeparatedTotalChi],
         }, &format!("Chi-separation ({alg_name})"))

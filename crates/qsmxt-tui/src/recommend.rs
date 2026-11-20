@@ -594,15 +594,15 @@ mod tests {
     /// MEDI with mSMV and its prefilter off: discouraged (`medi-msmv.prefilter`).
     fn medi_msmv_without_prefilter() -> App {
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "medi", &QSM_PICKER_OPTIONS);
         assert!(app.rec_modal.is_none(), "MEDI at its defaults departs from nothing it is offered");
         // Its reference pipeline pop-up: closed, nothing changes.
         app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
         assert!(app.refs.modal.is_none());
-        app.toggle_field("medi_msmv");
+        app.toggle_field("inversion.medi.msmv");
         app.check_recommendations();
         assert!(app.rec_modal.is_none());
-        app.toggle_field("medi_msmv_prefilter");
+        app.toggle_field("inversion.medi.msmv_prefilter");
         app.check_recommendations();
         app
     }
@@ -614,7 +614,7 @@ mod tests {
 
     fn ventricles_after(mut app: App) -> App {
         let options = super::super::app::qsm_ref_options();
-        select(&mut app, "qsm_reference", "ventricles", options);
+        select(&mut app, "qsm.reference", "ventricles", options);
         app
     }
 
@@ -626,14 +626,14 @@ mod tests {
         use super::super::app::BF_OPTIONS;
         use super::super::command::config_from_app;
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "ilsqr", &QSM_PICKER_OPTIONS);
-        select(&mut app, "bf_algorithm", "iqfm", BF_OPTIONS);
+        select(&mut app, "inversion.algorithm", "ilsqr", &QSM_PICKER_OPTIONS);
+        select(&mut app, "bg_removal.algorithm", "iqfm", BF_OPTIONS);
         assert!(app.rule_view().iter().any(|r| r.rule == "sti.unwrap-laplacian" && r.departs), "still a finding");
         let before = config_from_app(&app).unwrap();
         let e = app.apply_recommendation("sti.unwrap-laplacian", None).unwrap_err();
         assert!(e.ends_with("cannot be set to Laplacian here: change it on its row"), "{e}");
         assert_eq!(config_from_app(&app).unwrap(), before, "nothing changes");
-        select(&mut app, "bf_algorithm", "vsharp", BF_OPTIONS);
+        select(&mut app, "bg_removal.algorithm", "vsharp", BF_OPTIONS);
         app.apply_recommendation("sti.unwrap-laplacian", None).unwrap();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.unwrapping_algorithm,
                    qsmxt_engine::enums::UnwrappingAlgorithm::Laplacian);
@@ -664,7 +664,7 @@ mod tests {
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Tab));
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Enter));
         assert!(app.rec_modal.is_none());
-        assert!(app.form.settings.toggle("pipeline.do_segmentation") && app.field_toggle("do_segmentation"), "applied through the form");
+        assert!(app.form.settings.toggle("pipeline.do_segmentation") && app.field_toggle("pipeline.do_segmentation"), "applied through the form");
         let config = super::super::command::config_from_app(&app).unwrap();
         assert!(config.pipeline.do_segmentation);
         assert!(!app.rule_view().iter().any(|r| r.applied_by_run() && r.departs), "nothing left to require");
@@ -718,10 +718,10 @@ mod tests {
     #[test]
     fn chi_separation_requires_its_maps_in_one_pop_up() {
         let mut app = app();
-        app.set_field_select("separation_algorithm",
+        app.set_field_select("separation.algorithm",
             super::super::settings_rows::options("separation.algorithm").0.iter().position(|o| *o == "chi-sep-ilsqr").unwrap());
         app.check_recommendations();
-        app.toggle_field("do_chi_separation");
+        app.toggle_field("pipeline.do_chi_separation");
         app.check_recommendations();
         let modal = app.rec_modal.as_ref().expect("the change opened the required-change pop-up");
         assert_eq!(modal.kind, AdviceKind::Required);
@@ -731,7 +731,7 @@ mod tests {
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
         assert!(app.form.settings.toggle("pipeline.do_r2primemap") && app.form.settings.toggle("pipeline.do_r2starmap") && app.form.settings.toggle("pipeline.do_r2map"),
                 "{:?} {:?}", app.status_message, app.error_message);
-        assert!(app.field_toggle("do_chi_separation"), "the change just made stands");
+        assert!(app.field_toggle("pipeline.do_chi_separation"), "the change just made stands");
     }
 
     /// The pop-up's rows as decisions for [`App::decide`]: each value taken, or each kept.
@@ -751,7 +751,7 @@ mod tests {
         assert!(modal.keepable());
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Char('a')));
         assert!(app.rec_modal.is_none());
-        assert!(app.field_toggle("medi_msmv_prefilter"), "applied through the form");
+        assert!(app.field_toggle("inversion.medi.msmv_prefilter"), "applied through the form");
         let config = super::super::command::config_from_app(&app).unwrap();
         assert!(config.inversion.medi.msmv_prefilter);
         assert!(!app.rule_view().iter().any(|r| r.rule == "medi-msmv.prefilter" && r.departs));
@@ -762,13 +762,13 @@ mod tests {
     #[test]
     fn a_suggestion_starts_unticked() {
         let mut a = app();
-        select(&mut a, "qsm_algorithm", "ndi", &QSM_PICKER_OPTIONS);
+        select(&mut a, "inversion.algorithm", "ndi", &QSM_PICKER_OPTIONS);
         let ndi: Vec<_> = a.rule_view().into_iter().filter(|r| r.rule == "ndi.weight-norm-in-vivo" && r.departs).collect();
         assert_eq!(ndi.len(), 1, "{ndi:?}");
         assert_eq!(RecModal::new(ndi.clone()).ticked(), 0);
         assert_eq!(AdviceModal::reference(vec![ndi[0].trigger.clone()], ndi.clone()).ticked(), 0);
         let mut b = app();
-        b.set_field_select("bf_algorithm", super::super::app::BF_OPTIONS.iter().position(|o| *o == "iharperella").unwrap());
+        b.set_field_select("bg_removal.algorithm", super::super::app::BF_OPTIONS.iter().position(|o| *o == "iharperella").unwrap());
         let rim: Vec<_> = b.rule_view().into_iter().filter(|r| r.rule == "iharperella.whole-rim" && r.departs).collect();
         assert_eq!(rim.len(), 1);
         assert!(RecModal::new(rim).rows[0].checked);
@@ -779,7 +779,7 @@ mod tests {
     #[test]
     fn choosing_whqsm_ticks_its_in_mask_weight() {
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "whqsm", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "whqsm", &QSM_PICKER_OPTIONS);
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.inversion.whqsm.weight, qsmxt_engine::enums::WhqsmWeight::Flat, "nothing rewritten");
         let modal = app.rec_modal.as_ref().expect("the recommendation's pop-up");
@@ -797,7 +797,7 @@ mod tests {
         let mut app = medi_msmv_without_prefilter();
         // Esc: no change, the finding stays open with its badge; `!` brings the pop-up back.
         app.handle_rec_modal_key(KeyEvent::from(KeyCode::Esc));
-        let row = PipelineRow::Toggle { label: "", field: "medi_msmv_prefilter", help: "" };
+        let row = PipelineRow::Toggle { label: "", field: "inversion.medi.msmv_prefilter", help: "" };
         assert!(App::row_marker(&app.rule_view(), &row).is_some_and(|m| m.actionable && m.text == "MEDI: not off"));
         assert!(App::row_reference(&app.rule_view(), &row).is_some_and(|t| t.starts_with("Discouraged (MEDI): not off") && t.ends_with("! for details")));
         app.check_recommendations();
@@ -810,10 +810,10 @@ mod tests {
         assert!(super::super::command::build_command_string(&app).contains("--dismiss-recommendation medi-msmv.prefilter=false"));
         assert!(App::row_marker(&app.rule_view(), &row).is_some_and(|m| !m.actionable), "dismissed: information only");
         // A change to the setting drops the dismissal; going back offers it again.
-        app.toggle_field("medi_msmv_prefilter");
+        app.toggle_field("inversion.medi.msmv_prefilter");
         app.check_recommendations();
         assert!(app.form.dismissed.is_empty());
-        app.toggle_field("medi_msmv_prefilter");
+        app.toggle_field("inversion.medi.msmv_prefilter");
         app.check_recommendations();
         assert!(app.rec_modal.is_some());
     }
@@ -828,13 +828,13 @@ mod tests {
         let lsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "lsqr").unwrap();
         let ticked = |alg: &str| {
             let mut app = app();
-            select(&mut app, "qsm_algorithm", alg, &QSM_PICKER_OPTIONS);
+            select(&mut app, "inversion.algorithm", alg, &QSM_PICKER_OPTIONS);
             // The method's own reference pipeline pop-up, if any: closed, nothing changes.
             app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
             app.rec_modal = None;
             app.check_recommendations();
             let chosen = app.qsm_algorithm();
-            app.toggle_field("heidi_enabled");
+            app.toggle_field("inversion.heidi.enabled");
             app.check_recommendations();
             if alg == "tkd" {
                 // TKD's threshold at HEIDI's cone first (required), then the seed.
@@ -890,11 +890,11 @@ mod tests {
         }
         // LSQR+HEIDI is the reference: nothing to offer.
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "lsqr", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "lsqr", &QSM_PICKER_OPTIONS);
         app.handle_ref_modal_key(KeyEvent::from(KeyCode::Esc));
         app.rec_modal = None;
         app.check_recommendations();
-        app.toggle_field("heidi_enabled");
+        app.toggle_field("inversion.heidi.enabled");
         app.check_recommendations();
         assert!(app.rec_modal.is_none(), "{:?}", app.rec_modal.as_ref().map(|m| &m.findings[0].rule));
         assert!(!app.refs.modal.as_ref().is_some_and(|m| m.rows.iter().any(|i| i.finding.rule.starts_with("heidi.seed"))));
@@ -905,7 +905,7 @@ mod tests {
     #[test]
     fn choosing_decompose_offers_a_per_echo_qsm() {
         let mut app = app();
-        app.toggle_field("do_chi_separation");
+        app.toggle_field("pipeline.do_chi_separation");
         app.check_recommendations();
         // The default method's R2* map: the required change, applied.
         assert_eq!(app.rec_modal.as_ref().map(|m| m.kind.clone()), Some(AdviceKind::Required));
@@ -913,18 +913,18 @@ mod tests {
         assert!(app.form.settings.toggle("pipeline.do_r2starmap"));
         // The default method's reference pipeline pop-up: closed.
         app.refs.modal = None;
-        select(&mut app, "separation_algorithm", "decompose", super::super::settings_rows::options("separation.algorithm").0);
+        select(&mut app, "separation.algorithm", "decompose", super::super::settings_rows::options("separation.algorithm").0);
         // One pop-up: the recommendation first, then DECOMPOSE's reference pipeline.
         let modal = app.refs.modal.take().expect("the choice opened the pop-up");
         let finding = &modal.rows.iter().find(|i| i.finding.rule == "decompose.qsm-per-echo").expect("per-echo QSM is offered").finding;
         assert_eq!((finding.setting.as_str(), finding.strength), ("qsm.per_echo", Strength::Recommended));
-        assert!(!app.field_toggle("qsm_per_echo"), "offered, not applied");
+        assert!(!app.field_toggle("qsm.per_echo"), "offered, not applied");
         app.apply_recommendation("decompose.qsm-per-echo", None).unwrap();
-        assert!(app.field_toggle("qsm_per_echo"));
+        assert!(app.field_toggle("qsm.per_echo"));
         assert!(super::super::command::config_from_app(&app).unwrap().qsm.per_echo);
         let rows = app.page_rows(super::super::app::Page::FieldMap);
-        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "b0_estimation", .. })));
-        assert!(rows.iter().any(|r| matches!(r, PipelineRow::Toggle { field: "qsm_per_echo", .. })));
+        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "field_mapping.b0_estimation", .. })));
+        assert!(rows.iter().any(|r| matches!(r, PipelineRow::Toggle { field: "qsm.per_echo", .. })));
     }
 
     /// DECOMPOSE at 7 T suggests its echo-phase unwrapping once the field strength is known; at
@@ -932,8 +932,8 @@ mod tests {
     #[test]
     fn decompose_at_7t_suggests_unwrapping_the_phase() {
         let mut app = app();
-        app.toggle_field("do_chi_separation");
-        app.set_field_select("separation_algorithm", super::super::settings_rows::options("separation.algorithm").0.iter().position(|o| *o == "decompose").unwrap());
+        app.toggle_field("pipeline.do_chi_separation");
+        app.set_field_select("separation.algorithm", super::super::settings_rows::options("separation.algorithm").0.iter().position(|o| *o == "decompose").unwrap());
         let fires = |app: &App| app.rule_view().iter().any(|r| r.rule == "decompose.unwrap-7t" && r.departs);
         assert!(!fires(&app), "the field strength is not known");
         app.input_mode = super::super::app::InputMode::NIfTI;
@@ -942,7 +942,7 @@ mod tests {
         app.nifti_state.field_strength = "7".into();
         let r = app.rule_view().into_iter().find(|r| r.rule == "decompose.unwrap-7t").unwrap();
         assert!(r.departs && r.setting == "separation.decompose.unwrap_phase" && r.reason.contains("3 T"), "{r:?}");
-        app.toggle_field("sep_decompose_unwrap_phase");
+        app.toggle_field("separation.decompose.unwrap_phase");
         assert!(!fires(&app));
     }
 
@@ -951,8 +951,8 @@ mod tests {
     #[test]
     fn decompose_at_7t_offers_unwrapping_and_the_echo_spacing_bound() {
         let mut app = app();
-        app.toggle_field("do_chi_separation");
-        app.set_field_select("separation_algorithm", super::super::settings_rows::options("separation.algorithm").0.iter().position(|o| *o == "decompose").unwrap());
+        app.toggle_field("pipeline.do_chi_separation");
+        app.set_field_select("separation.algorithm", super::super::settings_rows::options("separation.algorithm").0.iter().position(|o| *o == "decompose").unwrap());
         app.check_recommendations();
         app.rec_modal = None;
         app.refs.modal = None;
@@ -994,18 +994,18 @@ mod tests {
                    (qsmxt_engine::ChiBoundChoice::EchoSpacing, true));
         // The bound's own row is gone: it is computed.
         let rows = app.page_rows(super::super::app::Page::Separation);
-        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::Param { field: "sep_decompose_chi_bound", .. })));
+        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::Param { field: "separation.decompose.chi_bound#value", .. })));
     }
 
     /// A reference departure never opens the pop-up; its setting shows the reference value.
     #[test]
     fn reference_departures_are_information_only() {
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "rts", &QSM_PICKER_OPTIONS);
-        let row = PipelineRow::AlgoSelect { label: "", field: "bf_algorithm", options: &[], help: &[] };
+        select(&mut app, "inversion.algorithm", "rts", &QSM_PICKER_OPTIONS);
+        let row = PipelineRow::AlgoSelect { label: "", field: "bg_removal.algorithm", options: &[], help: &[] };
         let text = App::row_reference(&app.rule_view(), &row).unwrap();
         assert!(text.starts_with("Authors' setting (RTS): V-SHARP") && !text.contains("README"), "{text}");
-        select(&mut app, "bf_algorithm", "pdf", super::super::app::BF_OPTIONS);
+        select(&mut app, "bg_removal.algorithm", "pdf", super::super::app::BF_OPTIONS);
         assert!(app.rec_modal.is_none(), "information only");
         assert!(app.refs.modal.as_ref().is_none_or(|m| m.methods()[0].name == "PDF"), "only a method just chosen opens its reference");
         assert_eq!(App::row_marker(&app.rule_view(), &row).map(|m| (m.actionable, m.text)), Some((false, "RTS: V-SHARP".into())));
@@ -1037,7 +1037,7 @@ mod tests {
         let mut app = app();
         assert_eq!(super::super::app::MASK_PRESET_OPTIONS[app.pipeline_state.mask_preset], "robust-threshold");
         assert!(app.refs.modal.is_none(), "nothing at start-up");
-        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "medi", &QSM_PICKER_OPTIONS);
         app
     }
 
@@ -1050,10 +1050,10 @@ mod tests {
     fn disagreeing_bg_removal() -> (App, Vec<RefItem>) {
         let mut app = medi_chosen();
         app.refs.modal = None;
-        app.toggle_field("do_chi_separation");
+        app.toggle_field("pipeline.do_chi_separation");
         let at = |o: &[&str], v: &str| o.iter().position(|x| *x == v).unwrap();
-        app.set_field_select("separation_algorithm", at(super::super::settings_rows::options("separation.algorithm").0, "chi-sep-ilsqr"));
-        app.set_field_select("bf_algorithm", at(super::super::app::BF_OPTIONS, "lbv"));
+        app.set_field_select("separation.algorithm", at(super::super::settings_rows::options("separation.algorithm").0, "chi-sep-ilsqr"));
+        app.set_field_select("bg_removal.algorithm", at(super::super::app::BF_OPTIONS, "lbv"));
         let found: Vec<Recommendation> = app.rule_view().into_iter().filter(|r| r.authors_setting()).collect();
         let modal = AdviceModal::reference(vec![found[0].trigger.clone()], found);
         (app, items_of(&modal, true))
@@ -1143,10 +1143,10 @@ mod tests {
     #[test]
     fn apply_all_lets_a_recommendation_outrank_an_authors_setting() {
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "fansi", QSM_ALGO_OPTIONS);
+        select(&mut app, "inversion.algorithm", "fansi", QSM_ALGO_OPTIONS);
         let at = |o: &[&str], v: &str| o.iter().position(|x| *x == v).unwrap();
-        app.set_field_select("b0_estimation", at(super::super::settings_rows::options("field_mapping.b0_estimation").0, "complex-fit"));
-        app.set_field_select("unwrapping_algorithm", at(super::super::settings_rows::options("field_mapping.unwrapping_algorithm").0, "laplacian"));
+        app.set_field_select("field_mapping.b0_estimation", at(super::super::settings_rows::options("field_mapping.b0_estimation").0, "complex-fit"));
+        app.set_field_select("field_mapping.unwrapping_algorithm", at(super::super::settings_rows::options("field_mapping.unwrapping_algorithm").0, "laplacian"));
         app.filter_state.num_echoes = "4".into();
         let found: Vec<Recommendation> = app.rule_view().into_iter()
             .filter(|r| r.departs && r.setting == "field_mapping.unwrapping_algorithm").collect();
@@ -1220,19 +1220,19 @@ mod tests {
         assert!(c.dismissed_recommendations.is_empty(), "{:?}", c.dismissed_recommendations);
         assert!(!super::super::command::build_command_string(&app).contains("--dismiss-recommendation"));
         // The background removal row keeps its ⓘ marker.
-        let bg = PipelineRow::AlgoSelect { label: "", field: "bf_algorithm", options: &[], help: &[] };
+        let bg = PipelineRow::AlgoSelect { label: "", field: "bg_removal.algorithm", options: &[], help: &[] };
         assert!(App::row_marker(&app.rule_view(), &bg).is_some_and(|m| !m.actionable && m.text.contains("MEDI")));
         // Another change, MEDI still chosen: no pop-up.
-        app.toggle_field("medi_merit");
+        app.toggle_field("inversion.medi.merit");
         app.check_recommendations();
         assert!(app.refs.modal.is_none() && app.rec_modal.is_none());
-        app.toggle_field("medi_merit");
+        app.toggle_field("inversion.medi.merit");
         app.check_recommendations();
         assert!(app.refs.modal.is_none() && app.rec_modal.is_none());
         // Away and back: offered again.
-        select(&mut app, "qsm_algorithm", "rts", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "rts", &QSM_PICKER_OPTIONS);
         assert!(app.refs.modal.is_none());
-        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "medi", &QSM_PICKER_OPTIONS);
         assert!(app.refs.modal.as_ref().is_some_and(|m| m.methods()[0].name == "MEDI"));
     }
 
@@ -1275,13 +1275,13 @@ mod tests {
     fn method_chosen_with_heidi(method: &str) -> App {
         let chosen = QSM_PICKER_OPTIONS.iter().position(|o| *o == method).unwrap();
         let mut app = app();
-        app.toggle_field("heidi_enabled");
+        app.toggle_field("inversion.heidi.enabled");
         app.check_recommendations();
         while app.rec_modal.is_some() || app.refs.modal.is_some() {
             key(&mut app, KeyCode::Esc);
             app.check_recommendations();
         }
-        app.set_field_select("qsm_algorithm", chosen);
+        app.set_field_select("inversion.algorithm", chosen);
         app.check_recommendations();
         app
     }
@@ -1335,7 +1335,7 @@ mod tests {
         let chosen = |name: &str| QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap();
         let mut app = app();
         app.form.settings.set("inversion.heidi.enabled", true);
-        app.set_field_select("qsm_algorithm", chosen("qsmart"));
+        app.set_field_select("inversion.algorithm", chosen("qsmart"));
         let here: Vec<_> = app.rule_view().into_iter()
             .filter(|r| r.setting == "inversion.algorithm" && r.departs && r.strength == Strength::Required).collect();
         let mut modal = RecModal::details(here);
@@ -1363,10 +1363,10 @@ mod tests {
     #[test]
     fn every_required_conflict_respects_the_change_just_made() {
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "tkd", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "tkd", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
         app.rec_modal = None;
-        app.toggle_field("heidi_enabled");
+        app.toggle_field("inversion.heidi.enabled");
         app.check_recommendations();
         let m = app.rec_modal.as_ref().expect("HEIDI on TKD needs the cone threshold");
         assert!(m.rows.iter().all(|r| matches!(r.action, RowAction::Apply { .. })), "{:?}", m.rows);
@@ -1468,12 +1468,12 @@ mod tests {
                 app.check_recommendations();
                 // From another method, so that choosing QSMxT's default (iLSQR) is a change too.
                 let other = if method == "tkd" { "rts" } else { "tkd" };
-                app.set_field_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == other).unwrap());
+                app.set_field_select("inversion.algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == other).unwrap());
                 app.check_recommendations();
                 while app.rec_modal.is_some() || app.refs.modal.is_some() {
                     key(&mut app, KeyCode::Esc);
                 }
-                app.set_field_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| o == method).unwrap());
+                app.set_field_select("inversion.algorithm", QSM_PICKER_OPTIONS.iter().position(|o| o == method).unwrap());
                 app.check_recommendations();
                 let mut pop_ups = 0;
                 let mut reference_pop_ups = 0;
@@ -1540,7 +1540,7 @@ mod tests {
         let mut app = app();
         app.filter_state.num_echoes = "4".into();
         app.check_recommendations();
-        select(&mut app, "qsm_algorithm", "qsmart", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "qsmart", &QSM_PICKER_OPTIONS);
         assert!(app.rec_modal.is_none(), "one pop-up");
         let m = app.refs.modal.as_ref().expect("QSMART's pop-up");
         let reasons: Vec<&str> = group.iter().map(|id| {
@@ -1577,7 +1577,7 @@ mod tests {
         let mut app = app();
         app.filter_state.num_echoes = "4".into();
         app.check_recommendations();
-        select(&mut app, "qsm_algorithm", "amp-pe", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "amp-pe", &QSM_PICKER_OPTIONS);
         let m = app.refs.modal.as_mut().expect("AMP-PE's reference pipeline");
         for i in 0..m.rows.len() {
             let group = m.rows[i].group.clone();
@@ -1645,7 +1645,7 @@ mod tests {
         let chosen = |name: &str| QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap();
         let mut app = app();
         app.form.settings.set("inversion.heidi.enabled", true);
-        app.set_field_select("qsm_algorithm", chosen("qsmart"));
+        app.set_field_select("inversion.algorithm", chosen("qsmart"));
         let here: Vec<_> = app.rule_view().into_iter().filter(|r| r.setting == "inversion.algorithm" && r.departs).collect();
         let modal = RecModal::details(here);
         assert!(modal.rows.iter().any(|r| matches!(r.action, RowAction::TurnOff { .. })), "{:?}", modal.rows);
@@ -1656,11 +1656,11 @@ mod tests {
     fn a_rows_reference_says_each_thing_once() {
         let mut app = app();
         app.form.settings.set("inversion.heidi.enabled", true);
-        app.set_field_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "lsqr").unwrap());
+        app.set_field_select("inversion.algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "lsqr").unwrap());
         app.form.settings.set("inversion.heidi.enabled", true);
         let view = app.rule_view();
         let row = app.all_pages().into_iter().flat_map(|(_, _, rows)| rows)
-            .find(|r| matches!(r, PipelineRow::AlgoSelect { field: "qsm_algorithm", .. })).unwrap();
+            .find(|r| matches!(r, PipelineRow::AlgoSelect { field: "inversion.algorithm", .. })).unwrap();
         let text = App::row_reference(&view, &row).unwrap();
         assert_eq!(text.matches("Recommended (HEIDI streaking reduction): LSQR").count(), 1, "{text}");
         assert_eq!(text.matches("LSQR").count(), 1, "the authors' setting and the suggestion agree: {text}");
@@ -1672,8 +1672,8 @@ mod tests {
     fn a_rows_reference_gives_each_value_to_its_strongest_advice() {
         let mut app = app();
         app.form.settings.set("inversion.heidi.enabled", true);
-        app.set_field_select("qsm_algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "qsmart").unwrap());
-        let row = PipelineRow::AlgoSelect { label: "", field: "qsm_algorithm", options: &[], help: &[] };
+        app.set_field_select("inversion.algorithm", QSM_PICKER_OPTIONS.iter().position(|o| *o == "qsmart").unwrap());
+        let row = PipelineRow::AlgoSelect { label: "", field: "inversion.algorithm", options: &[], help: &[] };
         assert_eq!(App::row_reference(&app.rule_view(), &row).as_deref(),
                    Some("Required (HEIDI streaking reduction): LSQR — ! for details"));
     }
@@ -1684,7 +1684,7 @@ mod tests {
         let mut app = app();
         app.set_field_select("mask_preset", 1);
         app.check_recommendations();
-        select(&mut app, "qsm_algorithm", "qsmart", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "qsmart", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
         app.set_field_select("mask_preset", 0);
         app.check_recommendations();
@@ -1743,14 +1743,14 @@ mod tests {
         let mut app = app();
         // MEDI with mSMV and the prefilter off is discouraged; choosing MEDI with them set
         // creates that and chooses MEDI at once.
-        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "medi", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
-        app.toggle_field("medi_msmv");
-        app.toggle_field("medi_msmv_prefilter");
+        app.toggle_field("inversion.medi.msmv");
+        app.toggle_field("inversion.medi.msmv_prefilter");
         app.check_recommendations();
         app.rec_modal = None;
-        select(&mut app, "qsm_algorithm", "rts", &QSM_PICKER_OPTIONS);
-        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "rts", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "medi", &QSM_PICKER_OPTIONS);
         assert!(app.rec_modal.is_none());
         let modal = app.refs.modal.as_ref().expect("one pop-up");
         assert_eq!(modal.rows[0].finding.rule, "medi-msmv.prefilter", "the recommendation first");
@@ -1777,8 +1777,8 @@ mod tests {
             }
         }
         let row = |field: &'static str| PipelineRow::AlgoSelect { label: "  Unwrapping", field, options: &["romeo", "laplacian"], help: &[] };
-        assert_eq!(picker_noun(&row("unwrapping_algorithm")).as_deref(), Some("unwrapping"), "two options: a picker too");
-        assert_eq!(picker_noun(&row("qsm_algorithm")).as_deref(), Some("method"), "a method, however few options");
+        assert_eq!(picker_noun(&row("field_mapping.unwrapping_algorithm")).as_deref(), Some("unwrapping"), "two options: a picker too");
+        assert_eq!(picker_noun(&row("inversion.algorithm")).as_deref(), Some("method"), "a method, however few options");
     }
 
     /// ←/→ on a picker row neither cycle it nor open the picker (← goes back to the sections);
@@ -1786,21 +1786,21 @@ mod tests {
     #[test]
     fn arrows_on_a_method_row_leave_it_alone() {
         let mut app = app();
-        assert!(app.goto_field("qsm_algorithm"));
-        let before = app.field_select("qsm_algorithm");
+        assert!(app.goto_field("inversion.algorithm"));
+        let before = app.field_select("inversion.algorithm");
         app.handle_key(KeyEvent::from(KeyCode::Right));
-        assert_eq!(app.field_select("qsm_algorithm"), before, "not cycled");
+        assert_eq!(app.field_select("inversion.algorithm"), before, "not cycled");
         assert!(app.algo_modal.is_none(), "→ opens nothing");
         app.handle_key(KeyEvent::from(KeyCode::Enter));
         assert!(app.algo_modal.is_some(), "Enter opens the picker");
         app.algo_modal = None;
-        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "medi", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
-        assert!(app.goto_field("qsm_algorithm"));
+        assert!(app.goto_field("inversion.algorithm"));
         let text = screen(&mut app, "A method picker row and its footer");
         assert!(text.contains("[ medi ▾ ]") && text.contains("Enter: choose method") && text.contains("Enter:Choose method"), "{text}");
-        app.set_field_select("unwrapping_algorithm", 1); // laplacian: three solvers, a picker too
-        assert!(app.goto_field("laplacian_solver"));
+        app.set_field_select("field_mapping.unwrapping_algorithm", 1); // laplacian: three solvers, a picker too
+        assert!(app.goto_field("field_mapping.laplacian_solver"));
         let text = screen(&mut app, "A short selector row and its footer");
         assert!(!text.contains("◀ ") && text.contains("▾ ]") && text.contains("Enter:Choose") && !text.contains("←→:Change"), "{text}");
         app.handle_key(KeyEvent::from(KeyCode::Left));
@@ -1821,19 +1821,19 @@ mod tests {
     #[test]
     fn apply_sets_every_field_a_rules_value_needs() {
         let mut app = app();
-        select(&mut app, "unwrapping_algorithm", "laplacian", super::super::settings_rows::options("field_mapping.unwrapping_algorithm").0);
+        select(&mut app, "field_mapping.unwrapping_algorithm", "laplacian", super::super::settings_rows::options("field_mapping.unwrapping_algorithm").0);
         app.refs.modal = None;
         for solver in ["dct", "fft", "mirror"] {
-            app.set_field_select("laplacian_solver", super::super::settings_rows::options("field_mapping.laplacian_solver").0.iter().position(|o| *o == solver).unwrap());
-            let row = PipelineRow::AlgoSelect { label: "", field: "laplacian_solver", options: &[], help: &[] };
+            app.set_field_select("field_mapping.laplacian_solver", super::super::settings_rows::options("field_mapping.laplacian_solver").0.iter().position(|o| *o == solver).unwrap());
+            let row = PipelineRow::AlgoSelect { label: "", field: "field_mapping.laplacian_solver", options: &[], help: &[] };
             assert_eq!(App::row_marker(&app.rule_view(), &row).map(|m| m.text), Some("iLSQR: FFT, 12-voxel padding".into()), "{solver}");
         }
         app.apply_recommendation("sti.laplacian-solver", None).unwrap();
-        assert_eq!(app.field_select("laplacian_solver"), 1, "FFT");
-        assert_eq!(app.field_text("laplacian_fft_pad"), "12");
+        assert_eq!(app.field_select("field_mapping.laplacian_solver"), 1, "FFT");
+        assert_eq!(app.field_text("field_mapping.laplacian_fft_pad"), "12");
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.laplacian_fft_pad, [12; 3]);
-        let row = PipelineRow::AlgoSelect { label: "", field: "laplacian_solver", options: &[], help: &[] };
+        let row = PipelineRow::AlgoSelect { label: "", field: "field_mapping.laplacian_solver", options: &[], help: &[] };
         assert_eq!(App::row_marker(&app.rule_view(), &row), None, "the marker goes");
     }
 
@@ -1841,14 +1841,14 @@ mod tests {
     #[test]
     fn a_marked_row_says_bang_opens_its_advice() {
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "qsmart", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "qsmart", &QSM_PICKER_OPTIONS);
         app.refs.modal = None;
         app.set_field_select("mask_preset", 0);
         app.check_recommendations();
         assert!(app.goto_field("mask_preset"));
         let text = screen(&mut app, "a marked row");
         assert!(text.contains("(! for advice)") && text.contains("!:Advice"), "{text}");
-        assert!(app.goto_field("qsm_algorithm"));
+        assert!(app.goto_field("inversion.algorithm"));
         let text = screen(&mut app, "an unmarked row");
         assert!(!text.contains("(! for advice)") && !text.contains("!:Advice"), "{text}");
     }
@@ -1859,7 +1859,7 @@ mod tests {
         let mut app = medi_msmv_without_prefilter();
         app.rec_modal = None;
         app.refs.modal = None;
-        assert!(app.goto_field("medi_msmv_prefilter"));
+        assert!(app.goto_field("inversion.medi.msmv_prefilter"));
         key(&mut app, KeyCode::Char('!'));
         let modal = app.rec_modal.as_ref().expect("details");
         assert!(modal.rows[0].checked && matches!(modal.rows[0].action, RowAction::Apply { .. }), "a recommendation: the change");
@@ -1878,7 +1878,7 @@ mod tests {
             (0..buf.area.height).map(|y| (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect::<String>()).collect::<Vec<_>>().join("\n")
         };
         let mut app = app();
-        select(&mut app, "qsm_algorithm", "medi", &QSM_PICKER_OPTIONS);
+        select(&mut app, "inversion.algorithm", "medi", &QSM_PICKER_OPTIONS);
         assert!(app.refs.modal.is_some());
         for (w, h) in [(145, 12), (80, 12), (60, 16)] {
             let text = draw(&mut app, w, h);
@@ -1901,7 +1901,7 @@ mod tests {
         let mut app = medi_msmv_without_prefilter();
         app.rec_modal = None;
         app.refs.modal = None;
-        assert!(app.goto_field("medi_msmv_prefilter"));
+        assert!(app.goto_field("inversion.medi.msmv_prefilter"));
         key(&mut app, KeyCode::Char('!'));
         let text = draw(&mut app, 80, 10);
         assert!(text.contains("Keep mine"), "{text}");
@@ -1915,7 +1915,7 @@ mod tests {
         let at = |name: &str| QSM_PICKER_OPTIONS.iter().position(|o| *o == name).unwrap();
         let pick = |app: &mut App, name: &str| {
             app.algo_modal = Some(AlgoModal {
-                target: AlgoModalTarget::Select("qsm_algorithm".into()), title: String::new(),
+                target: AlgoModalTarget::Select("inversion.algorithm".into()), title: String::new(),
                 options: vec![], help: vec![], cursor: at(name), offset: Default::default(),
             });
             key(app, KeyCode::Enter);
@@ -1924,7 +1924,7 @@ mod tests {
         let mut app = app();
         pick(&mut app, LSQR_HEIDI);
         assert_eq!((app.qsm_algorithm(), app.form.settings.toggle("inversion.heidi.enabled")), (lsqr, true));
-        assert_eq!(app.field_select("qsm_algorithm"), at(LSQR_HEIDI), "shown as the alias");
+        assert_eq!(app.field_select("inversion.algorithm"), at(LSQR_HEIDI), "shown as the alias");
         let c = super::super::command::config_from_app(&app).unwrap();
         assert_eq!(c.inversion.algorithm, qsmxt_engine::QsmAlgorithm::Lsqr);
         assert!(c.inversion.heidi.enabled);
@@ -1933,13 +1933,13 @@ mod tests {
 
         pick(&mut app, "lsqr");
         assert_eq!((app.qsm_algorithm(), app.form.settings.toggle("inversion.heidi.enabled")), (lsqr, false), "plain LSQR means no HEIDI");
-        assert_eq!(app.field_select("qsm_algorithm"), at("lsqr"));
-        app.toggle_field("heidi_enabled");
-        assert_eq!(app.field_select("qsm_algorithm"), at(LSQR_HEIDI), "ticking the box on LSQR is the same choice");
+        assert_eq!(app.field_select("inversion.algorithm"), at("lsqr"));
+        app.toggle_field("inversion.heidi.enabled");
+        assert_eq!(app.field_select("inversion.algorithm"), at(LSQR_HEIDI), "ticking the box on LSQR is the same choice");
 
         // A method after it keeps the box, as the box does for any method, and says so.
         pick(&mut app, "medi");
         assert!(app.form.settings.toggle("inversion.heidi.enabled"));
-        assert_eq!(app.field_select("qsm_algorithm"), at("medi"));
+        assert_eq!(app.field_select("inversion.algorithm"), at("medi"));
     }
 }

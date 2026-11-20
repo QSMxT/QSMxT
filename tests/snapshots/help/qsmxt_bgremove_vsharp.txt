@@ -21,35 +21,35 @@ Options:
       --output-mask <OUTPUT_MASK>
           Output eroded mask (for algorithms that erode)
 
-      --deconvolve <BOOL>
-          Undo the SMV high-pass with a truncated-SVD deconvolution (default: false)
-
-          [possible values: true, false]
-
-      --threshold <THRESHOLD>
-          Deconvolution (TSVD) threshold; only used with --deconvolve true
-
-      --max-radius <MAX_RADIUS>
-          Largest SMV kernel radius, in mm
-
-      --min-radius <MIN_RADIUS>
-          Smallest SMV kernel radius, in mm
-
-      --radius-step <MM>
-          Step between SMV kernel radii, in mm (default: 1); the radii run from --max-radius down to --min-radius
-
-      --grid <GRID>
-          Grid the background is estimated on: `isotropic` (default; spacing from --grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution
-
-          [possible values: native, finest, isotropic]
-
-      --grid-spacing <MM>
-          Isotropic working-grid spacing in mm (default 1); used with --grid isotropic
-
       --ball <BALL>
           SMV ball: `default` (the voxels within r + 1/6 mm, centre excluded; a ball fits where all of it is in the mask) or `qsmjl` (QSM.jl's: within r, centre included)
 
           [possible values: default, qsmjl]
+
+      --vsharp-deconvolve <BOOL>
+          Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false)
+
+          [possible values: true, false]
+
+      --vsharp-threshold <VSHARP_THRESHOLD>
+          V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true (default: 0.05)
+
+      --vsharp-max-radius <VSHARP_MAX_RADIUS>
+          V-SHARP: Largest SMV kernel radius, in mm (default: 12)
+
+      --vsharp-min-radius <VSHARP_MIN_RADIUS>
+          V-SHARP: Smallest SMV kernel radius, in mm (default: 2)
+
+      --vsharp-radius-step <MM>
+          V-SHARP step between kernel radii in mm (default: 1); the radii run from --vsharp-max-radius down to --vsharp-min-radius
+
+      --vsharp-grid <VSHARP_GRID>
+          Grid V-SHARP estimates the background on: `isotropic` (default; spacing from --vsharp-grid-spacing), `native` (the acquired grid), or `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened). The local field keeps native resolution
+
+          [possible values: native, finest, isotropic]
+
+      --vsharp-grid-spacing <MM>
+          V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic
 
   -h, --help
           Print help

@@ -39,7 +39,7 @@ pub struct Row {
 /// What a susceptibility map was referenced to, from its JSON sidecar, where referencing recorded
 /// it.
 pub fn reference_from_sidecar(sidecar: &Path) -> Option<ReferenceInfo> {
-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(sidecar).ok()?).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(sidecar).ok()?).ok()?;
     ReferenceInfo::from_fields(v.as_object()?)
 }
 
@@ -120,7 +120,7 @@ pub fn write_group_table(
     let mut body = String::new();
     for key in keys {
         let path = output.segmentation_stats_path(key);
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let Ok(text) = fs_err::read_to_string(&path) else { continue };
         let entities = format!(
             "{}\t{}\t{}\t{}\t{}\t{}\t",
             key.subject,
@@ -140,7 +140,7 @@ pub fn write_group_table(
         return Ok(None);
     }
     let out = derivatives_dir.join("desc-segmentation_stats.tsv");
-    std::fs::write(&out, format!("{GROUP_HEADER}{HEADER}{body}"))?;
+    fs_err::write(&out, format!("{GROUP_HEADER}{HEADER}{body}"))?;
     Ok(Some(out))
 }
 

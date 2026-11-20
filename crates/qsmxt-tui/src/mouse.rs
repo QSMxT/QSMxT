@@ -140,9 +140,7 @@ fn key(code: KeyCode) -> KeyEvent {
 impl App {
     /// Whether a pop-up has the keys.
     fn popup_open(&self) -> bool {
-        self.update_modal.is_some() || self.news_modal.is_some() || self.tip_modal.is_some()
-            || self.algo_modal.is_some() || self.rec_modal.is_some() || self.refs.modal.is_some()
-            || self.pipelines.preview.is_some()
+        self.top_modal().is_some()
     }
 
     pub fn handle_mouse(&mut self, ev: MouseEvent) {
@@ -318,19 +316,23 @@ impl App {
 
     /// Press button `i` of the pop-up that has the keys: select it, then Enter.
     fn press_button(&mut self, i: usize) {
-        if self.update_modal.is_some() || self.news_modal.is_some() {
-            return;
-        }
-        if let Some(m) = self.tip_modal.as_mut() {
-            m.cursor = i;
-        } else if self.rec_modal.is_some() || self.refs.modal.is_some() {
+        use crate::app::ModalKind as M;
+        match self.top_modal() {
+            Some(M::Tip) => {
+                if let Some(m) = self.tip_modal.as_mut() {
+                    m.cursor = i;
+                }
+            }
             // Apply, then Keep mine.
-            self.handle_key(key(KeyCode::Char(if i == 0 { 'a' } else { 'k' })));
-            return;
-        } else if let Some(m) = self.pipelines.preview.as_mut() {
-            m.button = i;
-        } else {
-            return;
+            Some(M::Recommendations | M::References) => {
+                return self.handle_key(key(KeyCode::Char(if i == 0 { 'a' } else { 'k' })));
+            }
+            Some(M::PipelinePreview) => {
+                if let Some(m) = self.pipelines.preview.as_mut() {
+                    m.button = i;
+                }
+            }
+            Some(M::Update | M::News | M::Options) | None => return,
         }
         self.handle_key(key(KeyCode::Enter));
     }
@@ -435,7 +437,7 @@ mod tests {
         assert!(app.algo_modal.is_some(), "one click highlights");
         click(&mut app, "▶ tkd");
         assert!(app.algo_modal.is_none(), "the second chooses");
-        assert_eq!(app.field_select("qsm_algorithm"), crate::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == "tkd").unwrap());
+        assert_eq!(app.field_select("inversion.algorithm"), crate::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == "tkd").unwrap());
         // HEIDI with TKD opens the cone threshold it requires, then HEIDI's reference pop-up
         // (LSQR as the authors' seed).
         click(&mut app, "HEIDI");
@@ -456,7 +458,7 @@ mod tests {
         let mut app = App::new_for_trial();
         click(&mut app, "3 Reconstruction");
         click(&mut app, "   Inversion ");
-        let before = app.field_select("qsm_algorithm");
+        let before = app.field_select("inversion.algorithm");
         click(&mut app, "QSM inversion");
         assert!(app.algo_modal.is_some());
         click(&mut app, "Esc cancel");
@@ -464,7 +466,7 @@ mod tests {
         click(&mut app, "1 Input");
         assert!(app.algo_modal.is_none(), "a click outside closes it");
         assert_eq!(app.active_tab, TAB_RECONSTRUCTION, "and does nothing else");
-        assert_eq!(app.field_select("qsm_algorithm"), before, "nothing is chosen");
+        assert_eq!(app.field_select("inversion.algorithm"), before, "nothing is chosen");
     }
 
     #[test]

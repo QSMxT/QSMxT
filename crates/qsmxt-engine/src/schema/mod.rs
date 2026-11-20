@@ -28,6 +28,8 @@ mod ranges;
 mod regular;
 mod table;
 mod view;
+#[cfg(test)]
+mod default_wording_tests;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -404,6 +406,8 @@ pub(crate) struct Def {
     also: &'static [Section],
     browser: Browser,
     when: Option<fn(&view::Ctx) -> bool>,
+    /// The method choice this is a parameter of ([`Def::of`]).
+    of: Option<Of>,
     /// The flag's wording and parsing where its type does not imply them ([`cli`]).
     cli: cli::FlagSpec,
 }
@@ -413,7 +417,49 @@ pub(crate) fn d(path: &'static str, section: Section, label: &'static str, help:
         path, section, label, help, ty, value: None, full: None, gui_help: None, gui_value: None, gui_options: Vec::new(), context: None,
         item: None, browser_help: None, basic: false, units: None, min: None, max: None, exclusive_min: false, exclusive_max: false,
         off: None, optional: false, flag: None, parent: None, also: &[], browser: Browser::Available, when: None,
-        cli: Default::default(),
+        of: None, cli: Default::default(),
+    }
+}
+
+/// A method choice whose methods have parameters of their own, named after the method in their
+/// path: `inversion.rts.pad` is a parameter of `rts`, `bg_removal.pdf.tol` of `pdf`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Of {
+    /// The QSM inversion.
+    Inversion,
+    /// The QSM inversion, or QSMART's inner inversion.
+    InversionOrQsmart,
+    /// The background field removal.
+    Background,
+    /// The χ-separation.
+    Separation,
+}
+
+impl Of {
+    /// The choice's setting.
+    fn choice(self) -> &'static str {
+        match self {
+            Of::Inversion | Of::InversionOrQsmart => "inversion.algorithm",
+            Of::Background => "bg_removal.algorithm",
+            Of::Separation => "separation.algorithm",
+        }
+    }
+
+    /// Whether `method` is the one chosen.
+    fn chosen(self, x: &view::Ctx, method: &str) -> bool {
+        match self {
+            Of::Inversion => x.inv(method),
+            Of::InversionOrQsmart => x.inv(method) || x.qsmart_inner(method),
+            Of::Background => x.bf(method),
+            Of::Separation => x.sep(method),
+        }
+    }
+}
+
+impl Def {
+    /// Whether the method this is a parameter of is the one chosen ([`Def::of`]).
+    pub(crate) fn method_chosen(&self, x: &view::Ctx) -> bool {
+        self.of.is_none_or(|of| of.chosen(x, &self.path.split('.').nth(1).expect("a method's parameter").replace('_', "-")))
     }
 }
 
@@ -459,6 +505,9 @@ impl Def {
     }
     fn unavailable_in_browser(mut self) -> Self { self.browser = Browser::Unavailable; self }
     fn when(mut self, f: fn(&view::Ctx) -> bool) -> Self { self.when = Some(f); self }
+    /// A parameter of the method its path names, under `of`'s choice: listed under that choice
+    /// and shown while the method is chosen.
+    fn of(mut self, of: Of) -> Self { self.parent = Some(of.choice()); self.of = Some(of); self }
 }
 
 /// Split a trailing link off an option's help: "… — https://doi.org/x" → ("…", link).
@@ -693,8 +742,12 @@ pub fn get(config: &PipelineConfig, path: &str) -> Option<Value> {
     let v = serde_json::to_value(config).ok()?;
     let (parent, key) = path.rsplit_once('.').unwrap_or(("", path));
     let obj = if parent.is_empty() { Some(&v) } else { lookup(&v, parent) }?;
-    // An unset optional value is left out of the serialised config.
-    obj.as_object().map(|o| o.get(key).cloned().unwrap_or(Value::Null))
+    match obj.as_object()?.get(key) {
+        Some(value) => Some(value.clone()),
+        // An unset optional value is left out of the serialised config: a setting the schema
+        // knows reads as unset, any other name as no setting (a typo in the last part).
+        None => defs().iter().any(|d| d.path == path).then_some(Value::Null),
+    }
 }
 
 /// Set the value at `path` in `config`. The change goes through the config's own

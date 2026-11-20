@@ -57,121 +57,92 @@ pub struct SlurmOptions {
     pub pipeline: RunSettings,
 }
 
+/// The command the form runs, as a shell takes it: [`command_words`], each quoted where a shell
+/// would split or expand it (an `--include sub-1*` pattern, a path with a space).
 pub fn build_command_string(app: &App) -> String {
+    qsmxt_engine::command::to_shell(&command_words(app))
+}
+
+/// The words of the command the form runs, unquoted: `qsmxt run` (or `slurm`) and its arguments.
+pub fn command_words(app: &App) -> Vec<String> {
     let form = &app.form;
     let is_slurm = form.execution_mode == 1;
-    let mut parts = vec![
-        "qsmxt".to_string(),
-        if is_slurm { "slurm".to_string() } else { "run".to_string() },
-    ];
+    let mut words: Vec<String> = vec!["qsmxt".into(), if is_slurm { "slurm" } else { "run" }.into()];
+    let mut say = |w: &[&str]| words.extend(w.iter().map(|w| w.to_string()));
 
     // Positional args
-    if form.bids_dir.is_empty() {
-        parts.push("<bids_dir>".to_string());
-    } else {
-        parts.push(form.bids_dir.clone());
-    }
+    say(&[if form.bids_dir.is_empty() { "<bids_dir>" } else { &form.bids_dir }]);
     if !form.output_dir.is_empty() {
-        parts.push(form.output_dir.clone());
+        say(&[&form.output_dir]);
     }
-
-    // Config file
     if !form.config_file.is_empty() {
-        parts.push(format!("--config {}", form.config_file));
+        say(&["--config", &form.config_file]);
     }
 
     // Filters (from tree selection / include/exclude patterns)
     let (include, exclude) = app.filter_state.get_include_exclude();
-    if let Some(ref inc) = include {
-        parts.push(format!("--include {}", inc.join(" ")));
-    }
-    if let Some(ref exc) = exclude {
-        parts.push(format!("--exclude {}", exc.join(" ")));
+    for (flag, patterns) in [("--include", include), ("--exclude", exclude)] {
+        if let Some(patterns) = patterns {
+            say(&[flag]);
+            say(&patterns.iter().map(String::as_str).collect::<Vec<_>>());
+        }
     }
     if !app.filter_state.num_echoes.is_empty() {
-        parts.push(format!("--num-echoes {}", app.filter_state.num_echoes));
+        say(&["--num-echoes", &app.filter_state.num_echoes]);
     }
 
-    // Pipeline flags — delegate to qsmxt-engine library
+    // The pipeline's flags, as the engine says them (after its `qsmxt run <bids_dir>`).
     match app.current_config().as_ref() {
-        Err(e) => parts.push(format!("<invalid setting: {e}>")),
-        Ok(config) => {
-        let lib_cmd = qsmxt_engine::generate_command(config);
-        // The library generates "qsmxt run <bids_dir> [flags]"
-        // Strip the prefix and append only the flags
-        let flags = lib_cmd.strip_prefix("qsmxt run <bids_dir>").unwrap_or(&lib_cmd).trim();
-        if !flags.is_empty() {
-            for flag in flags.split_whitespace() {
-                parts.push(flag.to_string());
-            }
-        }
-        }
+        Err(e) => say(&[&format!("<invalid setting: {e}>")]),
+        Ok(config) => say(&qsmxt_engine::command::command_args(config).iter().skip(3).map(String::as_str).collect::<Vec<_>>()),
     }
 
-    // TUI-specific execution flags (not handled by the library)
+    // The run's own options (not the engine's).
+    let defaults = super::app::RunForm::default();
+    let changed = |current: &str, default: &str| current.trim() != default.trim();
     if is_slurm {
-        // SLURM-specific flags
-        if !form.slurm_account.trim().is_empty() {
-            parts.push(format!("--account {}", form.slurm_account.trim()));
-        } else {
-            parts.push("--account <account>".to_string());
-        }
-        let slurm_defaults = super::app::RunForm::default();
+        let account = form.slurm_account.trim();
+        say(&["--account", if account.is_empty() { "<account>" } else { account }]);
         if !form.slurm_partition.trim().is_empty() {
-            parts.push(format!("--partition {}", form.slurm_partition.trim()));
+            say(&["--partition", form.slurm_partition.trim()]);
         }
-        push_if_changed(&mut parts, "--time", &form.slurm_time, &slurm_defaults.slurm_time);
+        if changed(&form.slurm_time, &defaults.slurm_time) {
+            say(&["--time", form.slurm_time.trim()]);
+        }
         if !form.slurm_mem.trim().is_empty() {
-            parts.push(format!("--mem {}", form.slurm_mem.trim()));
+            say(&["--mem", form.slurm_mem.trim()]);
         }
-        push_if_changed(&mut parts, "--cpus-per-task", &form.slurm_cpus, &slurm_defaults.slurm_cpus);
-        if form.slurm_submit {
-            parts.push("--submit".to_string());
+        if changed(&form.slurm_cpus, &defaults.slurm_cpus) {
+            say(&["--cpus-per-task", form.slurm_cpus.trim()]);
         }
-        if form.force { parts.push("--force".to_string()); }
-        if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
-        if form.debug { parts.push("--debug".to_string()); }
-        push_dicom_export(&mut parts, app);
+        if form.slurm_submit { say(&["--submit"]); }
+        if form.force { say(&["--force"]); }
+        if form.clean_intermediates { say(&["--clean-intermediates"]); }
+        if form.debug { say(&["--debug"]); }
     } else {
-        if form.dry_run {
-            parts.push("--dry".to_string());
-        }
-        if form.debug {
-            parts.push("--debug".to_string());
-        }
+        if form.dry_run { say(&["--dry"]); }
+        if form.debug { say(&["--debug"]); }
         if !form.n_procs.trim().is_empty() {
-            parts.push(format!("--n-procs {}", form.n_procs.trim()));
+            say(&["--n-procs", form.n_procs.trim()]);
         }
         match form.mem_limit() {
-            (Some(gb), _) => parts.push(format!("--mem-limit-gb {gb}")),
-            (None, true) => parts.push("--no-mem-limit".to_string()),
+            (Some(gb), _) => say(&["--mem-limit-gb", &gb.to_string()]),
+            (None, true) => say(&["--no-mem-limit"]),
             (None, false) => {}
         }
-        if form.force { parts.push("--force".to_string()); }
-        if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
-        push_dicom_export(&mut parts, app);
+        if form.force { say(&["--force"]); }
+        if form.clean_intermediates { say(&["--clean-intermediates"]); }
     }
-
-    parts.join(" ")
-}
-
-/// DICOM export's run settings — the same in both modes (under SLURM each run's job exports).
-fn push_dicom_export(parts: &mut Vec<String>, app: &App) {
-    let form = &app.form;
+    // DICOM export's run settings — the same in both modes (under SLURM each run's job exports).
     if form.export_dicom {
         if let Some(p) = parse_optional_path(&form.source_dicom) {
-            parts.push(format!("--source-dicom {}", p.display()));
+            say(&["--source-dicom", &p.display().to_string()]);
         }
         if let Some(o) = app.dicom_outputs() {
-            parts.push(format!("--dicom-outputs {}", o.join(",")));
+            say(&["--dicom-outputs", &o.join(",")]);
         }
     }
-}
-
-fn push_if_changed(parts: &mut Vec<String>, flag: &str, current: &str, default: &str) {
-    if current.trim() != default.trim() {
-        parts.push(format!("{} {}", flag, current.trim()));
-    }
+    words
 }
 
 pub fn build_run_args(app: &App) -> qsmxt_io::Result<RunOptions> {
@@ -274,16 +245,6 @@ fn parse_optional_path(s: &str) -> Option<PathBuf> {
     }
 }
 
-#[allow(dead_code)]
-fn parse_optional_string_vec(s: &str) -> Option<Vec<String>> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.split_whitespace().map(String::from).collect())
-    }
-}
-
 /// The value of text typed on a row the TUI builds by hand: `None` when blank, which leaves the
 /// run's default, else what it reads as. Text that reads as nothing is an error naming the flag
 /// and the text, as the command line refuses it: the run never goes ahead with something other
@@ -346,7 +307,7 @@ pub fn build_slurm_args(app: &App) -> qsmxt_io::Result<SlurmOptions> {
 
 /// The methods text (Markdown) for the current settings, or why the settings are invalid.
 pub fn methods_text(app: &App) -> Result<String, String> {
-    app.current_config().as_ref().as_ref().map(qsmxt_io::pipeline::methods::generate_methods).map_err(|e| e.clone())
+    app.current_config().as_ref().as_ref().map(qsmxt_engine::methods::generate_methods).map_err(|e| e.clone())
 }
 
 /// The settings of the form's settings store the run takes: those changed from their defaults
@@ -394,7 +355,8 @@ fn with_form(mut config: PipelineConfig, own: &[(&'static str, serde_json::Value
 /// refused as it would be there. Any other setting is as it is. Kept until the form's settings
 /// are all the config's.
 fn as_spelled(path: &str, value: serde_json::Value) -> qsmxt_io::Result<serde_json::Value> {
-    use qsmxt_io::pipeline::config::{hole_closing_warnings, parse_mask_sections, MaskOp, MaskSection};
+    use qsmxt_io::pipeline::config::{hole_closing_warnings, parse_mask_sections};
+    use qsmxt_engine::{MaskOp, MaskSection};
     let unreadable = |e: serde_json::Error| qsmxt_io::error::QsmxtError::Config(format!("{path}: {e}"));
     let spell = |sections: &[MaskSection]| -> Vec<String> {
         sections.iter().map(|section| {
@@ -469,6 +431,18 @@ pub fn config_from_app(app: &App) -> qsmxt_io::Result<PipelineConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The command shown runs as it reads: a path with a space and an `--include` glob are
+    /// quoted, so a shell neither splits nor expands them.
+    #[test]
+    fn the_command_quotes_paths_and_patterns() {
+        let mut app = App::new();
+        app.form.bids_dir = "/data/my bids".into();
+        let cmd = build_command_string(&app);
+        assert!(cmd.starts_with("qsmxt run '/data/my bids'"), "{cmd}");
+        let words = command_words(&app);
+        assert_eq!(words[2], "/data/my bids", "the words are unquoted");
+    }
     use super::super::app::App;
 
     /// The config a run gets from its arguments.
@@ -489,13 +463,13 @@ mod tests {
         for (i, &expected) in SwiUnwrap::ALL.iter().enumerate() {
             let mut app = App::new();
             app.form.settings.set("pipeline.do_swi", true);
-            app.set_field_select("swi_unwrap", i);
+            app.set_field_select("swi.unwrap", i);
             assert_eq!(config_from_app(&app).unwrap().swi.unwrap, expected, "row {i}");
         }
         for (i, &expected) in SwiScaling::ALL.iter().enumerate() {
             let mut app = App::new();
             app.form.settings.set("pipeline.do_swi", true);
-            app.set_field_select("swi_scaling", i);
+            app.set_field_select("swi.scaling", i);
             assert_eq!(config_from_app(&app).unwrap().swi.scaling, expected, "row {i}");
         }
         // The first entry is the default.
@@ -528,8 +502,8 @@ mod tests {
     #[test]
     fn r2primenet_settings_reach_config_and_args() {
         let mut app = default_app();
-        app.toggle_field("r2primenet_ignore_field_mismatch");
-        *app.field_text_mut("r2primenet_patch").unwrap() = "128 128 64".into();
+        app.toggle_field("separation.r2primenet.ignore_field_mismatch");
+        *app.field_text_mut("separation.r2primenet.patch").unwrap() = "128 128 64".into();
         assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, qsmxt_engine::R2primenetConfig::default(),
                    "no R2', nothing passed");
 
@@ -537,8 +511,8 @@ mod tests {
         app.form.settings.set("pipeline.do_r2primemap", true);
         let d = qsmxt_engine::R2primenetConfig::default();
         assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, d);
-        app.toggle_field("r2primenet_ignore_field_mismatch");
-        *app.field_text_mut("r2primenet_patch").unwrap() = "128 128 64".into();
+        app.toggle_field("separation.r2primenet.ignore_field_mismatch");
+        *app.field_text_mut("separation.r2primenet.patch").unwrap() = "128 128 64".into();
         let c = config_from_app(&app).unwrap();
         assert!(c.separation.r2primenet.ignore_field_mismatch);
         assert_eq!(c.separation.r2primenet.patch, [128, 128, 64]);
@@ -556,21 +530,21 @@ mod tests {
             crate::app::PipelineRow::Param { field, .. } | crate::app::PipelineRow::AlgoSelect { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
-        assert!(fields(&app).contains(&"vsharp_grid".to_string()));
+        assert!(fields(&app).contains(&"bg_removal.vsharp.grid".to_string()));
         let d = qsmxt_engine::VsharpConfig::default();
         assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, d.grid);
         let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
         assert!(!command(&app).contains("--vsharp-grid "));
-        app.set_field_select("vsharp_grid", 0);
-        assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
+        app.set_field_select("bg_removal.vsharp.grid", 0);
+        assert!(!fields(&app).contains(&"bg_removal.vsharp.grid_spacing".to_string()));
         assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_engine::VsharpGrid::Native);
         assert!(command(&app).contains("--vsharp-grid native"));
-        app.set_field_select("vsharp_grid", 1);
+        app.set_field_select("bg_removal.vsharp.grid", 1);
         assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_engine::VsharpGrid::Finest);
-        assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
-        app.set_field_select("vsharp_grid", 2);
-        assert!(fields(&app).contains(&"vsharp_grid_spacing".to_string()));
-        *app.field_text_mut("vsharp_grid_spacing").unwrap() = "0.8".into();
+        assert!(!fields(&app).contains(&"bg_removal.vsharp.grid_spacing".to_string()));
+        app.set_field_select("bg_removal.vsharp.grid", 2);
+        assert!(fields(&app).contains(&"bg_removal.vsharp.grid_spacing".to_string()));
+        *app.field_text_mut("bg_removal.vsharp.grid_spacing").unwrap() = "0.8".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!((c.bg_removal.vsharp.grid, c.bg_removal.vsharp.grid_spacing), (qsmxt_engine::VsharpGrid::Isotropic, 0.8));
         assert!(!command(&app).contains("--vsharp-grid "), "isotropic is the default");
@@ -583,10 +557,10 @@ mod tests {
     fn vsharp_deconvolve_toggle() {
         let mut app = default_app();
         let shows_threshold = |app: &App| app.pipeline_rows().iter().any(|r|
-            matches!(r, crate::app::PipelineRow::Param { field: "vsharp_threshold", .. }));
+            matches!(r, crate::app::PipelineRow::Param { field: "bg_removal.vsharp.threshold", .. }));
         assert!(!config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert!(!shows_threshold(&app));
-        app.toggle_field("vsharp_deconvolve");
+        app.toggle_field("bg_removal.vsharp.deconvolve");
         assert!(shows_threshold(&app));
         assert!(config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert!(qsmxt_engine::generate_command(&config_from_app(&app).unwrap()).contains("--vsharp-deconvolve"));
@@ -597,14 +571,14 @@ mod tests {
     fn two_pass_mode_setting() {
         let mut app = default_app();
         let shown = |app: &App| app.pipeline_rows().iter()
-            .any(|r| matches!(r, crate::app::PipelineRow::AlgoSelect { field: "two_pass_mode", .. }));
+            .any(|r| matches!(r, crate::app::PipelineRow::AlgoSelect { field: "masking.two_pass_mode", .. }));
         assert!(!shown(&app));
-        app.toggle_field("two_pass");
+        app.toggle_field("masking.two_pass");
         assert!(shown(&app));
         let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
         assert!(!command(&app).contains("--two-pass-mode"), "the default stays off the command");
         assert_eq!(config_from_app(&app).unwrap().masking.two_pass_mode, qsmxt_engine::TwoPassMode::Local);
-        app.set_field_select("two_pass_mode", 1);
+        app.set_field_select("masking.two_pass_mode", 1);
         assert_eq!(config_from_app(&app).unwrap().masking.two_pass_mode, qsmxt_engine::TwoPassMode::Original);
         assert!(command(&app).contains("--two-pass-mode original"));
     }
@@ -619,29 +593,29 @@ mod tests {
             | crate::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
-        assert!(fields(&app).contains(&"inhomogeneity_method".to_string()));
-        assert!(fields(&app).contains(&"homogeneity_sigma_mm".to_string()));
-        assert!(!fields(&app).contains(&"n4_shrink_factor".to_string()), "makehomogeneous has no N4 rows");
+        assert!(fields(&app).contains(&"masking.inhomogeneity_method".to_string()));
+        assert!(fields(&app).contains(&"homogeneity.sigma_mm".to_string()));
+        assert!(!fields(&app).contains(&"n4.shrink_factor".to_string()), "makehomogeneous has no N4 rows");
         let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
         assert!(!command(&app).contains("--inhomogeneity-method"), "default stays off the command");
-        app.set_field_select("inhomogeneity_method", 1);
-        assert!(fields(&app).contains(&"n4_max_iterations".to_string()));
-        assert!(!fields(&app).contains(&"homogeneity_sigma_mm".to_string()));
-        *app.field_text_mut("n4_max_iterations").unwrap() = "20 10".into();
-        *app.field_text_mut("n4_mesh").unwrap() = "2 2 1".into();
-        *app.field_text_mut("n4_shrink_factor").unwrap() = "2".into();
-        *app.field_text_mut("homogeneity_sigma_mm").unwrap() = "3".into();
-        assert!(fields(&app).contains(&"n4_geometry".to_string()));
+        app.set_field_select("masking.inhomogeneity_method", 1);
+        assert!(fields(&app).contains(&"n4.max_iterations".to_string()));
+        assert!(!fields(&app).contains(&"homogeneity.sigma_mm".to_string()));
+        *app.field_text_mut("n4.max_iterations").unwrap() = "20 10".into();
+        *app.field_text_mut("n4.mesh").unwrap() = "2 2 1".into();
+        *app.field_text_mut("n4.shrink_factor").unwrap() = "2".into();
+        *app.field_text_mut("homogeneity.sigma_mm").unwrap() = "3".into();
+        assert!(fields(&app).contains(&"masking.n4_geometry".to_string()));
         assert_eq!(config_from_app(&app).unwrap().masking.n4_geometry, qsmxt_engine::N4Geometry::Scanner);
-        app.set_field_select("n4_geometry", 1);
+        app.set_field_select("masking.n4_geometry", 1);
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.masking.n4_geometry, qsmxt_engine::N4Geometry::MakeNii);
         assert_eq!(c.masking.inhomogeneity_method, qsmxt_engine::InhomogeneityMethod::N4);
         assert_eq!((c.n4.max_iterations.clone(), c.n4.mesh, c.n4.shrink_factor), (vec![20, 10], [2, 2, 1], 2));
         assert!(command(&app).contains("--inhomogeneity-method n4"));
         assert_eq!(c.homogeneity, qsmxt_engine::HomogeneityConfig::default(), "makehomogeneous's settings stay off with N4");
-        app.toggle_field("inhomogeneity_correction");
-        assert!(!fields(&app).contains(&"inhomogeneity_method".to_string()));
+        app.toggle_field("masking.inhomogeneity_correction");
+        assert!(!fields(&app).contains(&"masking.inhomogeneity_method".to_string()));
         assert_eq!(config_from_app(&app).unwrap().n4, qsmxt_engine::N4Config::default(), "off: N4's settings do not apply");
     }
 
@@ -654,24 +628,24 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
-        assert!(!fields(&app).contains(&"laplacian_solver".to_string()), "ROMEO has no solver");
-        app.set_field_select("unwrapping_algorithm", 1); // laplacian
-        assert!(fields(&app).contains(&"laplacian_solver".to_string()));
-        assert!(!fields(&app).contains(&"laplacian_fft_pad".to_string()), "dct has no pad");
+        assert!(!fields(&app).contains(&"field_mapping.laplacian_solver".to_string()), "ROMEO has no solver");
+        app.set_field_select("field_mapping.unwrapping_algorithm", 1); // laplacian
+        assert!(fields(&app).contains(&"field_mapping.laplacian_solver".to_string()));
+        assert!(!fields(&app).contains(&"field_mapping.laplacian_fft_pad".to_string()), "dct has no pad");
         assert!(!command(&app).contains("--laplacian-solver"), "default stays off the command");
-        app.set_field_select("laplacian_solver", 1); // fft
-        assert!(fields(&app).contains(&"laplacian_fft_pad".to_string()));
+        app.set_field_select("field_mapping.laplacian_solver", 1); // fft
+        assert!(fields(&app).contains(&"field_mapping.laplacian_fft_pad".to_string()));
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.laplacian_solver, qsmxt_engine::LaplacianSolver::Fft);
         assert_eq!(c.field_mapping.laplacian_fft_pad, [64; 3]);
         assert!(!command(&app).contains("--laplacian-fft-pad"), "default pad not emitted");
-        *app.field_text_mut("laplacian_fft_pad").unwrap() = "64 64 32".into();
+        *app.field_text_mut("field_mapping.laplacian_fft_pad").unwrap() = "64 64 32".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [64, 64, 32]);
         assert!(command(&app).contains("--laplacian-solver fft") && command(&app).contains("--laplacian-fft-pad 64 64 32"), "{}", command(&app));
         // QSM.jl's MGPCG: no pad, reaches the config and the command.
         let mgpcg = super::super::settings_rows::options("field_mapping.laplacian_solver").0.iter().position(|o| *o == "mgpcg").unwrap();
-        app.set_field_select("laplacian_solver", mgpcg);
-        assert!(!fields(&app).contains(&"laplacian_fft_pad".to_string()), "mgpcg has no pad");
+        app.set_field_select("field_mapping.laplacian_solver", mgpcg);
+        assert!(!fields(&app).contains(&"field_mapping.laplacian_fft_pad".to_string()), "mgpcg has no pad");
         assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_solver, qsmxt_engine::LaplacianSolver::Mgpcg);
         assert!(command(&app).contains("--laplacian-solver mgpcg") && !command(&app).contains("--laplacian-fft-pad"));
     }
@@ -687,26 +661,26 @@ mod tests {
             | crate::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
-        assert!(!fields(&app).contains(&"prelude_labelling".to_string()), "ROMEO has no PRELUDE settings");
+        assert!(!fields(&app).contains(&"field_mapping.prelude.labelling".to_string()), "ROMEO has no PRELUDE settings");
         let command = |app: &App| qsmxt_engine::generate_command(&config_from_app(app).unwrap());
-        app.set_field_select("unwrapping_algorithm", 2); // prelude
+        app.set_field_select("field_mapping.unwrapping_algorithm", 2); // prelude
         let f = fields(&app);
-        for shown in ["prelude_labelling", "prelude_partitions", "phase_offset_removal"] {
+        for shown in ["field_mapping.prelude.labelling", "field_mapping.prelude.num_phase_partitions", "field_mapping.phase_offset_removal"] {
             assert!(f.contains(&shown.to_string()), "{shown}: {f:?}");
         }
-        assert!(!f.iter().any(|f| f.starts_with("romeo_") || f.starts_with("laplacian_solver")), "{f:?}");
+        assert!(!f.iter().any(|f| f.starts_with("field_mapping.romeo.") || f.starts_with("field_mapping.laplacian_solver")), "{f:?}");
         assert!(command(&app).contains("--unwrapping-algorithm prelude"));
         assert!(!command(&app).contains("--prelude-"), "defaults stay off the command");
-        app.set_field_select("prelude_labelling", 2);
-        *app.field_text_mut("prelude_partitions").unwrap() = "6".into();
-        app.toggle_field("bipolar_correction");
+        app.set_field_select("field_mapping.prelude.labelling", 2);
+        *app.field_text_mut("field_mapping.prelude.num_phase_partitions").unwrap() = "6".into();
+        app.toggle_field("field_mapping.bipolar_correction");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::Prelude);
         assert_eq!(c.field_mapping.prelude.labelling, qsmxt_engine::PreludeLabelling::Volume);
         assert_eq!(c.field_mapping.prelude.num_phase_partitions, 6);
         assert!(c.field_mapping.bipolar_correction, "bipolar correction applies with PRELUDE");
         // Back to ROMEO: PRELUDE's settings are not passed.
-        app.set_field_select("unwrapping_algorithm", 0);
+        app.set_field_select("field_mapping.unwrapping_algorithm", 0);
         assert!(!command(&app).contains("--prelude-"));
     }
 
@@ -715,16 +689,16 @@ mod tests {
     #[test]
     fn medi_region_growing_choice() {
         let mut app = default_app();
-        app.set_field_select("unwrapping_algorithm", 3); // medi-region-growing
+        app.set_field_select("field_mapping.unwrapping_algorithm", 3); // medi-region-growing
         let f: Vec<String> = app.pipeline_rows().iter().filter_map(|r| match r {
             crate::app::PipelineRow::AlgoSelect { field, .. }
             | crate::app::PipelineRow::Param { field, .. }
             | crate::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect();
-        assert!(f.contains(&"phase_offset_removal".to_string()), "{f:?}");
-        assert!(!f.iter().any(|f| f.starts_with("romeo_") || f.starts_with("prelude_") || f.starts_with("laplacian_")), "{f:?}");
-        app.toggle_field("bipolar_correction");
+        assert!(f.contains(&"field_mapping.phase_offset_removal".to_string()), "{f:?}");
+        assert!(!f.iter().any(|f| f.starts_with("field_mapping.romeo.") || f.starts_with("field_mapping.prelude.") || f.starts_with("field_mapping.laplacian_")), "{f:?}");
+        app.toggle_field("field_mapping.bipolar_correction");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.unwrapping_algorithm, qsmxt_engine::UnwrappingAlgorithm::MediRegionGrowing);
         assert!(c.field_mapping.bipolar_correction);
@@ -738,15 +712,15 @@ mod tests {
             crate::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
-        assert!(!toggles(&app).contains(&"laplacian_unmasked".to_string()), "ROMEO has no Laplacian unwrapping");
+        assert!(!toggles(&app).contains(&"field_mapping.laplacian_unmasked".to_string()), "ROMEO has no Laplacian unwrapping");
         app.form.settings.set("field_mapping.laplacian_unmasked", true);
         assert!(!config_from_app(&app).unwrap().field_mapping.laplacian_unmasked, "not passed under ROMEO");
         app.form.settings.set("field_mapping.laplacian_unmasked", false);
-        app.set_field_select("unwrapping_algorithm", 1); // laplacian
-        assert!(toggles(&app).contains(&"laplacian_unmasked".to_string()));
+        app.set_field_select("field_mapping.unwrapping_algorithm", 1); // laplacian
+        assert!(toggles(&app).contains(&"field_mapping.laplacian_unmasked".to_string()));
         assert!(!config_from_app(&app).unwrap().field_mapping.laplacian_unmasked);
         assert!(!build_command_string(&app).contains("--laplacian-unmasked"));
-        app.toggle_field("laplacian_unmasked");
+        app.toggle_field("field_mapping.laplacian_unmasked");
         assert!(config_from_app(&app).unwrap().field_mapping.laplacian_unmasked);
         assert!(build_command_string(&app).contains("--laplacian-unmasked"));
     }
@@ -758,31 +732,31 @@ mod tests {
         let mut app = default_app();
         let fields = |app: &App| app.pipeline_rows().iter().filter_map(crate::app::row_field)
             .map(str::to_string).collect::<Vec<_>>();
-        assert!(fields(&app).contains(&"phase_offset_removal".to_string()));
+        assert!(fields(&app).contains(&"field_mapping.phase_offset_removal".to_string()));
         app.form.settings.set("field_mapping.b0_estimation", "complex-fit");
         let f = fields(&app);
-        assert!(f.contains(&"complex_fit_reltol".to_string()) && !f.contains(&"phase_offset_removal".to_string())
-            && !f.contains(&"linear_fit_estimate_offset".to_string()), "{f:?}");
+        assert!(f.contains(&"field_mapping.complex_fit.reltol".to_string()) && !f.contains(&"field_mapping.phase_offset_removal".to_string())
+            && !f.contains(&"field_mapping.linear_fit.estimate_offset".to_string()), "{f:?}");
         let c = config_from_app(&app).unwrap();
         assert_eq!((c.field_mapping.b0_estimation, c.field_mapping.complex_fit.clone()),
                    (qsmxt_engine::B0Estimation::ComplexFit, qsmxt_engine::ComplexFitConfig::default()));
-        *app.field_text_mut("complex_fit_max_iter").unwrap() = "5".into();
+        *app.field_text_mut("field_mapping.complex_fit.max_iter").unwrap() = "5".into();
         assert_eq!(config_from_app(&app).unwrap().field_mapping.complex_fit.max_iter, 5);
 
         app.set_qsm_algorithm(crate::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "medi").unwrap());
-        assert!(fields(&app).contains(&"medi_lambda_csf".to_string()));
-        *app.field_text_mut("medi_lambda_csf").unwrap() = "50".into();
-        *app.field_text_mut("medi_zeropad").unwrap() = "2 0 2".into();
-        app.toggle_field("medi_csf_erode");
+        assert!(fields(&app).contains(&"inversion.medi.lambda_csf".to_string()));
+        *app.field_text_mut("inversion.medi.lambda_csf").unwrap() = "50".into();
+        *app.field_text_mut("inversion.medi.zeropad").unwrap() = "2 0 2".into();
+        app.toggle_field("inversion.medi.csf_erode");
         let m = config_from_app(&app).unwrap().inversion.medi;
         assert_eq!((m.csf, m.lambda_csf, m.csf_erode, m.zeropad), (true, 50.0, false, [2, 0, 2]));
-        app.toggle_field("medi_csf");
-        assert!(!fields(&app).contains(&"medi_lambda_csf".to_string()));
+        app.toggle_field("inversion.medi.csf");
+        assert!(!fields(&app).contains(&"inversion.medi.lambda_csf".to_string()));
         assert!(!config_from_app(&app).unwrap().inversion.medi.csf);
 
         app.set_qsm_algorithm(crate::app::QSM_ALGO_OPTIONS.iter().position(|o| *o == "tfi").unwrap());
-        app.toggle_field("tfi_merit");
-        app.toggle_field("tfi_linear");
+        app.toggle_field("inversion.tfi.merit");
+        app.toggle_field("inversion.tfi.linear");
         let t = config_from_app(&app).unwrap().inversion.tfi;
         assert_eq!((t.merit, t.linear), (false, false));
     }
@@ -797,20 +771,20 @@ mod tests {
             | crate::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
-        assert!(!fields(&app).contains(&"robust_fit_loss".to_string()));
-        app.set_field_select("b0_estimation", 2);
+        assert!(!fields(&app).contains(&"field_mapping.robust_fit.loss".to_string()));
+        app.set_field_select("field_mapping.b0_estimation", 2);
         let f = fields(&app);
-        for name in ["robust_fit_loss", "robust_fit_tuning", "robust_fit_iterations",
-                     "robust_fit_downweight_level", "robust_fit_flag_ratio"] {
+        for name in ["field_mapping.robust_fit.loss", "field_mapping.robust_fit.tuning", "field_mapping.robust_fit.iterations",
+                     "field_mapping.robust_fit.downweight_level", "field_mapping.robust_fit.flag_ratio"] {
             assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
         }
         assert_eq!(config_from_app(&app).unwrap().field_mapping.robust_fit, qsmxt_engine::RobustFitConfig::default());
-        app.set_field_select("robust_fit_loss", 1);
-        for (field, text) in [("robust_fit_tuning", "2"), ("robust_fit_iterations", "0"),
-                              ("robust_fit_downweight_level", "0.5"), ("robust_fit_flag_ratio", "4")] {
+        app.set_field_select("field_mapping.robust_fit.loss", 1);
+        for (field, text) in [("field_mapping.robust_fit.tuning", "2"), ("field_mapping.robust_fit.iterations", "0"),
+                              ("field_mapping.robust_fit.downweight_level", "0.5"), ("field_mapping.robust_fit.flag_ratio", "4")] {
             *app.field_text_mut(field).unwrap() = text.into();
         }
-        app.toggle_field("linear_fit_estimate_offset");
+        app.toggle_field("field_mapping.linear_fit.estimate_offset");
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_estimation, qsmxt_engine::B0Estimation::RobustFit);
         assert_eq!(c.field_mapping.robust_fit, qsmxt_engine::RobustFitConfig {
@@ -829,10 +803,10 @@ mod tests {
     fn ignore_slice_gap_reaches_config_and_args() {
         let mut app = default_app();
         assert!(!config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
-        app.toggle_field("ignore_slice_gap");
+        app.toggle_field("pipeline.ignore_slice_gap");
         assert!(config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
         assert!(qsmxt_io::settings::build_config(Default::default(), &build_run_args(&{
-            let mut a = App::new(); a.form.bids_dir = "/b".into(); a.toggle_field("ignore_slice_gap"); a
+            let mut a = App::new(); a.form.bids_dir = "/b".into(); a.toggle_field("pipeline.ignore_slice_gap"); a
         }).unwrap().pipeline).unwrap().pipeline.ignore_slice_gap);
         let mut c = config_from_app(&app).unwrap();
         assert!(qsmxt_engine::generate_command(&c).contains("--ignore-slice-gap"));
@@ -851,24 +825,24 @@ mod tests {
             | crate::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
             _ => None,
         }).collect::<Vec<_>>();
-        assert!(fields(&app).contains(&"motion_correction".to_string()));
-        assert!(!fields(&app).contains(&"reg_levels".to_string()),
+        assert!(fields(&app).contains(&"motion_correction.enabled".to_string()));
+        assert!(!fields(&app).contains(&"registration.levels".to_string()),
                 "registration serves motion correction and orientation groups, and neither is on");
         assert_eq!(config_from_app(&app).unwrap().motion_correction, qsmxt_engine::MotionCorrectionConfig::default());
-        app.toggle_field("motion_correction");
-        app.set_field_select("motion_reference", 2);
-        *app.field_text_mut("motion_reference_echo").unwrap() = "2".into();
-        app.toggle_field("motion_chain");
-        *app.field_text_mut("motion_min_ncc").unwrap() = "0.9".into();
-        *app.field_text_mut("reg_levels").unwrap() = "4".into();
-        *app.field_text_mut("reg_min_overlap").unwrap() = "0.5".into();
+        app.toggle_field("motion_correction.enabled");
+        app.set_field_select("motion_correction.reference", 2);
+        *app.field_text_mut("motion_correction.reference#value").unwrap() = "2".into();
+        app.toggle_field("motion_correction.chain");
+        *app.field_text_mut("motion_correction.min_ncc").unwrap() = "0.9".into();
+        *app.field_text_mut("registration.levels").unwrap() = "4".into();
+        *app.field_text_mut("registration.min_overlap").unwrap() = "0.5".into();
         let f = fields(&app);
-        for name in ["motion_reference", "motion_reference_echo", "motion_chain", "motion_min_ncc",
-                     "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations",
-                     "reg_tolerance", "reg_rotation_step_deg", "reg_translation_step_mm", "reg_min_overlap"] {
+        for name in ["motion_correction.reference", "motion_correction.reference#value", "motion_correction.chain", "motion_correction.min_ncc",
+                     "registration.levels", "registration.max_samples", "registration.max_iterations", "registration.max_evaluations",
+                     "registration.tolerance", "registration.rotation_step_deg", "registration.translation_step_mm", "registration.min_overlap"] {
             assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
         }
-        assert!(!f.contains(&"motion_chain_levels".to_string()), "chain levels hidden when chain is off");
+        assert!(!f.contains(&"motion_correction.chain_levels".to_string()), "chain levels hidden when chain is off");
         let m = config_from_app(&app).unwrap().motion_correction;
         assert!(m.enabled && !m.chain);
         assert_eq!(m.reference, qsmxt_engine::MotionReference::Echo(2));
@@ -893,11 +867,11 @@ mod tests {
         }
         let mut app = default_app();
         let shows_bfr = |app: &App| app.pipeline_rows().iter().any(|r|
-            matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
+            matches!(r, PipelineRow::AlgoSelect { field: "bg_removal.algorithm", .. }));
         assert!(shows_bfr(&app));
         // The default goes unsent; another one is sent.
         assert!(passed(&app, "bg_removal.algorithm").is_none());
-        app.set_field_select("bf_algorithm", 1);
+        app.set_field_select("bg_removal.algorithm", 1);
         assert!(passed(&app, "bg_removal.algorithm").is_some());
         for name in ["tfi", "tgv", "qsmart", "autoqsm", "nextqsm", "iqsm"] {
             app.set_qsm_algorithm(QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap());
@@ -910,8 +884,8 @@ mod tests {
     fn orientation_registration_and_force_reach_config_and_args() {
         let mut app = default_app();
         // Without a grouping they act on nothing: not passed on.
-        app.toggle_field("orientation_registration");
-        app.toggle_field("multi_orientation_force");
+        app.toggle_field("multi_orientation.register");
+        app.toggle_field("multi_orientation.force");
         let c = config_from_app(&app).unwrap();
         assert!(c.multi_orientation.register && !c.multi_orientation.force);
 
@@ -920,21 +894,21 @@ mod tests {
         app.sync_pipeline_mode();
         let c = config_from_app(&app).unwrap();
         assert!(c.multi_orientation.register && !c.multi_orientation.force);
-        app.toggle_field("orientation_registration");
-        app.toggle_field("multi_orientation_force");
+        app.toggle_field("multi_orientation.register");
+        app.toggle_field("multi_orientation.force");
         let c = config_from_app(&app).unwrap();
         assert!(!c.multi_orientation.register && c.multi_orientation.force);
         app.form.bids_dir = "/b".into();
         let run = qsmxt_io::settings::build_config(Default::default(), &build_run_args(&app).unwrap().pipeline).unwrap();
         assert!(!run.multi_orientation.register && run.multi_orientation.force);
         let shows_reg = |app: &App| app.pipeline_rows().iter().any(|r|
-            matches!(r, crate::app::PipelineRow::Param { field: "reg_levels", .. }));
+            matches!(r, crate::app::PipelineRow::Param { field: "registration.levels", .. }));
         assert!(!shows_reg(&app), "neither registration can run");
-        app.toggle_field("motion_correction");
+        app.toggle_field("motion_correction.enabled");
         assert!(shows_reg(&app));
         // Co-registering a group's orientations runs it too.
-        app.toggle_field("motion_correction");
-        app.toggle_field("orientation_registration");
+        app.toggle_field("motion_correction.enabled");
+        app.toggle_field("multi_orientation.register");
         assert!(shows_reg(&app));
         app.filter_state.orientation_group.clear();
         assert!(!shows_reg(&app), "no group, nothing to co-register");
@@ -970,7 +944,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("c.toml");
         let smv = !qsm_core::inversion::MediParams::default().smv;
-        std::fs::write(&path, format!(
+        fs_err::write(&path, format!(
             "[pipeline]\ndo_swi = true\n\n[swi]\nstrength = 3.0\n\n[inversion]\nalgorithm = \"tkd\"\n\n\
              [inversion.medi]\nsmv = {smv}\n\n[bg_removal]\nalgorithm = \"pdf\"\n\n[bg_removal.vsharp]\nmax_radius = 9.0\n")).unwrap();
         let mut app = default_app();
@@ -990,8 +964,8 @@ mod tests {
         assert!(c.pipeline.do_qsm);
 
         app.form.settings.set("pipeline.do_r2starmap", true);
-        app.set_field_select("bf_algorithm", crate::app::BF_OPTIONS.iter().position(|o| *o == "lbv").unwrap());
-        app.toggle_field("do_qsm");
+        app.set_field_select("bg_removal.algorithm", crate::app::BF_OPTIONS.iter().position(|o| *o == "lbv").unwrap());
+        app.toggle_field("pipeline.do_qsm");
         let c = run(&app);
         assert!(c.pipeline.do_r2starmap, "a setting the form changed is the form's");
         assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Lbv);
@@ -1012,13 +986,13 @@ mod tests {
         }
         app.form.settings.set("pipeline.axial_resampling", true);
         assert!(build_command_string(&app).contains("--axial-resampling"));
-        *app.field_text_mut("obliquity_threshold").unwrap() = "20".into();
+        *app.field_text_mut("pipeline.obliquity_threshold").unwrap() = "20".into();
         assert!(build_command_string(&app).contains("--obliquity-threshold 20"));
         app.form.settings.set("pipeline.axial_resampling", false);
         assert!(!build_command_string(&app).contains("--obliquity-threshold"), "no threshold without resampling");
 
         // Off is ROMEO's default here; turned on, the threshold shown is passed.
-        app.toggle_field("romeo_temporal_uncertain");
+        app.toggle_field("field_mapping.romeo.temporal_uncertain_unwrapping");
         app.form.settings.switch("segmentation.sigma_smoothing", false);
         app.form.settings.set("pipeline.do_segmentation", true);
         let cmd = build_command_string(&app);
@@ -1027,12 +1001,12 @@ mod tests {
         }
         app.set_qsm_algorithm(crate::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "xqsm").unwrap());
         assert!(!build_command_string(&app).contains("--tile-size"));
-        app.toggle_field("dl_tiling");
+        app.toggle_field("inversion.tile_size");
         assert!(build_command_string(&app).contains("--tile-size 128"));
 
         app.set_qsm_algorithm(crate::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap());
-        assert_eq!(app.field_select("medi_data_weighting"), 1, "magnitude SNR by default");
-        app.set_field_select("medi_data_weighting", 0);
+        assert_eq!(app.field_select("inversion.medi.data_weighting"), 1, "magnitude SNR by default");
+        app.set_field_select("inversion.medi.data_weighting", 0);
         assert!(build_command_string(&app).contains("--medi-data-weighting 0"));
     }
 
@@ -1063,8 +1037,8 @@ mod tests {
         let mut app = default_app();
         // Enabling chi-separation + selecting decompose + editing a param must all show up.
         app.form.settings.set("pipeline.do_chi_separation", true);
-        app.set_field_select("separation_algorithm", 1); // decompose
-        *app.field_text_mut("sep_decompose_max_iterations").unwrap() = "77".into();
+        app.set_field_select("separation.algorithm", 1); // decompose
+        *app.field_text_mut("separation.decompose.lsqcurvefit.max_iterations").unwrap() = "77".into();
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--do-chisep"));
         assert!(cmd.contains("--chisep decompose"));
@@ -1091,10 +1065,10 @@ mod tests {
     #[test]
     fn test_command_string_parameters() {
         let mut app = default_app();
-        *app.field_text_mut("ilsqr_tol").unwrap() = "0.01".into();
-        *app.field_text_mut("ilsqr_pad_mm").unwrap() = "32".into();
+        *app.field_text_mut("inversion.ilsqr.tol").unwrap() = "0.01".into();
+        *app.field_text_mut("inversion.ilsqr.pad_mm").unwrap() = "32".into();
         app.form.settings.set("pipeline.axial_resampling", true);
-        *app.field_text_mut("obliquity_threshold").unwrap() = "5".into();
+        *app.field_text_mut("pipeline.obliquity_threshold").unwrap() = "5".into();
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--ilsqr-tol 0.01"));
         assert!(cmd.contains("--ilsqr-pad-mm 32"));
@@ -1116,7 +1090,7 @@ mod tests {
     #[test]
     fn test_command_string_phase_offset_removal() {
         let mut app = default_app();
-        app.toggle_field("phase_offset_removal");
+        app.toggle_field("field_mapping.phase_offset_removal");
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--phase-offset-removal false"));
     }
@@ -1178,17 +1152,17 @@ mod tests {
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
         app.set_qsm_algorithm(0); // rts
-        *app.field_text_mut("rts_delta").unwrap() = "0.2".into();
-        *app.field_text_mut("rts_mu").unwrap() = "1e5".into();
-        *app.field_text_mut("rts_tol").unwrap() = "1e-4".into();
+        *app.field_text_mut("inversion.rts.delta").unwrap() = "0.2".into();
+        *app.field_text_mut("inversion.rts.mu").unwrap() = "1e5".into();
+        *app.field_text_mut("inversion.rts.tol").unwrap() = "1e-4".into();
         app.form.n_procs = "8".to_string();
         let args = build_run_args(&app).unwrap();
         let rts = config(&args).inversion.rts;
         assert_eq!((rts.delta, rts.mu, rts.tol), (0.2, 1e5, 1e-4));
         assert_eq!(args.n_procs, Some(8));
         app.set_qsm_algorithm(4); // tgv
-        *app.field_text_mut("tgv_iterations").unwrap() = "500".into();
-        *app.field_text_mut("tgv_erosions").unwrap() = "2".into();
+        *app.field_text_mut("inversion.tgv.iterations").unwrap() = "500".into();
+        *app.field_text_mut("inversion.tgv.erosions").unwrap() = "2".into();
         let tgv = config(&build_run_args(&app).unwrap()).inversion.tgv;
         assert_eq!((tgv.iterations, tgv.erosions), (Some(500), 2));
     }
@@ -1227,7 +1201,7 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
-        app.toggle_field("phase_offset_removal");
+        app.toggle_field("field_mapping.phase_offset_removal");
         let args = build_run_args(&app).unwrap();
         assert!(!config(&args).field_mapping.phase_offset_removal);
     }
@@ -1251,7 +1225,7 @@ mod tests {
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
         app.form.settings.set("pipeline.axial_resampling", true);
-        *app.field_text_mut("obliquity_threshold").unwrap() = "5.0".into();
+        *app.field_text_mut("pipeline.obliquity_threshold").unwrap() = "5.0".into();
         let args = build_run_args(&app).unwrap();
         let config = qsmxt_io::settings::build_config(Default::default(), &args.pipeline).unwrap();
         assert_eq!(config.pipeline.obliquity_threshold, 5.0);
@@ -1271,33 +1245,7 @@ mod tests {
         assert_eq!(parse_optional_path("  /bar  "), Some(PathBuf::from("/bar")));
     }
 
-    #[test]
-    fn test_parse_optional_string_vec_empty() {
-        assert_eq!(parse_optional_string_vec(""), None);
-        assert_eq!(parse_optional_string_vec("   "), None);
-    }
 
-    #[test]
-    fn test_parse_optional_string_vec_values() {
-        assert_eq!(
-            parse_optional_string_vec("a b c"),
-            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
-        );
-    }
-
-#[test]
-    fn test_push_if_changed_same() {
-        let mut parts = vec![];
-        push_if_changed(&mut parts, "--flag", "val", "val");
-        assert!(parts.is_empty());
-    }
-
-    #[test]
-    fn test_push_if_changed_different() {
-        let mut parts = vec![];
-        push_if_changed(&mut parts, "--flag", "new", "old");
-        assert_eq!(parts, vec!["--flag new"]);
-    }
 
     // --- SLURM command string ---
 
@@ -1386,14 +1334,14 @@ mod tests {
     fn unreadable_bet_value_is_refused() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".into();
-        *app.field_text_mut("bet_smoothness").unwrap() = "abc".into();
+        *app.field_text_mut("bet.smoothness").unwrap() = "abc".into();
         assert!(config_from_app(&app).is_ok(), "no BET step: it does not apply");
         app.set_field_select("mask_preset", 1);
         assert!(app.mask().sections.iter().any(|s| matches!(s.generator, qsmxt_engine::MaskOp::Bet { .. })));
         refused(&mut app, |_| {}, "--bet-smoothness abc: not a number");
-        *app.field_text_mut("bet_smoothness").unwrap() = String::new();
+        *app.field_text_mut("bet.smoothness").unwrap() = String::new();
         assert!(config_from_app(&app).is_ok(), "blank is the default");
-        refused(&mut app, |a| *a.field_text_mut("bet_iterations").unwrap() = "1.5".into(), "--bet-iterations 1.5: not a whole number");
+        refused(&mut app, |a| *a.field_text_mut("bet.iterations").unwrap() = "1.5".into(), "--bet-iterations 1.5: not a whole number");
     }
 
     /// The homogeneity correction's rows refuse unreadable text while it is the method chosen.
@@ -1401,10 +1349,10 @@ mod tests {
     fn unreadable_homogeneity_value_is_refused() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".into();
-        assert!(app.field_toggle("inhomogeneity_correction"));
-        assert_eq!(app.field_select("inhomogeneity_method"), 0);
-        refused(&mut app, |a| *a.field_text_mut("homogeneity_nbox").unwrap() = "x".into(), "--homogeneity-nbox x: not a whole number");
-        app.toggle_field("inhomogeneity_correction");
+        assert!(app.field_toggle("masking.inhomogeneity_correction"));
+        assert_eq!(app.field_select("masking.inhomogeneity_method"), 0);
+        refused(&mut app, |a| *a.field_text_mut("homogeneity.nbox").unwrap() = "x".into(), "--homogeneity-nbox x: not a whole number");
+        app.toggle_field("masking.inhomogeneity_correction");
         assert!(config_from_app(&app).is_ok(), "correction off: it does not apply");
     }
 
@@ -1413,9 +1361,9 @@ mod tests {
     fn unreadable_n4_value_is_refused() {
         let mut app = default_app();
         app.form.bids_dir = "/bids".into();
-        app.set_field_select("inhomogeneity_method", 1);
-        refused(&mut app, |a| *a.field_text_mut("n4_mesh").unwrap() = "1 2".into(), "--n4-mesh 1 2: not three whole numbers");
-        app.set_field_select("inhomogeneity_method", 0);
+        app.set_field_select("masking.inhomogeneity_method", 1);
+        refused(&mut app, |a| *a.field_text_mut("n4.mesh").unwrap() = "1 2".into(), "--n4-mesh 1 2: not three whole numbers");
+        app.set_field_select("masking.inhomogeneity_method", 0);
         assert!(config_from_app(&app).is_ok(), "the homogeneity method: N4's mesh does not apply");
     }
 
@@ -1506,10 +1454,10 @@ mod tests {
         app.form.slurm_account = "acct".to_string();
         // TKD rather than TGV: TGV has no background-removal stage, so the TUI sends none (#276).
         app.set_qsm_algorithm(2); // tkd
-        app.set_field_select("unwrapping_algorithm", 1); // laplacian
-        app.set_field_select("bf_algorithm", 1); // pdf
+        app.set_field_select("field_mapping.unwrapping_algorithm", 1); // laplacian
+        app.set_field_select("bg_removal.algorithm", 1); // pdf
         app.form.settings.set("pipeline.axial_resampling", true);
-        *app.field_text_mut("obliquity_threshold").unwrap() = "5".into();
+        *app.field_text_mut("pipeline.obliquity_threshold").unwrap() = "5".into();
         app.form.settings.set("pipeline.do_swi", true);
 
         let slurm = build_slurm_args(&app).unwrap();
@@ -1530,9 +1478,9 @@ mod tests {
         let run = config(&build_run_args(&app).unwrap()).field_mapping;
         let d = qsmxt_engine::FieldMappingConfig::default();
         assert_eq!((run.b0_weight_type, run.b0_estimation), (d.b0_weight_type, d.b0_estimation));
-        app.set_field_select("unwrapping_algorithm", 1); // laplacian
-        app.set_field_select("b0_weight_type", 5); // assumed-decay
-        *app.field_text_mut("b0_weight_assumed_t2star_ms").unwrap() = "35".to_string();
+        app.set_field_select("field_mapping.unwrapping_algorithm", 1); // laplacian
+        app.set_field_select("field_mapping.b0_weight_type", 5); // assumed-decay
+        *app.field_text_mut("field_mapping.b0_weight_assumed_t2star_ms").unwrap() = "35".to_string();
         let mut cfg = PipelineConfig::default();
         qsmxt_io::settings::apply_normalised(&mut cfg, &build_run_args(&app).unwrap().pipeline).unwrap();
         assert_eq!(cfg.field_mapping.b0_weight_type, qsmxt_engine::B0WeightType::AssumedDecay);
@@ -1540,7 +1488,7 @@ mod tests {
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_weight_type, qsmxt_engine::B0WeightType::AssumedDecay);
         assert_eq!(c.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
-        app.set_field_select("b0_estimation", 1);
+        app.set_field_select("field_mapping.b0_estimation", 1);
         assert_eq!(config(&build_run_args(&app).unwrap()).field_mapping.b0_estimation, qsmxt_engine::B0Estimation::LinearFit);
     }
 
@@ -1553,15 +1501,15 @@ mod tests {
         let bf = |name: &str| crate::app::BF_OPTIONS.iter().position(|o| *o == name).unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
-        app.set_field_select("qsm_algorithm", medi);
-        assert_eq!(app.field_select("bf_algorithm"), bf("vsharp"));
+        app.set_field_select("inversion.algorithm", medi);
+        assert_eq!(app.field_select("bg_removal.algorithm"), bf("vsharp"));
         assert_eq!(passed(&app, "bg_removal.algorithm"), None);
         assert_eq!(config_from_app(&app).unwrap().bg_removal.algorithm, BfAlgorithm::Vsharp);
-        app.set_field_select("bf_algorithm", bf("pdf"));
+        app.set_field_select("bg_removal.algorithm", bf("pdf"));
         assert_eq!(config(&build_run_args(&app).unwrap()).bg_removal.algorithm, BfAlgorithm::Pdf);
         assert!(build_command_string(&app).contains("--bf-algorithm pdf"));
-        app.reset_field("bf_algorithm");
-        assert_eq!(app.field_select("bf_algorithm"), bf("vsharp"));
+        app.reset_field("bg_removal.algorithm");
+        assert_eq!(app.field_select("bg_removal.algorithm"), bf("vsharp"));
     }
 
     /// MEDI's mask shrinking is a row under SMV, and reaches the run.
@@ -1570,9 +1518,9 @@ mod tests {
         let medi = crate::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
-        app.set_field_select("qsm_algorithm", medi);
+        app.set_field_select("inversion.algorithm", medi);
         assert!(config_from_app(&app).unwrap().inversion.medi.smv_shrink_mask);
-        app.toggle_field("medi_smv_shrink_mask");
+        app.toggle_field("inversion.medi.smv_shrink_mask");
         assert!(!config_from_app(&app).unwrap().inversion.medi.smv_shrink_mask);
         assert!(build_command_string(&app).contains("--no-medi-smv-shrink-mask"));
     }
@@ -1585,39 +1533,39 @@ mod tests {
         let qsmart = crate::app::QSM_PICKER_OPTIONS.iter().position(|a| *a == "qsmart").unwrap();
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
-        app.set_field_select("qsm_algorithm", qsmart);
-        let selects = ["unwrapping_algorithm", "laplacian_solver", "b0_estimation"].map(|f| app.field_select(f));
+        app.set_field_select("inversion.algorithm", qsmart);
+        let selects = ["field_mapping.unwrapping_algorithm", "field_mapping.laplacian_solver", "field_mapping.b0_estimation"].map(|f| app.field_select(f));
         assert_eq!(selects, [0, 0, 0]);
         assert_eq!(app.mask().sections, default_mask_sections());
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping, qsmxt_engine::FieldMappingConfig::default());
         assert_eq!(c.masking.sections, default_mask_sections());
 
-        app.set_field_select("unwrapping_algorithm", 1);
-        app.set_field_select("laplacian_solver", 2);
-        app.set_field_select("b0_estimation", 3);
+        app.set_field_select("field_mapping.unwrapping_algorithm", 1);
+        app.set_field_select("field_mapping.laplacian_solver", 2);
+        app.set_field_select("field_mapping.b0_estimation", 3);
         let fm = config_from_app(&app).unwrap().field_mapping;
         assert_eq!((fm.unwrapping_algorithm, fm.laplacian_solver, fm.b0_estimation),
                    (UnwrappingAlgorithm::Laplacian, LaplacianSolver::Mirror, B0Estimation::QsmartEchofit));
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--laplacian-solver mirror") && cmd.contains("--b0-estimation qsmart-echofit"), "{cmd}");
 
-        app.set_field_select("qsmart_vessel_magnitude", 1);
-        app.set_field_select("qsmart_vessel_units", 1);
-        app.set_field_select("qsmart_fit_threshold_mode", 0);
-        *app.field_text_mut("qsmart_fit_percentile").unwrap() = "95".into();
+        app.set_field_select("inversion.qsmart.vessel_magnitude", 1);
+        app.set_field_select("inversion.qsmart.vessel_size_units", 1);
+        app.set_field_select("field_mapping.qsmart_fit_threshold_mode", 0);
+        *app.field_text_mut("field_mapping.qsmart_fit_percentile").unwrap() = "95".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.inversion.qsmart.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::Combined);
         assert_eq!(c.inversion.qsmart.vessel_size_units, qsmxt_engine::VesselSizeUnits::Mm);
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Percentile(95.0));
-        app.set_field_select("qsmart_fit_threshold_mode", 1);
-        *app.field_text_mut("qsmart_fit_threshold").unwrap() = "30".into();
+        app.set_field_select("field_mapping.qsmart_fit_threshold_mode", 1);
+        *app.field_text_mut("field_mapping.qsmart_fit_threshold").unwrap() = "30".into();
         let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.qsmart_fit_threshold(), qsm_core::utils::QsmartFitThreshold::Absolute(30.0));
 
         assert_eq!(c.inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::Absolute(qsm_core::utils::QSMART_FRANGI_C));
-        app.set_field_select("qsmart_frangi_c_mode", 1);
-        *app.field_text_mut("qsmart_frangi_c_factor").unwrap() = "0.3".into();
+        app.set_field_select("inversion.qsmart.frangi_c_mode", 1);
+        *app.field_text_mut("inversion.qsmart.frangi_c_factor").unwrap() = "0.3".into();
         assert_eq!(config_from_app(&app).unwrap().inversion.qsmart.frangi_c(), qsm_core::utils::FrangiC::RelativeToMedian(0.3));
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--qsmart-frangi-c-mode relative") && cmd.contains("--qsmart-frangi-c-factor 0.3"), "{cmd}");
@@ -1633,9 +1581,9 @@ mod tests {
         app.form.bids_dir = "/bids".to_string();
         app.form.slurm_account = "acct".to_string();
         app.set_qsm_algorithm(4); // tgv
-        app.set_field_select("unwrapping_algorithm", 1); // laplacian
-        app.set_field_select("bf_algorithm", 1); // pdf
-        app.toggle_field("bipolar_correction");
+        app.set_field_select("field_mapping.unwrapping_algorithm", 1); // laplacian
+        app.set_field_select("bg_removal.algorithm", 1); // pdf
+        app.toggle_field("field_mapping.bipolar_correction");
 
         let mut local = PipelineConfig::default();
         qsmxt_io::settings::apply_normalised(&mut local, &build_run_args(&app).unwrap().pipeline).unwrap();

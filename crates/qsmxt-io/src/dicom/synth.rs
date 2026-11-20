@@ -184,7 +184,7 @@ fn slice(s: &Series, echo: usize, k: usize, instance: usize) -> InMemDicomObject
 
 fn write_object(obj: InMemDicomObject, path: &Path, s: &Series, instance: usize) {
     if s.headerless {
-        let mut f = std::fs::File::create(path).unwrap();
+        let mut f = fs_err::File::create(path).unwrap();
         let ts = dicom::transfer_syntax::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
         obj.write_dataset_with_ts(&mut f, &ts).unwrap();
     } else {
@@ -203,7 +203,7 @@ fn write_object(obj: InMemDicomObject, path: &Path, s: &Series, instance: usize)
 
 /// Write a series into `dir` (one file per slice and echo); returns the files.
 pub fn write_series(dir: &Path, s: &Series) -> Vec<PathBuf> {
-    std::fs::create_dir_all(dir).unwrap();
+    fs_err::create_dir_all(dir).unwrap();
     let mut out = Vec::new();
     let mut instance = s.first_instance;
     for echo in 0..s.tes.len() {
@@ -219,7 +219,7 @@ pub fn write_series(dir: &Path, s: &Series) -> Vec<PathBuf> {
 
 /// A structured-report file (no pixels), like Siemens' PhoenixZIPReport.
 pub fn write_report(dir: &Path, number: i32) -> PathBuf {
-    std::fs::create_dir_all(dir).unwrap();
+    fs_err::create_dir_all(dir).unwrap();
     let uid = format!("1.2.826.0.1.3680043.10.1234.{number}");
     let mut o = InMemDicomObject::new_empty();
     o.put(DataElement::new(tags::SOP_CLASS_UID, VR::UI, uids::ENHANCED_SR_STORAGE));
@@ -348,7 +348,7 @@ fn write_quirk_fixture(name: &str, dir: &Path) {
         "incomplete_export" => {
             write_series(dir, &Series::new("9", 9, gre, M).tes(&[5.0, 10.0]));
             let files = write_series(dir, &Series::new("10", 10, gre, P).tes(&[5.0, 10.0]));
-            std::fs::write(&files[5], b"").unwrap();
+            fs_err::write(&files[5], b"").unwrap();
         }
         "phoenix_report" => {
             write_series(dir, &Series::new("9", 9, gre, M));

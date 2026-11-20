@@ -7,7 +7,7 @@ use ratatui::{backend::TestBackend, Terminal};
 fn medi_app() -> App {
     let mut app = App::new();
     let medi = crate::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == "medi").unwrap();
-    app.set_field_select("qsm_algorithm", medi);
+    app.set_field_select("inversion.algorithm", medi);
     app.active_tab = crate::app::TAB_RECONSTRUCTION;
     app.sub_page[crate::app::TAB_RECONSTRUCTION] = Some(crate::app::Page::Inversion);
     app.sync_pipeline_mode();
@@ -104,19 +104,19 @@ fn settings_are_indented_under_their_checkbox() {
     app.form.settings.set("pipeline.do_swi", true);
     app.form.settings.set("pipeline.do_smwi", true);
     app.form.settings.set("pipeline.do_segmentation", true);
-    assert!(app.goto_field("do_smwi"));
+    assert!(app.goto_field("pipeline.do_smwi"));
     let text = screen_text(&render_app_sized(&mut app, 120, 60));
     let smwi = indent_of(&text, "Compute SMWI");
     for child in ["Threshold", "Power"] {
         assert!(indent_of(&text, child) > smwi, "{child} should be indented:\n{text}");
     }
-    assert!(app.goto_field("do_swi"));
+    assert!(app.goto_field("pipeline.do_swi"));
     let text = screen_text(&render_app_sized(&mut app, 120, 60));
     let swi = indent_of(&text, "Compute SWI");
     for child in ["Strength", "HP sigma (x y z)"] {
         assert!(indent_of(&text, child) > swi, "{child} should be indented:\n{text}");
     }
-    assert!(app.goto_field("synthseg_version"));
+    assert!(app.goto_field("segmentation.version"));
     let text = screen_text(&render_app_sized(&mut app, 120, 60));
     let seg = indent_of(&text, "Segmentation:");
     let source = indent_of(&text, "Source");
@@ -126,12 +126,6 @@ fn settings_are_indented_under_their_checkbox() {
     }
     // The sidebar is drawn beside them.
     assert!(text.contains("SMWI") && text.contains("Relaxometry") && text.contains("DICOM"), "{text}");
-}
-
-#[test]
-fn test_draw_default_app_no_panic() {
-    let mut app = App::new();
-    let _ = render_app(&mut app);
 }
 
 /// The rendered screen as one string, for substring assertions.
@@ -265,7 +259,7 @@ fn a_list_scrolls_only_when_the_cursor_leaves_it() {
     let mut app = App::new();
     let options: Vec<String> = (0..30).map(|i| format!("option-{i:02}")).collect();
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".into()),
+        target: AlgoModalTarget::Select("inversion.algorithm".into()),
         title: "QSM inversion".into(),
         help: options.iter().map(|o| format!("help for {o}")).collect(),
         options,
@@ -335,7 +329,7 @@ fn example_mode_renders_an_error_from_the_worker() {
 fn update_modal_shows_both_versions_and_its_choices() {
     use crate::app::UpdateModal;
     let mut app = App::new();
-    app.update_modal = Some(UpdateModal {
+    app.update.modal = Some(UpdateModal {
         tag: "v9.23.0".into(),
         html_url: "https://github.com/QSMxT/QSMxT/releases/tag/v9.23.0".into(),
     });
@@ -362,7 +356,7 @@ fn an_announcement_pop_up_shows_everything_in_it() {
     a.body = format!("{}\n\nSecond paragraph.", "word ".repeat(40));
     a.link = Some("https://example.com/a".into());
     let mut app = App::new();
-    app.news_modal = Some(NewsModal { items: vec![a], history: false, note: None, scroll: 0 });
+    app.announcements.modal = Some(NewsModal { items: vec![a], history: false, note: None, scroll: 0 });
     let text = screen_text(&render_app_sized(&mut app, 120, 40));
     for want in ["Important announcement", "2026-11-06", "Important", "Wrong results from the thing",
                  "Second paragraph.", "Affects versions from 10.0.0; fixed in 11.0.1.",
@@ -378,16 +372,16 @@ fn the_announcement_history_scrolls_and_says_when_empty() {
     use crate::app::NewsModal;
     let items: Vec<_> = (0..12).map(|i| qsmxt_io::news::item(&format!("n{i}"), &format!("2026-11-{:02}", 20 - i), false, None)).collect();
     let mut app = App::new();
-    app.news_modal = Some(NewsModal { items, history: true, note: None, scroll: 0 });
+    app.announcements.modal = Some(NewsModal { items, history: true, note: None, scroll: 0 });
     let text = screen_text(&render_app(&mut app));
     assert!(text.contains("Announcements") && text.contains("Title n0"), "{text}");
     assert!(text.contains("scroll"), "a long history scrolls:\n{text}");
     assert!(!text.contains("Title n11"), "{text}");
-    app.news_modal.as_mut().unwrap().scroll = 500;
+    app.announcements.modal.as_mut().unwrap().scroll = 500;
     let text = screen_text(&render_app(&mut app));
     assert!(text.contains("Title n11"), "scrolled to the end:\n{text}");
 
-    app.news_modal = Some(NewsModal { items: Vec::new(), history: true, note: None, scroll: 0 });
+    app.announcements.modal = Some(NewsModal { items: Vec::new(), history: true, note: None, scroll: 0 });
     let text = screen_text(&render_app(&mut app));
     assert!(text.contains("There are no announcements."), "{text}");
 }
@@ -407,14 +401,14 @@ fn update_modal_draws_on_top_of_an_algorithm_modal() {
     use crate::app::{AlgoModalTarget, UpdateModal};
     let mut app = App::new();
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".into()),
+        target: AlgoModalTarget::Select("inversion.algorithm".into()),
         title: "QSM inversion".into(),
         options: (0..20).map(|i| format!("algo-{i}")).collect(),
         help: (0..20).map(|i| format!("help {i}")).collect(),
         cursor: 0,
         offset: Default::default(),
     });
-    app.update_modal = Some(UpdateModal {
+    app.update.modal = Some(UpdateModal {
         tag: "v9.23.0".into(),
         html_url: "https://example.com/r".into(),
     });
@@ -428,7 +422,7 @@ fn update_modal_draws_on_top_of_an_algorithm_modal() {
 fn update_modal_survives_a_small_terminal() {
     use crate::app::UpdateModal;
     let mut app = App::new();
-    app.update_modal = Some(UpdateModal {
+    app.update.modal = Some(UpdateModal {
         tag: "v9.23.0".into(),
         html_url: "https://github.com/QSMxT/QSMxT/releases/tag/v9.23.0".into(),
     });
@@ -445,7 +439,7 @@ fn test_algo_modal_scrollbar_and_legend() {
     options.extend(["xqsm", "qsmnet", "autoqsm", "nextqsm"].iter().map(|s| s.to_string()));
     let help: Vec<String> = options.iter().map(|o| format!("help for {o}")).collect();
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".into()),
+        target: AlgoModalTarget::Select("inversion.algorithm".into()),
         title: "QSM inversion".into(),
         options,
         help,
@@ -463,6 +457,32 @@ fn test_algo_modal_scrollbar_and_legend() {
     assert!(text.contains('█'), "expected a scrollbar thumb in the overflowing modal");
     assert!(text.contains("deep learning"), "expected the deep-learning legend in the footer");
     assert!(text.contains("select") && text.contains("cancel"), "expected the hotkey footer");
+}
+
+#[test]
+fn the_input_tab_shows_the_typed_directories() {
+    let mut app = App::new();
+    app.form.bids_dir = "/data/bids".to_string();
+    app.form.output_dir = "/data/out".to_string();
+    let text = screen_text(&render_app(&mut app));
+    assert!(text.contains("/data/bids") && text.contains("/data/out"), "{text}");
+
+    // While a directory is being edited, its text is still shown.
+    app.editing = true;
+    app.cursor_pos = 5;
+    let text = screen_text(&render_app(&mut app));
+    assert!(text.contains("/data/bids"), "{text}");
+}
+
+#[test]
+fn the_execution_tab_ticks_the_flags_that_are_on() {
+    let mut app = App::new();
+    app.active_tab = super::super::app::TAB_EXECUTION;
+    let ticked = |app: &mut App| screen_text(&render_app(app)).lines()
+        .any(|l| l.contains("[x]") && l.contains("Dry run"));
+    assert!(!ticked(&mut app));
+    app.form.dry_run = true;
+    assert!(ticked(&mut app));
 }
 
 #[test]
@@ -490,34 +510,6 @@ fn test_draw_all_tabs() {
             assert!(text.contains(&format!("1-{}", TAB_NAMES.len())), "help bar names every tab digit");
         }
     }
-}
-
-#[test]
-fn test_draw_editing_mode() {
-    let mut app = App::new();
-    app.editing = true;
-    app.form.bids_dir = "/some/path".to_string();
-    app.cursor_pos = 5;
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_with_form_data() {
-    let mut app = App::new();
-    app.form.bids_dir = "/data/bids".to_string();
-    app.form.output_dir = "/data/out".to_string();
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_algorithms_tab() {
-    let mut app = App::new();
-    app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-    app.active_field = 0;
-    let _ = render_app(&mut app);
-    // Move through fields
-    app.active_field = 4;
-    let _ = render_app(&mut app);
 }
 
 /// Every signal-erode parameter gets its own labelled row under the step.
@@ -567,52 +559,6 @@ fn test_draw_mask_combine_rows() {
     let text: String = terminal.backend().buffer().content().iter().map(|c| c.symbol()).collect();
     assert!(text.contains("COMBINED WITH"), "combine row not drawn");
     assert!(text.contains("AND"), "combine mode not drawn");
-}
-
-#[test]
-fn test_draw_parameters_tab() {
-    let mut app = App::new();
-    app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-    let _ = render_app(&mut app);
-    // Change algorithm
-    app.set_qsm_algorithm(3); // TSVD
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_execution_tab_with_flags() {
-    let mut app = App::new();
-    app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-    app.form.settings.set("pipeline.do_swi", true);
-    app.form.settings.set("pipeline.do_t2starmap", true);
-    app.form.dry_run = true;
-    app.form.debug = true;
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_non_focused_fields() {
-    let mut app = App::new();
-    app.active_tab = 0;
-    app.active_field = 3; // Last field focused, others not
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_select_not_focused() {
-    let mut app = App::new();
-    app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-    app.active_field = 1; // field 0 (select) not focused
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_empty_text_not_editing() {
-    let mut app = App::new();
-    // All fields empty, not editing — shows "(empty)"
-    app.active_tab = 0;
-    app.active_field = 0;
-    let _ = render_app(&mut app);
 }
 
 fn tip_app(tips_enabled: bool) -> App {

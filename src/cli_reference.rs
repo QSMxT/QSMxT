@@ -176,7 +176,7 @@ mod tests {
     }
 
     fn doc(rel: &str) -> String {
-        std::fs::read_to_string(repo().join("docs/src/content/docs").join(rel))
+        fs_err::read_to_string(repo().join("docs/src/content/docs").join(rel))
             .unwrap_or_else(|e| panic!("{rel}: {e}"))
     }
 
@@ -187,10 +187,10 @@ mod tests {
         let path = repo().join(CLI_REFERENCE);
         let rendered = render();
         if std::env::var_os("QSMXT_UPDATE_DOCS").is_some() {
-            std::fs::write(&path, &rendered).unwrap();
+            fs_err::write(&path, &rendered).unwrap();
             return;
         }
-        let committed = std::fs::read_to_string(&path).unwrap_or_default();
+        let committed = fs_err::read_to_string(&path).unwrap_or_default();
         assert!(committed == rendered,
             "{} is out of date with the CLI: run `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt \
              cli_reference` and commit the result", Path::new(CLI_REFERENCE).display());
@@ -258,7 +258,7 @@ mod tests {
             if qsm_core::models::find_model(&alg.to_string()).is_some() { dl += 1 } else { classical += 1 }
         }
         for path in doc_pages() {
-            let text = std::fs::read_to_string(&path).unwrap();
+            let text = fs_err::read_to_string(&path).unwrap();
             let page = path.display().to_string();
             let counted = |word: &str| -> Vec<usize> {
                 text.split_whitespace().collect::<Vec<_>>().windows(2)
@@ -338,7 +338,7 @@ mod tests {
         };
         for page in doc_pages() {
             if page.ends_with(CLI_REFERENCE.rsplit('/').next().unwrap()) { continue; }
-            let text = std::fs::read_to_string(&page).unwrap();
+            let text = fs_err::read_to_string(&page).unwrap();
             // In code blocks, only `qsmxt …` command lines (and their `\` continuations); in
             // prose, only inline code. Other tools' flags (cargo, sha256sum) are not checked.
             let (mut in_code, mut in_cmd) = (false, false);
@@ -365,7 +365,7 @@ mod tests {
         let mut files = Vec::new();
         let mut stack = vec![repo().join("docs/src/content/docs")];
         while let Some(d) = stack.pop() {
-            for e in std::fs::read_dir(&d).unwrap().flatten() {
+            for e in fs_err::read_dir(&d).unwrap().flatten() {
                 let p = e.path();
                 if p.is_dir() { stack.push(p) } else if p.extension().is_some_and(|x| x == "md" || x == "mdx") { files.push(p) }
             }
@@ -378,8 +378,8 @@ mod tests {
     /// naming module gives it, and every name kept out of BIDS through `.bidsignore`.
     #[test]
     fn every_published_name_is_in_the_outputs_page() {
-        use crate::bids::derivatives::DerivativeOutputs;
-        use crate::bids::entities::AcquisitionKey;
+        use qsmxt_io::bids::derivatives::DerivativeOutputs;
+        use qsmxt_io::bids::entities::AcquisitionKey;
         let outputs = doc("reference/outputs.md");
         let o = DerivativeOutputs::new(Path::new("/o"));
         let k = AcquisitionKey {
@@ -403,7 +403,7 @@ mod tests {
             let tail = name.strip_prefix("sub-01").unwrap();
             assert!(outputs.contains(&format!("{tail}`")), "reference/outputs.md does not list …{tail}");
         }
-        for s in crate::bids::naming::BIDSIGNORED_SUFFIXES {
+        for s in qsmxt_io::bids::naming::BIDSIGNORED_SUFFIXES {
             assert!(outputs.contains(&format!("`{s}`")), "reference/outputs.md does not explain the bidsignored `{s}`");
         }
     }
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn docs_make_no_stale_claims() {
         for f in doc_pages() {
-            let text = std::fs::read_to_string(&f).unwrap();
+            let text = fs_err::read_to_string(&f).unwrap();
             let name = f.display();
             // The pipeline writes methods.md, not references.txt.
             assert!(!text.contains("references.txt"), "{name} mentions references.txt");

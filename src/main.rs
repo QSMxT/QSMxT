@@ -1,6 +1,8 @@
 mod cli;
 mod cli_settings;
 #[cfg(test)]
+mod cli_config_tests;
+#[cfg(test)]
 mod cli_reference;
 #[cfg(test)]
 mod cli_snapshots;
@@ -8,16 +10,11 @@ mod cli_snapshots;
 #[path = "../tests/support/snapshot.rs"]
 mod snapshot;
 mod commands;
-mod pipeline;
+#[cfg(test)]
+mod standalone_flag_tests;
 #[cfg(test)]
 mod tui_cli_tests;
 
-// The file side lives in qsmxt-io; under the same paths here.
-use qsmxt_io::{bids, dicom, error, example, executor, multiorient, nifti};
-#[cfg(test)]
-use qsmxt_io::testutils;
-
-pub use error::Result;
 
 use clap::Parser;
 use cli::{Cli, Command};

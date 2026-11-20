@@ -1,11 +1,11 @@
-## toggle do_swi
+## toggle pipeline.do_swi
 config:
   /pipeline/do_swi: false -> true
 command:
   + --do-swi
 methods: 6451370bed8e68df (14 lines)
 
-## toggle do_swi, toggle export_dicom
+## toggle pipeline.do_swi, toggle export_dicom
 config:
   /pipeline/do_swi: false -> true
   /pipeline/export_dicom: false -> true
@@ -14,14 +14,14 @@ command:
   + --export-dicom
 methods: 3aac477d070371d9 (14 lines)
 
-## toggle do_swi, toggle export_dicom, toggle swi_filtered_phase
+## toggle pipeline.do_swi, toggle export_dicom, toggle swi.filtered_phase
 config:
   /pipeline/do_swi: false -> true
   /pipeline/export_dicom: false -> true
   /swi/filtered_phase: false -> true
 command:
   + --do-swi
-  + --export-dicom
   + --swi-filtered-phase
+  + --export-dicom
 methods: c2899b77c36dbb4e (14 lines)
 

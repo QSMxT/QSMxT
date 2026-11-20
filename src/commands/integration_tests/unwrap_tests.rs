@@ -50,10 +50,7 @@ fn test_unwrap_prelude() {
 
     super::unwrap::execute(UnwrapCommand::Prelude(crate::cli::UnwrapPreludeArgs {
         common: common_unwrap(phase, mask, output.clone()),
-        prelude_params: crate::cli::PreludeParamArgs {
-            prelude_labelling: Some(crate::cli::PreludeLabellingArg::Volume),
-            prelude_partitions: Some(6),
-        },
+        settings: SettingsOf::from_flags(&["--prelude-labelling", "volume", "--prelude-partitions", "6"]),
     })).unwrap();
     assert!(output.exists());
 }
@@ -72,7 +69,7 @@ fn test_unwrap_romeo() {
     super::unwrap::execute(UnwrapCommand::Romeo(UnwrapRomeoArgs {
         common: common_unwrap(phase, mask, output.clone()),
         magnitude: Some(mag.clone()),
-        romeo_params: Default::default(),
+        settings: Default::default(),
     })).unwrap();
     assert!(output.exists());
 
@@ -80,7 +77,7 @@ fn test_unwrap_romeo() {
     let err = super::unwrap::execute(UnwrapCommand::Romeo(UnwrapRomeoArgs {
         common: common_unwrap(dir.path().join("phase.nii"), dir.path().join("mask.nii"), output.clone()),
         magnitude: Some(mag),
-        romeo_params: crate::cli::RomeoParamArgs { romeo_template: Some(2), ..Default::default() },
+        settings: SettingsOf::from_flags(&["--romeo-template", "2"]),
     })).unwrap_err();
     assert!(format!("{err}").contains("--romeo-template"), "{err}");
 }

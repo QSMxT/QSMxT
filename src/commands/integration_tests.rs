@@ -1,5 +1,6 @@
 use crate::cli::*;
-use crate::testutils;
+use crate::cli_settings::SettingsOf;
+use qsmxt_io::testutils;
 use std::path::{Path, PathBuf};
 
 // The topic files call the commands as `super::<command>`, as this file does.
@@ -21,25 +22,16 @@ mod recommendations_tests;
 
 fn default_run_args(bids_dir: PathBuf, output_dir: PathBuf) -> RunArgs {
     RunArgs {
-        bids_dir,
-        output_dir: Some(output_dir),
-        config: None,
-        include: None,
-        exclude: None,
-        num_echoes: None,
+        dataset: DatasetArgs { bids_dir, output_dir: Some(output_dir), ..Default::default() },
+        pipeline: Default::default(),
         n_procs: Some(1),
-        source_dicom: None,
-        dicom_outputs: None,
+        dicom: Default::default(),
         dry: true,
-        debug: false,
+        accept: Default::default(),
+        exec: Default::default(),
         mem_limit_gb: None,
         no_mem_limit: false,
-        force: false,
-        clean_intermediates: false,
         no_dataset_steps: false,
-        accept_recommendations: false,
-        accept_reference_settings: false,
-        pipeline: Default::default(),
     }
 }
 
@@ -59,7 +51,7 @@ fn common_invert(input: PathBuf, mask: PathBuf, output: PathBuf) -> InvertCommon
     InvertCommonArgs {
         input, mask, output,
         b0_direction: vec![0.0, 0.0, 1.0],
-        tiling_params: Default::default(),
+        tiling: Default::default(),
     }
 }
 
@@ -78,9 +70,11 @@ fn cheap_pipeline() -> crate::cli_settings::SettingsArgs {
 
 fn aggregate_args(bids: PathBuf, out: PathBuf, include: Vec<String>) -> AggregateArgs {
     AggregateArgs {
-        bids_dir: bids, output_dir: Some(out), config: None, include: Some(include), exclude: None,
-        num_echoes: None, pipeline: cheap_pipeline(), debug: false, force: false,
-        clean_intermediates: false, command_line: None,
+        dataset: DatasetArgs {
+            bids_dir: bids, output_dir: Some(out), filter: RunFilterArgs { include: Some(include), exclude: None },
+            ..Default::default()
+        },
+        pipeline: cheap_pipeline(), exec: Default::default(), command_line: None,
     }
 }
 
@@ -151,7 +145,7 @@ fn bids_validator_fixture() {
     let bids = scratch.path().join("cosmos");
     testutils::create_multi_orientation_bids(&bids);
     run("cosmos", &bids, &|a| {
-        a.include = Some(vec!["*acq-dir*".to_string()]);
+        a.dataset.filter.include = Some(vec!["*acq-dir*".to_string()]);
         a.pipeline.add(&["--orientation-group", "acq"]);
     });
 
@@ -184,7 +178,7 @@ fn bids_validator_fixture() {
         assert!(full.join(name).exists(), "{name}");
     }
     let sidecar: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(full.join("sub-1_acq-MEGRE_desc-swi_phase.json")).unwrap()).unwrap();
+        &fs_err::read_to_string(full.join("sub-1_acq-MEGRE_desc-swi_phase.json")).unwrap()).unwrap();
     assert_eq!(sidecar["Units"], "Hz", "{sidecar}");
     for name in ["sub-1_acq-MEGRE_desc-total_fieldmap.nii", "sub-1_acq-MEGRE_desc-total_magnitude.nii"] {
         assert!(full.with_file_name("fmap").join(name).exists(), "{name}");
@@ -210,7 +204,7 @@ fn write_full_case(bids: &Path) {
         let te = 0.012 * echo as f64;
         let data = vec![1000.0 * (-15.0 * te).exp(); 512];
         qsm_core::io::save_nifti_to_file(&anat.join(format!("sub-1_echo-{echo}_MESE.nii")),
-            &data, (8, 8, 8), (1.0, 1.0, 1.0), &crate::testutils::multiorient::MO_AFFINE).unwrap();
+            &data, (8, 8, 8), (1.0, 1.0, 1.0), &qsmxt_io::testutils::multiorient::MO_AFFINE).unwrap();
         testutils::write_sidecar(&anat.join(format!("sub-1_echo-{echo}_MESE.json")), te, 3.0);
     }
     testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"));
@@ -219,7 +213,7 @@ fn write_full_case(bids: &Path) {
 /// The `sti` case's dataset: six orientations, one echo each.
 fn write_sti_case(bids: &Path) {
     let anat = bids.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     for (i, b0) in [(0.0, 0.0, 1.0), (0.0, 0.5, 0.866_025_4), (0.5, 0.0, 0.866_025_4),
                     (0.4, 0.4, 0.824_620_9), (-0.4, 0.3, 0.866_025_4), (0.3, -0.45, 0.84)]
         .into_iter().enumerate()
@@ -237,7 +231,7 @@ fn write_sti_case(bids: &Path) {
 /// The `oblique` case's dataset: two echoes on a grid tilted 30° about x.
 fn write_oblique_case(bids: &Path) {
     let anat = bids.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
     let affine = [1.0, 0.0, 0.0, -10.0, 0.0, c, -s, -11.0, 0.0, s, c, -9.0, 0.0, 0.0, 0.0, 1.0];
     let dims = (20, 22, 18);

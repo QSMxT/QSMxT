@@ -200,7 +200,7 @@ pub fn url() -> String {
 pub fn fetch(url: &str) -> Result<String, String> {
     let mut text = String::new();
     if let Some(path) = url.strip_prefix("file://") {
-        std::fs::File::open(path)
+        fs_err::File::open(path)
             .and_then(|f| f.take(MAX_BYTES).read_to_string(&mut text))
             .map_err(|e| format!("{path}: {e}"))?;
         return Ok(text);
@@ -233,7 +233,7 @@ pub fn load(fetch: impl FnOnce() -> Result<String, String>) -> Loaded {
 /// The announcements saved by the last successful fetch (none, if there was none).
 pub fn load_cached() -> Vec<Announcement> {
     cache_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|p| fs_err::read_to_string(p).ok())
         .and_then(|text| parse(&text).ok())
         .unwrap_or_default()
 }
@@ -275,11 +275,11 @@ fn seen_path() -> Option<PathBuf> {
 fn write(path: Option<PathBuf>, contents: &str) {
     let Some(path) = path else { return };
     if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
+        if fs_err::create_dir_all(parent).is_err() {
             return;
         }
     }
-    let _ = std::fs::write(path, contents);
+    let _ = fs_err::write(path, contents);
 }
 
 fn store_cache(text: &str) {
@@ -296,7 +296,7 @@ struct Seen {
 /// The ids of the announcements that have popped up already.
 pub fn load_seen() -> HashSet<String> {
     seen_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|p| fs_err::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str::<Seen>(&s).ok())
         .map(|s| s.seen.into_iter().collect())
         .unwrap_or_default()
@@ -305,7 +305,7 @@ pub fn load_seen() -> HashSet<String> {
 /// Record that announcement `id` has popped up, so an ordinary one does not again.
 pub fn mark_seen(id: &str) {
     let mut seen = seen_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|p| fs_err::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str::<Seen>(&s).ok())
         .unwrap_or_default();
     if seen.seen.iter().any(|s| s == id) {
@@ -495,7 +495,7 @@ mod tests {
         mark_seen("b");
         mark_seen("a");
         assert_eq!(load_seen(), ["a", "b"].map(String::from).into());
-        let saved = std::fs::read_to_string(t.dir.path().join("announcements-seen.json")).unwrap();
+        let saved = fs_err::read_to_string(t.dir.path().join("announcements-seen.json")).unwrap();
         assert_eq!(saved.matches("\"a\"").count(), 1, "an id is recorded once: {saved}");
     }
 
@@ -505,7 +505,7 @@ mod tests {
         std::env::set_var(DIR_ENV, t.dir.path().join("x").join("y"));
         mark_seen("a");
         assert!(load_seen().contains("a"));
-        std::fs::write(t.dir.path().join("x").join("y").join("announcements-seen.json"), "{ not json").unwrap();
+        fs_err::write(t.dir.path().join("x").join("y").join("announcements-seen.json"), "{ not json").unwrap();
         assert!(load_seen().is_empty());
         mark_seen("b");
         assert_eq!(load_seen(), ["b"].map(String::from).into());
@@ -540,7 +540,7 @@ mod tests {
     fn a_file_url_is_read_and_an_unreachable_one_fails_fast() {
         let t = TestDir::new();
         let path = t.dir.path().join("news.toml");
-        std::fs::write(&path, EXAMPLE).unwrap();
+        fs_err::write(&path, EXAMPLE).unwrap();
         assert_eq!(fetch(&format!("file://{}", path.display())).unwrap(), EXAMPLE);
         assert!(fetch("file:///no/such/file.toml").is_err());
 

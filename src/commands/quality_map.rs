@@ -2,7 +2,7 @@ use log::info;
 use super::common::{load_nifti, save_nifti};
 use crate::cli::QualityMapArgs;
 
-pub fn execute(args: QualityMapArgs) -> crate::Result<()> {
+pub fn execute(args: QualityMapArgs) -> qsmxt_io::Result<()> {
     let phase_nifti = load_nifti(&args.phase)?;
     let (nx, ny, nz) = phase_nifti.dims;
     let n_voxels = nx * ny * nz;

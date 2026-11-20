@@ -31,8 +31,8 @@ Options:
       --echo-times <ECHO_TIMES>...
           GRE echo times in seconds (space- or comma-separated), required with --magnitude
 
-      --r-const-3t <R_CONST_3T>
-          Relaxometric constant at 3T (Hz/ppm)
+      --r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>
+          R2*-QSM relaxometric constant at 3T (Hz/ppm) (default: 274)
 
   -h, --help
           Print help

@@ -1,12 +1,5 @@
 use super::*;
 
-/// Force the relaxometry outputs the *selected* chi-separation method depends on.
-///
-/// Requirements are method-specific: `r2star-qsm` needs R2*; `decompose` needs neither; the
-/// R2'-based methods (chi-sep-ilsqr/medi, wavesep, hc-chisep) need R2' (= R2* − R2), which in turn
-/// needs R2 and R2* unless a custom R2'/R2 map is supplied. Enabling chi-separation turns on exactly
-/// those maps. Keeps a `--do-chisep` run self-consistent, and is what the TUI validates against (it
-/// must not let the user disable a map the current method requires).
 /// Per-structure statistics need a parcellation to average over and at least one map to average,
 /// so asking for the analysis forces both. A bring-your-own dseg satisfies the parcellation.
 ///
@@ -87,6 +80,13 @@ pub fn chisepnet_route_can_estimate_r2prime(config: &PipelineConfig) -> bool {
         && s.r2prime_strategy != R2PrimeStrategy::Mese
 }
 
+/// Force the relaxometry outputs the *selected* chi-separation method depends on.
+///
+/// Requirements are method-specific: `r2star-qsm` needs R2*; `decompose` needs neither; the
+/// R2'-based methods (chi-sep-ilsqr/medi, wavesep, hc-chisep) need R2' (= R2* − R2), which in turn
+/// needs R2 and R2* unless a custom R2'/R2 map is supplied. Enabling chi-separation turns on exactly
+/// those maps. Keeps a `--do-chisep` run self-consistent, and is what the TUI validates against (it
+/// must not let the user disable a map the current method requires).
 pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
     if chisepnet_route_can_estimate_r2prime(config) {
         config.pipeline.do_r2starmap = true;

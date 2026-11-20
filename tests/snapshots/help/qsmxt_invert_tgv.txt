@@ -30,24 +30,6 @@ Options:
       --echo-times <ECHO_TIMES>...
           Echo times in seconds, every echo's, in order
 
-      --iterations <ITERATIONS>
-          Iterations (default: from the voxel size, as the reference does)
-
-      --erosions <EROSIONS>
-          Erosions
-
-      --alpha1 <ALPHA1>
-          Alpha1 (first-order weight), in radians at the echo time (--te) and the field strength (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003)
-
-      --alpha0 <ALPHA0>
-          Alpha0 (second-order weight), in radians at the echo time (--te) and the field strength (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002)
-
-      --step-size <STEP_SIZE>
-          Primal step size multiplier
-
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
-
       --reference-divergence
           Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion and --reference-output-box it reproduces that package, for comparison with it
 
@@ -56,6 +38,24 @@ Options:
 
       --reference-output-box
           Return χ over QuantitativeSusceptibilityMappingTGV.jl's whole output box, not only inside the eroded mask: adds the rim of up to two voxels just outside it, where no data constrain χ
+
+      --tgv-iterations <TGV_ITERATIONS>
+          TGV iterations (default: from the voxel size, as the reference does)
+
+      --tgv-erosions <TGV_EROSIONS>
+          TGV: Mask erosions before TGV solve (default: 3)
+
+      --tgv-alpha1 <TGV_ALPHA1>
+          TGV alpha1 (first-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00212; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.003)
+
+      --tgv-alpha0 <TGV_ALPHA0>
+          TGV alpha0 (second-order weight), in radians at the echo time (--tgv-te) and field strength (the reference's units) (default: 0.00636; QuantitativeSusceptibilityMappingTGV.jl's regularization 2 is 0.002)
+
+      --tgv-step-size <TGV_STEP_SIZE>
+          TGV: Primal step-size multiplier (default: 3)
+
+      --tgv-te <TE>
+          TGV: the echo time a field from several echoes is converted to phase at, and its weights are in radians at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first). A single echo is at its own
 
   -h, --help
           Print help

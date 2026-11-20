@@ -13,6 +13,9 @@ Options:
       --lookup <LOOKUP>
           Also write the BIDS label lookup table (index/name) to this path
 
+      --use-custom-dseg [<TOOL>]
+          Prefer a bring-your-own segmentation from <bids>/derivatives/<TOOL>/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg
+
       --synthseg-version <VERSION>
           SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023)
 
@@ -29,10 +32,7 @@ Options:
           Skip resetting each topological class to its largest connected component
 
       --synthseg-sigma <SYNTHSEG_SIGMA>
-          Gaussian blur on the posteriors, in voxels (0 disables it)
-
-      --use-custom-dseg [<TOOL>]
-          Prefer a bring-your-own segmentation from <bids>/derivatives/<TOOL>/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg
+          Gaussian blur on the posteriors, in voxels (0 disables it) (default: 0.5)
 
   -h, --help
           Print help

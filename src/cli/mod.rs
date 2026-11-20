@@ -182,7 +182,6 @@ mod fieldmap;
 mod invert;
 mod mask;
 mod multi_orient;
-mod params;
 mod parsers;
 mod pipeline;
 mod separate;
@@ -195,7 +194,6 @@ pub use fieldmap::*;
 pub use invert::*;
 pub use mask::*;
 pub use multi_orient::*;
-pub use params::*;
 pub use parsers::*;
 pub use pipeline::*;
 pub use separate::*;
@@ -219,7 +217,9 @@ mod tests {
         let Command::Combine { command: CombineCommand::Mcpc3ds(a) } = cli.command
             else { panic!("expected combine mcpc3ds") };
         assert!(matches!(a.hip_unwrapping, UnwrapAlgorithmArg::Prelude));
-        assert_eq!(a.prelude_params.to_prelude_params(), qsm_core::unwrap::PreludeParams {
+        let mut c = qsmxt_engine::PipelineConfig::default();
+        qsmxt_io::settings::apply(&mut c, &a.settings.0).unwrap();
+        assert_eq!(qsm_core::unwrap::PreludeParams::from(&c.field_mapping.prelude), qsm_core::unwrap::PreludeParams {
             num_phase_partitions: 6,
             labelling: qsm_core::unwrap::PreludeLabelling::Volume,
             ..Default::default()
@@ -240,7 +240,8 @@ mod tests {
         let q = qsm_core::separation::ChiSepIlsqrParams::default().qsm_ilsqr;
         for (path, flag, default) in [
             (&["run"][..], "vsharp-radius-step", v.radius_step.to_string()),
-            (&["bgremove", "vsharp"][..], "radius-step", v.radius_step.to_string()),
+            // The standalone commands show the run's flag help (cli_settings::SettingsOf).
+            (&["bgremove", "vsharp"][..], "vsharp-radius-step", v.radius_step.to_string()),
             (&["run"][..], "chi-sep-ilsqr-qsm-max-iter", q.max_iter.to_string()),
             (&["run"][..], "chi-sep-ilsqr-qsm-pad-mm", q.pad_mm.to_string()),
         ] {
@@ -256,20 +257,20 @@ mod tests {
         for (alg, name) in [("harperella", "sti"), ("iharperella", "whole")] {
             let cli = parse(&["bgremove", alg, "f.nii", "-m", "m.nii", "-o", "o.nii", "--rim", name]);
             let got = match cli.command {
-                Command::Bgremove { command: BgremoveCommand::Harperella(a) } => a.rim,
-                Command::Bgremove { command: BgremoveCommand::Iharperella(a) } => a.rim,
+                Command::Bgremove { command: BgremoveCommand::Harperella(a) } => a.settings.values("harperella-rim").map(|v| v.join(" ")),
+                Command::Bgremove { command: BgremoveCommand::Iharperella(a) } => a.settings.values("iharperella-rim").map(|v| v.join(" ")),
                 _ => panic!("expected bgremove {alg}"),
             };
-            assert_eq!(got.map(|r| r.as_str()), Some(name));
+            assert_eq!(got.as_deref(), Some(name));
         }
         let cli = parse(&["invert", "ndi", "f.nii", "-m", "m.nii", "-o", "o.nii", "--magnitude", "mag.nii",
             "--field-strength", "3", "--echo-times", "0.02", "--weight-norm", "mask-p999"]);
         let Command::Invert { command: InvertCommand::Ndi(a) } = cli.command else { panic!("expected invert ndi") };
-        assert_eq!(a.weight_norm, Some(qsmxt_engine::NdiWeightNorm::MaskP999));
+        assert_eq!(a.settings.values("ndi-weight-norm"), Some(vec!["mask-p999"]));
         let cli = parse(&["invert", "whqsm", "f.nii", "-m", "m.nii", "-o", "o.nii", "--field-strength", "3", "--echo-times", "0.02",
             "--weight", "flat-in-mask"]);
         let Command::Invert { command: InvertCommand::Whqsm(a) } = cli.command else { panic!("expected invert whqsm") };
-        assert_eq!(a.weight, Some(qsmxt_engine::WhqsmWeight::FlatInMask));
+        assert_eq!(a.settings.values("whqsm-weight"), Some(vec!["flat-in-mask"]));
         assert!(Cli::try_parse_from(["qsmxt", "bgremove", "harperella", "f.nii", "-m", "m.nii", "-o", "o.nii",
             "--rim", "edge"]).is_err());
     }
@@ -313,7 +314,7 @@ mod tests {
         let Command::Invert { command: InvertCommand::Rts(a) } = cli.command
             else { panic!("expected invert rts") };
         assert_eq!(a.common.b0_direction, vec![-0.05, -0.09, 0.99]);
-        assert_eq!(a.tol, Some(1e-3));
+        assert_eq!(a.settings.values("rts-tol"), Some(vec!["1e-3"]));
     }
 
     #[test]
@@ -346,7 +347,7 @@ mod tests {
     fn a_negative_obliquity_threshold_points_to_axial_resampling() {
         let cli = parse(&["run", "bids", "--obliquity-threshold", "-1"]);
         let Command::Run(run) = cli.command else { panic!("expected run") };
-        let mut c = crate::pipeline::config::PipelineConfig::default();
+        let mut c = qsmxt_engine::PipelineConfig::default();
         let err = crate::cli_settings::apply_normalised(&mut c, &run.pipeline).unwrap_err().to_string();
         assert!(err.contains("--axial-resampling"), "{err}");
         let cli = parse(&["run", "bids", "--axial-resampling", "--obliquity-threshold", "5"]);

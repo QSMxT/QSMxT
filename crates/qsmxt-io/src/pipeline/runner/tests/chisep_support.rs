@@ -106,7 +106,7 @@ fn direct(f: &Fixture, config: &PipelineConfig, mask: &[u8]) -> [Vec<f64>; 3] {
         magnitude_rss: Some(&rss), magnitude_multi: Some(&multi), se_magnitude_multi: None,
         n_std: n_std.as_deref(), mask_csf: csf.as_deref(),
     };
-    let metadata = crate::pipeline::config::to_scan_metadata(
+    let metadata = qsmxt_engine::to_scan_metadata(
         m.dims, m.voxel_size, &m.echo_times, m.field_strength, m.b0_direction, Some(m.affine));
     let r = qsm_core::pipeline::run_separation(
         inputs, &metadata, &qsmxt_engine::bridge::to_separation_config(config), &mut |_, _| {},
@@ -187,7 +187,7 @@ fn the_cache_key_records_the_fit_domain() {
     let f = fixture();
     let config = sep_config(SeparationAlgorithm::R2starQsm);
     separate(&f, &config);
-    let prov: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+    let prov: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(
         f.output.provenance_path(&f.run.key, "chi_separation")).unwrap()).unwrap();
     assert_eq!(prov["parameters"]["domain"], "support");
     let support = f.output.qsm_support_path(&f.run.key).display().to_string();

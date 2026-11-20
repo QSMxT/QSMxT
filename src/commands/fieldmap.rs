@@ -1,20 +1,15 @@
 //! Standalone B0 field mapping from multi-echo phase (NIfTI in, ppm out).
 //!
-//! Exposes the qsm-core field-mapping stage (`run_field_mapping`) directly, with
-//! the full ROMEO + field-mapping parameter surface. Unlike `qsmxt unwrap` (a pure
+//! Exposes the field-mapping stage (`run_field_mapping`) directly, with the field-mapping
+//! settings' `qsmxt run` flags. Unlike `qsmxt unwrap` (a pure
 //! single-volume unwrapper) this operates on 4D multi-echo phase and produces a B0
 //! field map already in ppm.
 
 use log::info;
 
 use super::common::{load_mask, load_nifti_4d, save_nifti, MultiEcho};
-use crate::cli::{
-    B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs, FieldmapLaplacianArgs,
-    FieldmapMediRegionGrowingArgs, FieldmapPreludeArgs, FieldmapRomeoArgs,
-};
-use crate::error::QsmxtError;
-use crate::cli::LaplacianSolverArg;
-use crate::pipeline::phase;
+use crate::cli::{FieldmapCommand, FieldmapCommonArgs};
+use qsmxt_io::error::QsmxtError;
 
 /// TE / B0 / geometry resolved from `--tes` / `--b0` / `--params`.
 struct ScanParams {
@@ -37,10 +32,10 @@ struct ParamsJson {
     b0_dir: Option<Vec<f64>>,
 }
 
-fn resolve_scan_params(common: &FieldmapCommonArgs) -> crate::Result<ScanParams> {
+fn resolve_scan_params(common: &FieldmapCommonArgs) -> qsmxt_io::Result<ScanParams> {
     // Start from the JSON file (if any), then let explicit CLI flags override.
     let json: ParamsJson = if let Some(ref p) = common.params {
-        let text = std::fs::read_to_string(p)
+        let text = fs_err::read_to_string(p)
             .map_err(|e| QsmxtError::Config(format!("failed to read params file {}: {}", p.display(), e)))?;
         serde_json::from_str(&text)
             .map_err(|e| QsmxtError::Config(format!("failed to parse params file {}: {}", p.display(), e)))?
@@ -75,189 +70,45 @@ fn resolve_scan_params(common: &FieldmapCommonArgs) -> crate::Result<ScanParams>
     Ok(ScanParams { echo_times, field_strength, voxel_size, b0_direction })
 }
 
-/// Map the shared CLI field-mapping flags onto the qsm-core config knobs.
-fn apply_common_config(
-    config: &mut qsm_core::pipeline::config::FieldMappingConfig,
-    common: &FieldmapCommonArgs,
-) {
-    config.b0_estimation = match common.b0_estimation {
-        B0EstimationArg::WeightedAvg => qsm_core::pipeline::config::B0EstimationMethod::WeightedAvg {
-            weighting: echo_weighting(common),
-        },
-        B0EstimationArg::LinearFit => {
-            let mut p = qsm_core::utils::LinearFitParams::default();
-            if let Some(v) = common.linear_fit_estimate_offset {
-                p.estimate_offset = v;
-            }
-            qsm_core::pipeline::config::B0EstimationMethod::LinearFit(p)
-        }
-        B0EstimationArg::RobustFit => {
-            // QSMxT's defaults, then the flags (shared with `qsmxt run`).
-            let mut cfg = qsmxt_engine::PipelineConfig::default();
-            let fm = &mut cfg.field_mapping;
-            fm.b0_estimation = qsmxt_engine::B0Estimation::RobustFit;
-            if let Some(v) = common.linear_fit_estimate_offset { fm.linear_fit.estimate_offset = v; }
-            if let Some(l) = common.robust_fit_loss {
-                fm.robust_fit.loss = match l {
-                    crate::cli::RobustLossArg::Tukey => qsmxt_engine::RobustLoss::Tukey,
-                    crate::cli::RobustLossArg::Huber => qsmxt_engine::RobustLoss::Huber,
-                };
-            }
-            if let Some(v) = common.robust_fit_tuning { fm.robust_fit.tuning = Some(v); }
-            if let Some(v) = common.robust_fit_iterations { fm.robust_fit.iterations = v; }
-            if let Some(v) = common.robust_fit_downweight_level { fm.robust_fit.downweight_level = v; }
-            if let Some(v) = common.robust_fit_flag_ratio { fm.robust_fit.flag_ratio = v; }
-            qsmxt_engine::to_pipeline_stages(&cfg).0.b0_estimation
-        }
-        B0EstimationArg::QsmartEchofit => {
-            let mut fm = qsmxt_engine::FieldMappingConfig::default();
-            crate::pipeline::config::apply_qsmart_fit_threshold(&mut fm, common.qsmart_fit_threshold_mode.map(Into::into),
-                common.qsmart_fit_percentile, common.qsmart_fit_threshold);
-            qsm_core::pipeline::config::B0EstimationMethod::QsmartEchofit { fit_threshold: fm.qsmart_fit_threshold() }
-        }
-        B0EstimationArg::ComplexFit => {
-            // MEDI's complex fit: it needs every echo's magnitude (--magnitude) and evenly spaced
-            // echoes, and refuses bipolar correction (qsm-core says so before fitting).
-            let mut cfg = qsmxt_engine::PipelineConfig::default();
-            let fm = &mut cfg.field_mapping;
-            fm.b0_estimation = qsmxt_engine::B0Estimation::ComplexFit;
-            if let Some(v) = common.complex_fit_reltol { fm.complex_fit.reltol = v; }
-            if let Some(v) = common.complex_fit_max_iter { fm.complex_fit.max_iter = v; }
-            qsmxt_engine::to_pipeline_stages(&cfg).0.b0_estimation
-        }
-    };
-}
-
-/// The echo weighting for a weighted-average B0 estimate.
-fn echo_weighting(common: &FieldmapCommonArgs) -> qsm_core::utils::B0WeightType {
-    use qsm_core::utils::B0WeightType as W;
-    match common.b0_weight_type {
-        B0WeightTypeArg::PhaseSNR => W::PhaseSNR,
-        B0WeightTypeArg::PhaseVar => W::PhaseVar,
-        B0WeightTypeArg::Average => W::Average,
-        B0WeightTypeArg::TEs => W::TEs,
-        B0WeightTypeArg::Mag => W::Mag,
-        B0WeightTypeArg::AssumedDecay => W::AssumedDecay { t2star_s: common.b0_weight_assumed_t2star * 1e-3 },
-    }
-}
-
-pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
-    // Dispatch per algorithm; the algorithm-specific config is applied via a closure so the shared
-    // run_field_mapping does the loading/validation once.
+pub fn execute(cmd: FieldmapCommand) -> qsmxt_io::Result<()> {
+    use qsmxt_engine::UnwrappingAlgorithm as U;
     match cmd {
-        FieldmapCommand::Romeo(args) => run_field_mapping(
-            &args.common,
-            qsm_core::pipeline::config::UnwrappingAlgorithm::Romeo,
-            &|c| apply_romeo(&args, c),
-        ),
-        FieldmapCommand::Laplacian(args) => {
-            let solver = laplacian_solver(&args)?;
-            run_field_mapping(
-                &args.common,
-                qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
-                &|c| apply_laplacian(&args, solver, c),
-            )
-        }
-        FieldmapCommand::Prelude(args) => run_field_mapping(
-            &args.common,
-            qsm_core::pipeline::config::UnwrappingAlgorithm::Prelude,
-            &|c| apply_prelude(&args, c),
-        ),
+        FieldmapCommand::Romeo(args) => run_field_mapping(&args.common, U::Romeo, &args.settings.0),
+        FieldmapCommand::Laplacian(args) => run_field_mapping(&args.common, U::Laplacian, &args.settings.0),
+        FieldmapCommand::Prelude(args) => run_field_mapping(&args.common, U::Prelude, &args.settings.0),
         FieldmapCommand::MediRegionGrowing(args) => {
             if args.common.magnitude.is_none() {
                 return Err(QsmxtError::Config(
                     "fieldmap medi-region-growing needs --magnitude: MEDI's region growing unwraps in \
                      order of the magnitude".into()));
             }
-            run_field_mapping(
-                &args.common,
-                qsm_core::pipeline::config::UnwrappingAlgorithm::MediRegionGrowing,
-                &|c| apply_medi_region_growing(&args, c),
-            )
+            run_field_mapping(&args.common, U::MediRegionGrowing, &[])
         }
     }
 }
 
-/// The Poisson solver `fieldmap laplacian`'s flags choose.
-fn laplacian_solver(args: &FieldmapLaplacianArgs) -> crate::Result<qsm_core::unwrap::LaplacianSolver> {
-    let pad = qsmxt_engine::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
-        format!("--laplacian-fft-pad {:?}: give one value or three", args.laplacian_fft_pad)))?;
-    Ok(match args.laplacian_solver {
-        LaplacianSolverArg::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
-        LaplacianSolverArg::Fft => qsm_core::unwrap::LaplacianSolver::Fft { pad },
-        LaplacianSolverArg::Mirror => qsm_core::unwrap::LaplacianSolver::Mirror,
-        LaplacianSolverArg::Mgpcg => qsm_core::unwrap::LaplacianSolver::Mgpcg,
-    })
-}
-
-/// `fieldmap laplacian`'s own flags.
-fn apply_laplacian(
-    args: &FieldmapLaplacianArgs, solver: qsm_core::unwrap::LaplacianSolver,
-    c: &mut qsm_core::pipeline::config::FieldMappingConfig,
-) {
-    c.laplacian_solver = solver;
-    c.laplacian_unmasked = args.laplacian_unmasked;
-    if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
-    if let Some(ref s) = args.phase_offset_sigma_mm {
-        if s.len() == 3 { c.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
-    }
-    c.bipolar_correction = args.bipolar_correction;
-}
-
-/// `fieldmap romeo`'s own flags.
-fn apply_romeo(args: &FieldmapRomeoArgs, c: &mut qsm_core::pipeline::config::FieldMappingConfig) {
-    if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
-    if let Some(ref s) = args.phase_offset_sigma_mm {
-        if s.len() == 3 { c.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
-    }
-    c.bipolar_correction = args.bipolar_correction;
-    c.romeo_params = args.romeo_params.to_romeo_params();
-}
-
-/// `fieldmap prelude`'s own flags: phase offset removal and bipolar correction as with ROMEO.
-fn apply_prelude(args: &FieldmapPreludeArgs, c: &mut qsm_core::pipeline::config::FieldMappingConfig) {
-    if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
-    if let Some(ref s) = args.phase_offset_sigma_mm {
-        if s.len() == 3 { c.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
-    }
-    c.bipolar_correction = args.bipolar_correction;
-    c.prelude_params = args.prelude_params.to_prelude_params();
-}
-
-/// `fieldmap medi-region-growing`'s own flags: phase offset removal and bipolar correction as
-/// with ROMEO.
-fn apply_medi_region_growing(args: &FieldmapMediRegionGrowingArgs, c: &mut qsm_core::pipeline::config::FieldMappingConfig) {
-    if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
-    if let Some(ref s) = args.phase_offset_sigma_mm {
-        if s.len() == 3 { c.phase_offset_sigma_mm = [s[0], s[1], s[2]]; }
-    }
-    c.bipolar_correction = args.bipolar_correction;
-}
-
-/// The qsm-core field-mapping configuration for these flags. Starts from QSMxT's defaults — the
-/// ones `qsmxt run` starts from — not qsm-core's: they differ (ROMEO's re-unwrapping of uncertain
-/// voxels, for one), and the standalone tool has to give the field map the pipeline
-/// gives for the same inputs and flags (#279).
-fn field_mapping_config(
-    common: &FieldmapCommonArgs,
-    algorithm: qsm_core::pipeline::config::UnwrappingAlgorithm,
-    apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
-) -> qsm_core::pipeline::config::FieldMappingConfig {
-    let mut config = qsmxt_engine::to_pipeline_stages(&qsmxt_engine::PipelineConfig::default()).0;
-    config.unwrapping_algorithm = algorithm;
-    apply_common_config(&mut config, common);
-    apply_algo(&mut config);
-    config
+/// QSMxT's configuration with `algorithm` as the unwrapping, and the common flags and the
+/// method's (`method`) applied, as `qsmxt run` applies them. The field-mapping stage is the one
+/// `qsmxt run` builds from it ([`qsmxt_engine::to_pipeline_stages`]), so the standalone tool
+/// gives the field map the pipeline gives for the same inputs and flags (#279).
+fn config(
+    common: &FieldmapCommonArgs, algorithm: qsmxt_engine::UnwrappingAlgorithm,
+    method: &[qsmxt_engine::schema::cli_apply::Given],
+) -> qsmxt_io::Result<qsmxt_engine::PipelineConfig> {
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    cfg.field_mapping.unwrapping_algorithm = algorithm;
+    qsmxt_io::settings::apply(&mut cfg, &[common.settings.0.as_slice(), method].concat())?;
+    Ok(cfg)
 }
 
 fn run_field_mapping(
-    common: &FieldmapCommonArgs,
-    algorithm: qsm_core::pipeline::config::UnwrappingAlgorithm,
-    apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
-) -> crate::Result<()> {
+    common: &FieldmapCommonArgs, algorithm: qsmxt_engine::UnwrappingAlgorithm,
+    method: &[qsmxt_engine::schema::cli_apply::Given],
+) -> qsmxt_io::Result<()> {
     let params = resolve_scan_params(common)?;
+    let cfg = config(common, algorithm, method)?;
     if (common.complex_fit_output.is_some() || common.complex_fit_noise_output.is_some())
-        && common.b0_estimation != B0EstimationArg::ComplexFit
+        && cfg.field_mapping.b0_estimation != qsmxt_engine::B0Estimation::ComplexFit
     {
         return Err(QsmxtError::Config(
             "--complex-fit-output and --complex-fit-noise-output need --b0-estimation complex-fit".into()));
@@ -279,7 +130,7 @@ fn run_field_mapping(
 
     // Into radians in [-pi, pi], with one conversion for every echo (scale_phases_to_pi).
     let mut phases: Vec<Vec<f64>> = phase_me.echoes.clone();
-    phase::scale_phases_to_pi(&mut phases);
+    qsm_core::pipeline::scale_phases_to_pi(&mut phases);
     let phase_slices: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
     // ── Optional 4D magnitude ──
@@ -301,7 +152,7 @@ fn run_field_mapping(
     // ── Scan metadata ──
     let scan_meta = scan_metadata(&params, &phase_me);
 
-    let config = field_mapping_config(common, algorithm, apply_algo);
+    let config = qsmxt_engine::to_pipeline_stages(&cfg).0;
 
     info!(
         "Field mapping ({:?}, {}x{}x{}, {} echoes, B0={:.2}T)",
@@ -353,7 +204,7 @@ fn run_field_mapping(
 }
 
 /// The optional 4D magnitude, one volume per phase echo.
-fn load_magnitudes(common: &FieldmapCommonArgs, n_echoes: usize) -> crate::Result<Option<Vec<Vec<f64>>>> {
+fn load_magnitudes(common: &FieldmapCommonArgs, n_echoes: usize) -> qsmxt_io::Result<Option<Vec<Vec<f64>>>> {
     let magnitudes: Option<Vec<Vec<f64>>> = if let Some(ref mag_path) = common.magnitude {
         let mag_me = load_nifti_4d(mag_path)?;
         if mag_me.echoes.len() != n_echoes {
@@ -376,7 +227,7 @@ fn scan_metadata(params: &ScanParams, phase_me: &MultiEcho) -> qsm_core::pipelin
     let voxel_size = params.voxel_size.unwrap_or(phase_me.voxel_size);
     let b0_direction = params
         .b0_direction
-        .unwrap_or_else(|| phase::b0_direction_from_affine(&phase_me.affine));
+        .unwrap_or_else(|| qsm_core::geometry::b0_direction_from_affine(&phase_me.affine));
     qsm_core::pipeline::config::ScanMetadata {
         dims: phase_me.dims,
         voxel_size,
@@ -395,7 +246,7 @@ fn save_complex_fit(
     common: &FieldmapCommonArgs,
     fit: Option<&qsm_core::utils::FitPpmComplexResult>,
     reference: &qsm_core::io::NiftiData,
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     if common.complex_fit_output.is_none() && common.complex_fit_noise_output.is_none() {
         return Ok(());
     }
@@ -416,7 +267,8 @@ fn save_complex_fit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::{B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs, FieldmapRomeoArgs};
+    use crate::cli::{FieldmapCommand, FieldmapCommonArgs, FieldmapRomeoArgs};
+    use crate::cli_settings::SettingsOf;
     use std::f64::consts::PI;
     use std::io::Write;
 
@@ -444,9 +296,8 @@ mod tests {
             fm.extend_from_slice(flags);
             let cli = crate::cli::Cli::try_parse_from(&fm).unwrap();
             let crate::cli::Command::Fieldmap { command: FieldmapCommand::Romeo(args) } = cli.command else { panic!() };
-            let standalone = super::field_mapping_config(
-                &args.common, qsm_core::pipeline::config::UnwrappingAlgorithm::Romeo,
-                &|c| super::apply_romeo(&args, c));
+            let standalone = qsmxt_engine::to_pipeline_stages(
+                &super::config(&args.common, qsmxt_engine::UnwrappingAlgorithm::Romeo, &args.settings.0).unwrap()).0;
 
             let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "romeo"];
             run.extend_from_slice(flags);
@@ -480,10 +331,8 @@ mod tests {
             fm.extend_from_slice(flags);
             let cli = crate::cli::Cli::try_parse_from(&fm).unwrap();
             let crate::cli::Command::Fieldmap { command: FieldmapCommand::Laplacian(args) } = cli.command else { panic!() };
-            let solver = super::laplacian_solver(&args).unwrap();
-            let standalone = super::field_mapping_config(
-                &args.common, qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
-                &|c| super::apply_laplacian(&args, solver, c));
+            let standalone = qsmxt_engine::to_pipeline_stages(
+                &super::config(&args.common, qsmxt_engine::UnwrappingAlgorithm::Laplacian, &args.settings.0).unwrap()).0;
             assert_eq!(standalone.laplacian_unmasked, flags.contains(&"--laplacian-unmasked"), "flags {flags:?}");
 
             let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "laplacian"];
@@ -515,9 +364,8 @@ mod tests {
             fm.extend_from_slice(flags);
             let cli = crate::cli::Cli::try_parse_from(&fm).unwrap();
             let crate::cli::Command::Fieldmap { command: FieldmapCommand::MediRegionGrowing(args) } = cli.command else { panic!() };
-            let standalone = super::field_mapping_config(
-                &args.common, qsm_core::pipeline::config::UnwrappingAlgorithm::MediRegionGrowing,
-                &|c| super::apply_medi_region_growing(&args, c));
+            let standalone = qsmxt_engine::to_pipeline_stages(
+                &super::config(&args.common, qsmxt_engine::UnwrappingAlgorithm::MediRegionGrowing, &[]).unwrap()).0;
             let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "medi-region-growing"];
             run.extend_from_slice(flags);
             let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
@@ -551,9 +399,8 @@ mod tests {
             fm.extend_from_slice(flags);
             let cli = crate::cli::Cli::try_parse_from(&fm).unwrap();
             let crate::cli::Command::Fieldmap { command: FieldmapCommand::Prelude(args) } = cli.command else { panic!() };
-            let standalone = super::field_mapping_config(
-                &args.common, qsm_core::pipeline::config::UnwrappingAlgorithm::Prelude,
-                &|c| super::apply_prelude(&args, c));
+            let standalone = qsmxt_engine::to_pipeline_stages(
+                &super::config(&args.common, qsmxt_engine::UnwrappingAlgorithm::Prelude, &args.settings.0).unwrap()).0;
             assert_eq!(standalone.unwrapping_algorithm, qsm_core::pipeline::config::UnwrappingAlgorithm::Prelude);
 
             let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "prelude"];
@@ -568,7 +415,8 @@ mod tests {
         let cli = crate::cli::Cli::try_parse_from(["qsmxt", "fieldmap", "prelude", "p.nii", "--mask", "m.nii",
             "--output", "o.nii", "--prelude-labelling", "volume", "--prelude-partitions", "6"]).unwrap();
         let crate::cli::Command::Fieldmap { command: FieldmapCommand::Prelude(args) } = cli.command else { panic!() };
-        assert_eq!(args.prelude_params.to_prelude_params(), qsm_core::unwrap::PreludeParams {
+        let cfg = super::config(&args.common, qsmxt_engine::UnwrappingAlgorithm::Prelude, &args.settings.0).unwrap();
+        assert_eq!(qsmxt_engine::to_pipeline_stages(&cfg).0.prelude_params, qsm_core::unwrap::PreludeParams {
             num_phase_partitions: 6, labelling: qsm_core::unwrap::PreludeLabelling::Volume,
             ..Default::default()
         });
@@ -611,7 +459,7 @@ mod tests {
                 buf.write_all(&(v as f32).to_le_bytes()).unwrap();
             }
         }
-        std::fs::write(path, &buf).unwrap();
+        fs_err::write(path, &buf).unwrap();
     }
 
     /// A two-echo linear-phase field should be recovered to a known ppm value.
@@ -649,24 +497,11 @@ mod tests {
             tes: Some(tes.to_vec()),
             b0: Some(b0),
             params: None,
-            b0_estimation: B0EstimationArg::WeightedAvg,
-            b0_weight_type: B0WeightTypeArg::PhaseSNR,
-            b0_weight_assumed_t2star: 40.0,
-            linear_fit_estimate_offset: None,
-            robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
-            robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
-            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
             reliability_output: None, field_mask_output: Some(field_mask_path.clone()), complex_fit_output: None, complex_fit_noise_output: None,
-            complex_fit_reltol: None, complex_fit_max_iter: None,
-        };
-        let args = FieldmapRomeoArgs {
-            common,
             // Disable offset removal so the constant field is preserved (ROMEO path B).
-            phase_offset_removal: Some(false),
-            phase_offset_sigma_mm: None,
-            bipolar_correction: false,
-            romeo_params: Default::default(),
+            settings: SettingsOf::from_flags(&["--phase-offset-removal", "false"]),
         };
+        let args = FieldmapRomeoArgs { common, settings: Default::default() };
 
         execute(FieldmapCommand::Romeo(args)).unwrap();
 
@@ -725,7 +560,7 @@ mod tests {
     fn test_resolve_scan_params_from_json() {
         let dir = tempfile::tempdir().unwrap();
         let params_path = dir.path().join("params.json");
-        std::fs::write(&params_path, r#"{"TE":[0.004,0.008,0.012],"B0":7.0}"#).unwrap();
+        fs_err::write(&params_path, r#"{"TE":[0.004,0.008,0.012],"B0":7.0}"#).unwrap();
 
         let common = FieldmapCommonArgs {
             input: dir.path().join("phase.nii"),
@@ -735,15 +570,8 @@ mod tests {
             tes: None,
             b0: None,
             params: Some(params_path),
-            b0_estimation: B0EstimationArg::WeightedAvg,
-            b0_weight_type: B0WeightTypeArg::PhaseSNR,
-            b0_weight_assumed_t2star: 40.0,
-            linear_fit_estimate_offset: None,
-            robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
-            robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
-            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
             reliability_output: None, field_mask_output: None, complex_fit_output: None, complex_fit_noise_output: None,
-            complex_fit_reltol: None, complex_fit_max_iter: None,
+            settings: Default::default(),
         };
         let p = resolve_scan_params(&common).unwrap();
         assert_eq!(p.echo_times, vec![0.004, 0.008, 0.012]);
@@ -772,23 +600,10 @@ mod tests {
             tes: Some(vec![0.005]), // only 1 TE for 2 echoes
             b0: Some(3.0),
             params: None,
-            b0_estimation: B0EstimationArg::WeightedAvg,
-            b0_weight_type: B0WeightTypeArg::PhaseSNR,
-            b0_weight_assumed_t2star: 40.0,
-            linear_fit_estimate_offset: None,
-            robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
-            robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
-            qsmart_fit_threshold_mode: None, qsmart_fit_percentile: None, qsmart_fit_threshold: None,
             reliability_output: None, field_mask_output: None, complex_fit_output: None, complex_fit_noise_output: None,
-            complex_fit_reltol: None, complex_fit_max_iter: None,
+            settings: Default::default(),
         };
-        let args = FieldmapRomeoArgs {
-            common,
-            phase_offset_removal: Some(false),
-            phase_offset_sigma_mm: None,
-            bipolar_correction: false,
-            romeo_params: Default::default(),
-        };
+        let args = FieldmapRomeoArgs { common, settings: Default::default() };
         assert!(execute(FieldmapCommand::Romeo(args)).is_err());
     }
 }

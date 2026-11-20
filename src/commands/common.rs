@@ -2,15 +2,15 @@
 
 use std::path::{Path, PathBuf};
 use qsm_core::io::{self, NiftiData};
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 
 /// Full NIfTI data plus its 4D dimensions `(nx, ny, nz, n_vol)`.
 pub type Nifti4d = (Vec<f64>, (usize, usize, usize, usize));
 
 /// Read a NIfTI (3D or 4D, `.nii`/`.nii.gz`) as its full data plus `(nx, ny, nz, n_vol)`.
 /// Unlike [`load_nifti`], this keeps every volume of a 4D file (echo-major layout).
-pub fn read_nifti_any(path: &Path) -> crate::Result<Nifti4d> {
-    let bytes = std::fs::read(path)
+pub fn read_nifti_any(path: &Path) -> qsmxt_io::Result<Nifti4d> {
+    let bytes = fs_err::read(path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
     let (data, dims4, _voxel, _affine) = io::load_nifti_4d(&bytes)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
@@ -21,7 +21,7 @@ pub fn read_nifti_any(path: &Path) -> crate::Result<Nifti4d> {
 /// file, stacked with the echo slowest (`data[e * n_voxels + v]`, as a 4D NIfTI stores it), with
 /// the echo count. Dimensions are validated against `n_voxels` with a clear error rather than a
 /// deep panic.
-pub fn load_echo_stack(paths: &[PathBuf], n_voxels: usize) -> crate::Result<(Vec<f64>, usize)> {
+pub fn load_echo_stack(paths: &[PathBuf], n_voxels: usize) -> qsmxt_io::Result<(Vec<f64>, usize)> {
     if paths.is_empty() {
         return Err(QsmxtError::Config("no magnitude file provided".into()));
     }
@@ -57,7 +57,7 @@ pub fn load_echo_stack(paths: &[PathBuf], n_voxels: usize) -> crate::Result<(Vec
 
 /// [`load_echo_stack`], voxel-major (`(n_voxels * n_echoes)`, `data[v * n_echoes + e]`): the
 /// layout the voxel-wise fits take.
-pub fn load_multiecho_voxel_major(paths: &[PathBuf], n_voxels: usize) -> crate::Result<(Vec<f64>, usize)> {
+pub fn load_multiecho_voxel_major(paths: &[PathBuf], n_voxels: usize) -> qsmxt_io::Result<(Vec<f64>, usize)> {
     let (stack, n_echoes) = load_echo_stack(paths, n_voxels)?;
     let mut out = vec![0.0f64; n_voxels * n_echoes];
     for e in 0..n_echoes {
@@ -70,7 +70,7 @@ pub fn load_multiecho_voxel_major(paths: &[PathBuf], n_voxels: usize) -> crate::
 
 /// The combined magnitude a method weights by, as `qsmxt run` combines it (root-sum-of-squares
 /// over echoes) from one 3D or 4D file or one file per echo; `None` without any.
-pub fn load_combined_magnitude(paths: &[PathBuf], n_voxels: usize) -> crate::Result<Option<Vec<f64>>> {
+pub fn load_combined_magnitude(paths: &[PathBuf], n_voxels: usize) -> qsmxt_io::Result<Option<Vec<f64>>> {
     if paths.is_empty() {
         return Ok(None);
     }
@@ -100,7 +100,7 @@ pub fn nifti_grid(nifti: &NiftiData) -> qsm_core::Grid {
 }
 
 /// Load a NIfTI file with error mapping.
-pub fn load_nifti(path: &Path) -> crate::Result<NiftiData> {
+pub fn load_nifti(path: &Path) -> qsmxt_io::Result<NiftiData> {
     io::read_nifti_file(path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))
 }
@@ -135,8 +135,8 @@ impl MultiEcho {
 ///
 /// `read_nifti_file`/`load_nifti` only return the first volume of a 4D file, so this
 /// uses `load_nifti_4d` and de-interleaves the flat `t`-major buffer.
-pub fn load_nifti_4d(path: &Path) -> crate::Result<MultiEcho> {
-    let bytes = std::fs::read(path)
+pub fn load_nifti_4d(path: &Path) -> qsmxt_io::Result<MultiEcho> {
+    let bytes = fs_err::read(path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
     let (data, (nx, ny, nz, nt), voxel_size, affine) = io::load_nifti_4d(&bytes)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
@@ -149,21 +149,21 @@ pub fn load_nifti_4d(path: &Path) -> crate::Result<MultiEcho> {
 }
 
 /// Load a binary mask from a NIfTI file (threshold at 0.5).
-pub fn load_mask(path: &Path) -> crate::Result<(Vec<u8>, NiftiData)> {
+pub fn load_mask(path: &Path) -> qsmxt_io::Result<(Vec<u8>, NiftiData)> {
     let nifti = load_nifti(path)?;
     let mask: Vec<u8> = nifti.data.iter().map(|&v| if v > 0.5 { 1u8 } else { 0u8 }).collect();
     Ok((mask, nifti))
 }
 
 /// Save a f64 volume to NIfTI, preserving geometry from a reference.
-pub fn save_nifti(path: &Path, data: &[f64], reference: &NiftiData) -> crate::Result<()> {
-    crate::nifti::write::write_volume(
+pub fn save_nifti(path: &Path, data: &[f64], reference: &NiftiData) -> qsmxt_io::Result<()> {
+    qsmxt_io::nifti::write::write_volume(
         path, data, reference.dims, reference.voxel_size, &reference.affine,
     )
 }
 
 /// Save a u8 mask as f64 NIfTI, preserving geometry from a reference.
-pub fn save_mask(path: &Path, mask: &[u8], reference: &NiftiData) -> crate::Result<()> {
+pub fn save_mask(path: &Path, mask: &[u8], reference: &NiftiData) -> qsmxt_io::Result<()> {
     let data: Vec<f64> = mask.iter().map(|&m| m as f64).collect();
     save_nifti(path, &data, reference)
 }
@@ -174,7 +174,7 @@ pub fn compute_r2star(
     inputs: &[std::path::PathBuf],
     mask_path: &Path,
     echo_times: &[f64],
-) -> crate::Result<(Vec<f64>, NiftiData)> {
+) -> qsmxt_io::Result<(Vec<f64>, NiftiData)> {
     // Reference geometry from the first input (first volume of a 4D file, or the first 3D echo).
     let reference = load_nifti(&inputs[0])?;
     let (nx, ny, nz) = reference.dims;
@@ -202,7 +202,7 @@ pub fn compute_r2star(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutils;
+    use qsmxt_io::testutils;
 
     #[test]
     fn test_load_nifti() {

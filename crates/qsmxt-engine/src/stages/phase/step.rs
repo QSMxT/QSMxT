@@ -64,7 +64,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.check_resampling_planned()?;
         let chain = self.chain();
         let params = stages::phase::params(&self.meta, None, &chain);
-        let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)",
+        let Some(key) = self.begin(Stage::ScalePhase, None, &params, "Skipping scale_phase (cached)",
                                    "Rescaling phase to radians") else { return Ok(()) };
         let n = self.n_echoes();
         let mut outputs = Vec::new();
@@ -86,7 +86,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             }
         }
         self.complete(Done {
-            step: "scale_phase", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage: Stage::ScalePhase, algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "Rescale phase")
     }
 
@@ -100,7 +100,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let manufacturer = self.store.sidecar()?.and_then(|s| s.manufacturer);
         let negate_phase = stages::phase::negates_real_imaginary_phase(manufacturer.as_deref());
         let params = stages::phase::params(&self.meta, Some(negate_phase), &chain);
-        let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)",
+        let Some(key) = self.begin(Stage::ScalePhase, None, &params, "Skipping scale_phase (cached)",
                                    "Converting real/imaginary to magnitude/phase") else { return Ok(()) };
         let n = self.n_echoes();
         let acquired = stages::phase::acquired_grid(&self.meta).n_total();
@@ -146,7 +146,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             self.put_echo(e, (chain.scaled_phase(e), phase), magnitude, &mut outputs)?;
         }
         self.complete(Done {
-            step: "scale_phase", algorithm: None, params: &params, outcome, key: &key, outputs: &outputs,
+            stage: Stage::ScalePhase, algorithm: None, params: &params, outcome, key: &key, outputs: &outputs,
         }, "Rescale phase")
     }
 
@@ -168,7 +168,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 coils.len())).into());
         }
         let params = stages::phase::coil_params(self.config, &self.meta, &coils, &chain);
-        let Some(key) = self.begin("scale_phase", Some("mcpc3ds"), &params, "Skipping coil combination (cached)",
+        let Some(key) = self.begin(Stage::ScalePhase, Some("mcpc3ds"), &params, "Skipping coil combination (cached)",
                                    "MCPC-3D-S coil combination") else { return Ok(()) };
         self.log(Level::Info, &format!("Coil combination (MCPC-3D-S): {} coils x {n} echoes", coils.len()));
         let acquired = stages::phase::acquired_grid(&self.meta).n_total();
@@ -220,7 +220,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         outputs.push(Item::CoilCombinationMask);
         self.complete(Done {
-            step: "scale_phase", algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key,
+            stage: Stage::ScalePhase, algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key,
             outputs: &outputs,
         }, "Coil combination")
     }
@@ -231,7 +231,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     pub(crate) fn tukey_window(&mut self) -> Result<(), S::Error> {
         let chain = self.chain();
         let params = stages::phase::tukey_params(&self.meta, self.config, &chain);
-        let Some(key) = self.begin("tukey_window", None, &params, "Skipping tukey_window (cached)",
+        let Some(key) = self.begin(Stage::TukeyWindow, None, &params, "Skipping tukey_window (cached)",
                                    "Applying the k-space Tukey window") else { return Ok(()) };
         if let Some(line) = stages::phase::tukey_window_line(self.config) {
             self.log(Level::Info, &line);
@@ -250,7 +250,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             self.put_echo(e, (phase_item, &phase), Some((mag_item, &mag)), &mut outputs)?;
         }
         self.complete(Done {
-            step: "tukey_window", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage: Stage::TukeyWindow, algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "Tukey window")
     }
 
@@ -263,7 +263,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         let chain = self.chain();
         let params = stages::phase::resample_params(&self.meta, &chain);
-        let Some(key) = self.begin("resample_axial", None, &params, "Skipping resample_axial (cached)",
+        let Some(key) = self.begin(Stage::ResampleAxial, None, &params, "Skipping resample_axial (cached)",
                                    "Resampling to axial") else { return Ok(()) };
         let mut outputs = Vec::new();
         for e in 1..=self.n_echoes() {
@@ -280,7 +280,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             self.put_echo(e, (Item::Phase(e), &out.phase), magnitude, &mut outputs)?;
         }
         self.complete(Done {
-            step: "resample_axial", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage: Stage::ResampleAxial, algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "Resample to axial")
     }
 }

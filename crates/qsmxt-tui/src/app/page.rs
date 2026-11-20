@@ -187,8 +187,8 @@ impl App {
             Page::Smwi => on(self.form.settings.toggle("pipeline.do_smwi")),
             Page::Magnitude => on(self.form.settings.toggle("pipeline.do_magnitude")),
             Page::Swi => on(self.form.settings.toggle("pipeline.do_swi")),
-            Page::Relaxometry => on(["do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap"].iter().any(|f| self.output_made(f))),
-            Page::Segmentation => on(self.output_made("do_segmentation") || self.form.settings.toggle("pipeline.do_analysis")),
+            Page::Relaxometry => on(["pipeline.do_t2starmap", "pipeline.do_r2starmap", "pipeline.do_r2map", "pipeline.do_r2primemap"].iter().any(|f| self.output_made(f))),
+            Page::Segmentation => on(self.output_made("pipeline.do_segmentation") || self.form.settings.toggle("pipeline.do_analysis")),
             Page::Export => on(self.form.export_dicom),
             _ => SectionState::On,
         }

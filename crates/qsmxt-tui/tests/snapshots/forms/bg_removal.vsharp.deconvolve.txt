@@ -1,4 +1,4 @@
-## toggle vsharp_deconvolve
+## toggle bg_removal.vsharp.deconvolve
 config:
   /bg_removal/vsharp/deconvolve: false -> true
 command:

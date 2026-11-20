@@ -36,15 +36,6 @@ Options:
       --ilsqr-precision <PRECISION>
           Arithmetic of the inner iLSQR's two LSQR solves (`--qsmart-inversion ilsqr`): double, or single as STI Suite's QSM_iLSQR, which QSMART calls (default: double; `qsmxt run --ilsqr-precision`)
 
-      --qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>
-          QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol
-
-      --qsmart-ilsqr-pad-mm <MM>
-          Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6)
-
-      --qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>
-          QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default 8)
-
       --qsmart-inversion <QSMART_INVERSION>
           QSMART inner dipole inversion algorithm (default: ilsqr)
 
@@ -83,48 +74,29 @@ Options:
           - iqsm
           - iqsm-plus
 
+      --qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>
+          QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol (default: 50)
+
+      --qsmart-ilsqr-pad-mm <MM>
+          Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6)
+
       --qsmart-sdf-sigma1-stage1 <QSMART_SDF_SIGMA1_STAGE1>
-          QSMART SDF sigma1, stage 1 (voxels)
+          QSMART SDF sigma1, stage 1 (voxels) (default: 10)
 
       --qsmart-sdf-sigma2-stage1 <QSMART_SDF_SIGMA2_STAGE1>
-          QSMART SDF sigma2, stage 1 (voxels)
+          QSMART SDF sigma2, stage 1 (voxels) (default: 10)
 
       --qsmart-sdf-sigma1-stage2 <QSMART_SDF_SIGMA1_STAGE2>
-          QSMART SDF sigma1, stage 2 (voxels)
+          QSMART SDF sigma1, stage 2 (voxels) (default: 8)
 
       --qsmart-sdf-sigma2-stage2 <QSMART_SDF_SIGMA2_STAGE2>
-          QSMART SDF sigma2, stage 2 (voxels)
+          QSMART SDF sigma2, stage 2 (voxels) (default: 2)
 
       --qsmart-sdf-lower-lim <QSMART_SDF_LOWER_LIM>
-          QSMART SDF proximity lower limit
+          QSMART: SDF proximity lower limit (default: 0.6)
 
       --qsmart-sdf-curv-constant <QSMART_SDF_CURV_CONSTANT>
-          QSMART SDF curvature constant
-
-      --qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>
-          QSMART Frangi min vessel radius, in --qsmart-vessel-units (default 0.5)
-
-      --qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>
-          QSMART Frangi max vessel radius, in --qsmart-vessel-units (default 6)
-
-      --qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>
-          QSMART Frangi scale step, in --qsmart-vessel-units (default 0.5)
-
-      --qsmart-frangi-c <QSMART_FRANGI_C>
-          QSMART Frangi C noise threshold, in the vessel magnitude's intensity units (default 500, QSMART v1.0's); used with --qsmart-frangi-c-mode absolute
-
-      --qsmart-frangi-c-mode <QSMART_FRANGI_C_MODE>
-          How QSMART's Frangi C is set: `absolute` (--qsmart-frangi-c, in magnitude units; default, as QSMART gives it) or `relative` (--qsmart-frangi-c-factor × the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale)
-
-          [possible values: absolute, relative]
-
-      --qsmart-frangi-c-factor <QSMART_FRANGI_C_FACTOR>
-          QSMART's relative Frangi C: this factor × the vessel magnitude's median inside the brain mask (default 0.25); used with --qsmart-frangi-c-mode relative
-
-      --qsmart-vessel-units <QSMART_VESSEL_UNITS>
-          Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size)
-
-          [possible values: voxels, mm]
+          QSMART: SDF curvature constant (default: 500)
 
       --qsmart-vessel-magnitude <QSMART_VESSEL_MAGNITUDE>
           The magnitude QSMART detects vessels on: `mean-n4` (the mean over echoes, N4 bias-corrected, as QSMART prepares it; default) or `combined` (the root sum of squares over echoes, inhomogeneity-corrected unless --no-inhomogeneity-correction)
@@ -135,6 +107,34 @@ Options:
           The dipole grid of QSMART's offset adjustment: `fft` (default) or `qsmart-reference` (`adjust_offset.m`'s own, half a step off the FFT grid on odd matrix sizes, as the QSMART pipeline runs it)
 
           [possible values: fft, qsmart-reference]
+
+      --qsmart-vessel-units <QSMART_VESSEL_UNITS>
+          Units of QSMART's vessel sizes (--qsmart-vasc-sphere-radius and the Frangi scales): `voxels` (default, as QSMART gives them) or `mm` (converted to voxels with the mean voxel size)
+
+          [possible values: voxels, mm]
+
+      --qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>
+          QSMART vasculature detection sphere radius, in --qsmart-vessel-units (default: 8)
+
+      --qsmart-frangi-scale-min <QSMART_FRANGI_SCALE_MIN>
+          QSMART Frangi min vessel radius, in --qsmart-vessel-units (default: 0.5)
+
+      --qsmart-frangi-scale-max <QSMART_FRANGI_SCALE_MAX>
+          QSMART Frangi max vessel radius, in --qsmart-vessel-units (default: 6)
+
+      --qsmart-frangi-scale-ratio <QSMART_FRANGI_SCALE_RATIO>
+          QSMART Frangi scale step, in --qsmart-vessel-units (default: 0.5)
+
+      --qsmart-frangi-c-mode <QSMART_FRANGI_C_MODE>
+          How QSMART's Frangi C is set: `absolute` (--qsmart-frangi-c, in magnitude units; default, as QSMART gives it) or `relative` (--qsmart-frangi-c-factor × the vessel magnitude's median inside the brain mask, the same on every scanner's intensity scale)
+
+          [possible values: absolute, relative]
+
+      --qsmart-frangi-c <QSMART_FRANGI_C>
+          QSMART Frangi C noise threshold, in the vessel magnitude's intensity units (default 500, QSMART v1.0's); used with --qsmart-frangi-c-mode absolute
+
+      --qsmart-frangi-c-factor <QSMART_FRANGI_C_FACTOR>
+          QSMART's relative Frangi C: this factor × the vessel magnitude's median inside the brain mask (default 0.25); used with --qsmart-frangi-c-mode relative
 
   -h, --help
           Print help (see a summary with '-h')

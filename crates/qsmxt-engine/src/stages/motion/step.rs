@@ -2,6 +2,7 @@
 
 use log::Level;
 
+use crate::plan::Stage;
 use crate::run::{Done, Run, motion_decision};
 use crate::stages;
 use crate::store::{Data, Item, StageStore};
@@ -24,7 +25,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         let n = self.n_echoes();
         let params = stages::motion::params(self.config, &self.meta);
-        let Some(key) = self.begin("motion", None, &params, "Skipping motion correction (cached)",
+        let Some(key) = self.begin(Stage::Motion, None, &params, "Skipping motion correction (cached)",
                                    "Motion correction (rigid co-registration of the echoes)") else { return Ok(()) };
         if m.reference != crate::MotionReference::First
             && self.config.masking.sections.iter().any(|s| s.input == crate::MaskingInput::MagnitudeFirst)
@@ -56,7 +57,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             self.log(level, &line);
         }
         self.complete(Done {
-            step: "motion", algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage: Stage::Motion, algorithm: None, params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "Motion correction")
     }
 }

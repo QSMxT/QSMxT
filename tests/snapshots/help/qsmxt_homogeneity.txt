@@ -10,27 +10,21 @@ Options:
   -o, --output <OUTPUT>
           Output corrected magnitude NIfTI file
 
-      --method <METHOD>
-          Correction method: `makehomogeneous` (--sigma, --nbox) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-*)
+      --inhomogeneity-method <INHOMOGENEITY_METHOD>
+          Inhomogeneity correction method: `makehomogeneous` (default; --homogeneity-*) or `n4` (N4 bias field correction, as ANTs' N4BiasFieldCorrection; --n4-*)
 
           Possible values:
           - makehomogeneous: Divide by a smoothed estimate of the receive sensitivity (MriResearchTools' makehomogeneous)
           - n4:              N4 bias field correction, as ANTs' N4BiasFieldCorrection
 
-          [default: makehomogeneous]
+      --homogeneity-sigma-mm <HOMOGENEITY_SIGMA_MM>
+          Inhomogeneity correction smoothing sigma in mm (makehomogeneous) (default: 7)
 
-      --sigma <SIGMA>
-          makehomogeneous: smoothing sigma in mm
-
-          [default: 7]
-
-      --nbox <NBOX>
-          makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity is estimated from
-
-          [default: 15]
+      --homogeneity-nbox <HOMOGENEITY_NBOX>
+          makehomogeneous: boxes per dimension for the tissue segmentation the receive sensitivity is estimated from (default: 15)
 
       --n4-shrink-factor <N4_SHRINK_FACTOR>
-          N4: subsample the image by this factor before fitting the bias field (default 4)
+          N4: Subsample the image by this factor before fitting the bias field (default: 4)
 
       --n4-max-iterations <ITERATIONS>...
           N4: maximum iterations at each fitting level, one number a level (default 50 50 50 50); the B-spline mesh doubles from one level to the next
@@ -39,19 +33,19 @@ Options:
           N4: stop a level once the change in the bias field (its coefficient of variation) falls to this (default 0: every iteration runs)
 
       --n4-mesh <X> <Y> <Z>
-          N4: B-spline mesh elements per axis at the first level, X Y Z (default 1 1 1)
+          N4: B-spline mesh elements per axis at the first level (x y z) (default: 1 1 1)
 
       --n4-spline-order <N4_SPLINE_ORDER>
-          N4: order of the B-spline bias field, 1 to 3 (default 3)
+          N4: order of the B-spline bias field, 1 to 3 (default: 3)
 
       --n4-bias-field-fwhm <N4_BIAS_FIELD_FWHM>
-          N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default 0.15)
+          N4: FWHM of the Gaussian modelling the bias field's blurring of the log-intensity histogram (default: 0.15)
 
       --n4-wiener-noise <N4_WIENER_NOISE>
-          N4: noise term of the Wiener deconvolution of the histogram (default 0.01)
+          N4: Noise term of the Wiener deconvolution of the histogram (default: 0.01)
 
       --n4-histogram-bins <N4_HISTOGRAM_BINS>
-          N4: bins of the log-intensity histogram (default 200)
+          N4: Bins of the log-intensity histogram (default: 200)
 
       --n4-geometry <GEOMETRY>
           N4: the image geometry it is given: `scanner` (the scan's header, as ANTs reads the acquired NIfTI; the default) or `make-nii` (the axis-aligned header MATLAB's make_nii writes, as QSMART runs N4). N4's shrunk grid falls where the header puts it

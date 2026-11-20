@@ -79,33 +79,21 @@ fn draw_frame(f: &mut Frame, app: &mut App) {
     draw_command_preview_with(f, &cmd, chunks[2]);
     draw_help_bar(f, app, chunks[3]);
 
-    if let Some(ref modal) = app.algo_modal {
-        draw_algo_modal(f, modal, f.area(), &app.hits);
-    }
-
-    if let Some(ref mut modal) = app.rec_modal {
-        draw_checklist_modal(f, modal, f.area(), &app.hits);
-    }
-
-    if let Some(ref mut modal) = app.refs.modal {
-        draw_checklist_modal(f, modal, f.area(), &app.hits);
-    }
-
-    if let Some(ref mut modal) = app.pipelines.preview {
-        super::pipelines_tab::draw_preview(f, modal, f.area(), &app.hits);
-    }
-
-    if let Some(ref modal) = app.tip_modal {
-        draw_tip_modal(f, modal, f.area(), &app.hits);
-    }
-
-    if let Some(ref mut modal) = app.news_modal {
-        draw_news_modal(f, modal, f.area(), &app.hits);
-    }
-
-    // Drawn last so it sits above the other pop-ups, matching the input routing.
-    if let Some(ref modal) = app.update_modal {
-        draw_update_modal(f, modal, f.area(), &app.hits);
+    // The pop-ups in the order they are drawn, the one with the keys last, on top.
+    for kind in app.open_modals() {
+        use crate::app::ModalKind as M;
+        let area = f.area();
+        match kind {
+            M::Options => if let Some(ref modal) = app.algo_modal { draw_algo_modal(f, modal, area, &app.hits) },
+            M::Recommendations => if let Some(ref mut modal) = app.rec_modal { draw_checklist_modal(f, modal, area, &app.hits) },
+            M::References => if let Some(ref mut modal) = app.refs.modal { draw_checklist_modal(f, modal, area, &app.hits) },
+            M::PipelinePreview => if let Some(ref mut modal) = app.pipelines.preview {
+                super::pipelines_tab::draw_preview(f, modal, area, &app.hits)
+            },
+            M::Tip => if let Some(ref modal) = app.tip_modal { draw_tip_modal(f, modal, area, &app.hits) },
+            M::News => if let Some(ref mut modal) = app.announcements.modal { draw_news_modal(f, modal, area, &app.hits) },
+            M::Update => if let Some(ref modal) = app.update.modal { draw_update_modal(f, modal, area, &app.hits) },
+        }
     }
 }
 

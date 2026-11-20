@@ -1,4 +1,4 @@
-use std::fs;
+use fs_err as fs;
 use std::path::{Path, PathBuf};
 
 use crate::dicom::convert::{nifti_4d_size, nii_to_json_path};

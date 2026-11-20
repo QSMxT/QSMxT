@@ -93,10 +93,6 @@ pub(super) const SEGMENTATION_SOURCE_HELP: &[&str] = &[
     "A dseg from BIDS derivatives (e.g. FreeSurfer's, made elsewhere); SynthSeg runs where none is found",
 ];
 
-/// Fields of rows that edit no setting of their own but say something of one (the segmentation's
-/// source): a setting's own rows are the others that edit its path.
-pub(super) const TUI_CHOICES: &[&str] = &["segmentation_source"];
-
 pub(super) const LAYOUTS: &[PageLayout] = &[
     PageLayout {
         before: &[
@@ -185,12 +181,12 @@ pub(super) const LAYOUTS: &[PageLayout] = &[
         // The method stands apart from the switch above it and its settings below.
         before: &[
             ("separation.algorithm", |_, _| vec![PipelineRow::Separator]),
-            ("separation.custom_qsm_tool", |app, _| if app.field_toggle("do_chi_separation") { vec![PipelineRow::Separator] } else { vec![] }),
+            ("separation.custom_qsm_tool", |app, _| if app.field_toggle("pipeline.do_chi_separation") { vec![PipelineRow::Separator] } else { vec![] }),
         ],
         after: &[("separation.algorithm", |_, _| vec![PipelineRow::Separator])],
         // The supplied χ map shows here for χ-separation; the statistics and SMWI show it on
         // their own pages.
-        shown_if: &[("separation.custom_qsm_tool", |app| app.field_toggle("do_chi_separation"))],
+        shown_if: &[("separation.custom_qsm_tool", |app| app.field_toggle("pipeline.do_chi_separation"))],
         // χ-sepnet's patches read as its settings, beside its route rather than under it.
         depths: &[
             ("separation.algorithm", 0), ("separation.custom_qsm_tool", 1),

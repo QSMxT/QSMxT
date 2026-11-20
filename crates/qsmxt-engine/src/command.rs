@@ -8,8 +8,15 @@ use crate::schema::cli::{Flag, FlagAction, PIPELINE_FLAGS};
 use crate::schema::cli_apply::{opposite_of, setting_of};
 use crate::schema::{Setting, ValueType};
 
-/// Generate a `qsmxt run` CLI command from a pipeline configuration.
-/// Compares against defaults and only emits flags that differ.
+/// Generate a `qsmxt run` CLI command from a pipeline configuration, as a shell would take it
+/// ([`to_shell`] of [`command_args`]).
+pub fn generate_command(config: &PipelineConfig) -> String {
+    to_shell(&command_args(config))
+}
+
+/// The words of a `qsmxt run` command for a pipeline configuration, unquoted: `qsmxt`, `run`,
+/// `<bids_dir>`, then the flags and their values. Compares against defaults and only emits flags
+/// that differ.
 ///
 /// Settings that do not apply to the configuration (the TUI hides them; see
 /// [`crate::schema::settings_view`]) are left out: they cannot change the run, so saying them
@@ -17,7 +24,7 @@ use crate::schema::{Setting, ValueType};
 ///
 /// A config that follows a toolbox pipeline ([`crate::pipelines::followed`]) starts with
 /// `--pipeline <id>`, and its other flags are where it departs from that pipeline.
-pub fn generate_command(config: &PipelineConfig) -> String {
+pub fn command_args(config: &PipelineConfig) -> Vec<String> {
     let facts = crate::schema::ViewFacts::default();
     let pruned = crate::schema::prune_hidden(&config.normalised().0, &facts);
     let pipeline = crate::pipelines::followed(config, &facts).and_then(|id| {
@@ -32,133 +39,34 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 
 
 
-/// The flags a command says, in the order it says them: roughly the order the run does things
-/// in, with each method's settings after the flag that chooses it. (QSMART's inner inversion's
-/// settings come between QSMART's own, after the three that choose and cap it.) The opposites of
-/// switches (`--no-x` of `--x`) are said at their switch's place. A registry flag not listed here
-/// is said after the flag of the registry entry before it ([`emit_order`]).
-const EMIT_ORDER: &[&str] = &[
-    "pipeline", "orientation-group", "orientation-reference", "multi-orientation-algorithm",
-    "multi-orientation-lambda", "cosmos-magnitude-weighting", "cosmos-tol", "cosmos-max-iter",
-    "multi-orientation-force", "no-orientation-registration", "no-qsm", "do-swi", "no-magnitude",
-    "do-segmentation", "do-analysis", "synthseg-version", "synthseg-crop", "synthseg-patch",
-    "no-synthseg-flip-averaging", "no-synthseg-topology-cleanup", "synthseg-sigma", "use-custom-dseg",
-    "do-smwi", "smwi-threshold", "smwi-power", "smwi-mip-window", "do-t2starmap", "do-r2primemap", "do-r2map",
-    "do-r2starmap", "do-chisep", "use-custom-qsm", "use-custom-r2", "use-custom-r2prime", "r2prime-strategy",
-    "r2primenet-patch", "r2primenet-ignore-field-mismatch", "export-dicom", "axial-resampling",
-    "obliquity-threshold", "crop-to-mask", "ignore-slice-gap", "fft-padding", "tukey-window",
-    "crop-margin-mm", "output-space", "no-inhomogeneity-correction", "homogeneity-sigma-mm",
-    "homogeneity-nbox", "inhomogeneity-method", "n4-shrink-factor", "n4-max-iterations",
-    "n4-convergence-threshold", "n4-mesh", "n4-spline-order", "n4-bias-field-fwhm", "n4-wiener-noise",
-    "n4-histogram-bins", "n4-geometry", "use-custom-masks", "phase-offset-removal", "phase-offset-sigma-mm",
-    "coil-combination-sigma", "bipolar-correction", "unwrapping-algorithm", "laplacian-solver",
-    "laplacian-fft-pad", "laplacian-unmasked", "laplacian-keep-outside", "prelude-labelling",
-    "prelude-partitions", "motion-correction", "motion-reference", "no-motion-chain", "motion-chain-levels",
-    "motion-min-ncc", "registration-levels", "registration-max-samples", "registration-max-iterations",
-    "registration-max-evaluations", "registration-tolerance", "registration-rotation-step-deg",
-    "registration-translation-step-mm", "registration-min-overlap", "b0-estimation",
-    "qsmart-fit-threshold-mode", "qsmart-fit-percentile", "qsmart-fit-threshold", "b0-weight-type",
-    "b0-weight-assumed-t2star", "linear-fit-estimate-offset", "robust-fit-loss", "robust-fit-tuning",
-    "robust-fit-iterations", "robust-fit-downweight-level", "robust-fit-flag-ratio", "complex-fit-reltol",
-    "complex-fit-max-iter", "romeo-individual", "romeo-correct-global", "no-romeo-phase-coherence",
-    "no-romeo-phase-gradient-coherence", "no-romeo-phase-linearity", "no-romeo-mag-coherence",
-    "romeo-mag-weight", "romeo-mag-weight2", "romeo-bestpath", "romeo-merge-regions", "romeo-correct-regions",
-    "romeo-template", "romeo-temporal-uncertain-unwrapping", "romeo-max-seeds", "romeo-wrap-addition",
-    "mask-preset", "masking-input", "mask", "mask-combine", "mask-refine", "two-pass", "two-pass-mask",
-    "two-pass-mask-combine", "two-pass-mode", "bet-fractional-intensity", "bet-smoothness",
-    "bet-gradient-threshold", "bet-iterations", "bet-subdivisions", "bet-voxel-scale", "bet-orientation",
-    "bf-algorithm", "bf-erode-voxels", "bf-polish-mask", "bf-ukb-mask-trim", "vsharp-deconvolve",
-    "vsharp-threshold", "vsharp-max-radius", "vsharp-min-radius", "vsharp-radius-step", "vsharp-grid",
-    "vsharp-grid-spacing", "pdf-tol", "pdf-n-cg", "pdf-space", "pdf-n-pad", "lbv-tol", "lbv-depth",
-    "lbv-peel", "lbv-n1", "lbv-n2", "lbv-n3", "lbv-precision", "ismv-variant", "ismv-tol", "ismv-max-iter",
-    "ismv-radius", "sharp-threshold", "sharp-radius", "resharp-radius", "resharp-tik-reg", "resharp-tol",
-    "resharp-max-iter", "harperella-radius", "harperella-max-iter", "harperella-tol", "harperella-pad",
-    "harperella-rim", "iharperella-max-iter", "iharperella-tol", "iharperella-pad", "iharperella-rim",
-    "qsm-algorithm", "qsmart-inversion", "qsmart-ilsqr-max-iter", "qsmart-ilsqr-pad-mm", "rts-delta",
-    "rts-mu", "rts-rho", "rts-tol", "rts-max-iter", "rts-lsmr-iter", "rts-tau", "rts-gamma", "rts-pad",
-    "tv-lambda", "tv-rho", "tv-tol", "tv-max-iter", "tv-pad", "tkd-threshold", "tkd-pad", "tsvd-threshold",
-    "tsvd-pad", "tikhonov-lambda", "tikhonov-pad", "nltv-lambda", "nltv-rho", "nltv-mu", "nltv-tol",
-    "nltv-max-iter", "nltv-tol-newton", "nltv-newton-iter", "nltv-te", "nltv-pad", "medi-lambda",
-    "medi-percentage", "medi-max-iter", "medi-cg-max-iter", "medi-cg-tol", "medi-tol", "medi-smv-radius",
-    "no-medi-smv-shrink-mask", "medi-merit", "medi-data-weighting", "medi-csf", "medi-lambda-csf",
-    "medi-csf-r2s-threshold", "medi-csf-erode", "medi-zeropad", "no-medi-smv", "medi-msmv", "medi-msmv-maxk",
-    "medi-msmv-vessel-radius", "no-medi-msmv-prefilter", "medi-te", "tfi-lambda", "tfi-precond",
-    "tfi-data-weighting", "tfi-merit", "tfi-linear", "tfi-percentage", "tfi-max-iter", "tfi-cg-max-iter",
-    "tfi-cg-tol", "tfi-tol", "tfi-te", "ilsqr-tol", "ilsqr-max-iter", "ilsqr-pad-mm", "ilsqr-precision",
-    "star-pad", "star-te", "lsqr-residual-weighting", "no-lsqr-global-offset", "lsqr-tol", "lsqr-max-iter",
-    "tgv-iterations", "tgv-erosions", "tgv-alpha0", "tgv-alpha1", "tgv-step-size", "tgv-te", "ndi-tau",
-    "ndi-alpha", "ndi-max-iter", "ndi-auto-stop", "ndi-te", "ndi-weight-norm", "fansi-alpha1", "fansi-mu1",
-    "fansi-mu2", "fansi-alpha0", "fansi-mu0", "fansi-max-iter", "fansi-tol-update", "fansi-tol-delta",
-    "fansi-te", "l1qsm-alpha1", "l1qsm-mu1", "l1qsm-mu2", "l1qsm-mu3", "l1qsm-lambda", "l1qsm-max-iter",
-    "l1qsm-tol-update", "l1qsm-tol-delta", "l1qsm-te", "whqsm-alpha1", "whqsm-mu1", "whqsm-mu2", "whqsm-beta",
-    "whqsm-muh", "whqsm-max-iter", "whqsm-tol-update", "whqsm-tol-delta", "whqsm-weight", "whqsm-te",
-    "hdqsm-alpha-l2", "hdqsm-mu1-l2", "hdqsm-mu2", "hdqsm-max-iter-l1", "hdqsm-max-iter-l2",
-    "hdqsm-tol-update", "amp-pe-wave-order", "amp-pe-nlevel", "amp-pe-wave-pec", "amp-pe-simulated-te",
-    "amp-pe-max-linearization-ite", "amp-pe-damp-rate-sig", "amp-pe-damp-rate-par", "amp-pe-max-pe-spar-ite",
-    "amp-pe-max-pe-est-ite", "amp-pe-cvg-thd", "amp-pe-tikhonov-beta", "qsmart-vasc-sphere-radius",
-    "qsmart-sdf-sigma1-stage1", "qsmart-sdf-sigma2-stage1", "qsmart-sdf-sigma1-stage2",
-    "qsmart-sdf-sigma2-stage2", "qsmart-sdf-lower-lim", "qsmart-sdf-curv-constant", "qsmart-frangi-scale-min",
-    "qsmart-frangi-scale-max", "qsmart-frangi-scale-ratio", "qsmart-frangi-c-mode", "qsmart-frangi-c",
-    "qsmart-frangi-c-factor", "qsmart-vessel-units", "qsmart-vessel-magnitude", "qsmart-offset-grid", "heidi",
-    "heidi-cone-threshold", "heidi-gradient-threshold", "no-heidi-laplacian-correction",
-    "heidi-laplacian-threshold", "heidi-gradient-mask-floor", "heidi-continuation-steps",
-    "heidi-inner-iterations", "heidi-mu-min", "heidi-tol", "no-heidi-denoise", "heidi-denoise-iterations",
-    "heidi-denoise-time-step", "heidi-denoise-conductance", "heidi-denoise-reference-itk", "heidi-te",
-    "tile-size", "tile-halo", "chisep", "r2star-qsm-r-const-3t", "decompose-n-inner", "decompose-chi-bound",
-    "decompose-unwrap-phase", "decompose-fit", "decompose-max-iterations",
-    "decompose-max-function-evaluations", "decompose-function-tolerance", "decompose-step-tolerance",
-    "decompose-optimality-tolerance", "decompose-finite-difference-step", "decompose-typical-x",
-    "chi-sep-ilsqr-dr-pos", "chi-sep-ilsqr-dr-neg", "chi-sep-ilsqr-pad", "chi-sep-ilsqr-cg-max-iter-lsqr",
-    "chi-sep-ilsqr-cg-tol-lsqr", "chi-sep-ilsqr-cg-max-iter-sa", "chi-sep-ilsqr-cg-tol-sa",
-    "chi-sep-ilsqr-d2-thr", "chi-sep-ilsqr-prc-w-i-min", "chi-sep-ilsqr-prc-w-i-max",
-    "chi-sep-ilsqr-prc-w-g-min", "chi-sep-ilsqr-prc-w-g-max", "chi-sep-ilsqr-qsm-max-iter",
-    "chi-sep-ilsqr-qsm-tol", "chi-sep-ilsqr-qsm-pad-mm", "chi-sep-ilsqr-qsm-precision", "chi-sep-medi-lambda",
-    "chi-sep-medi-lambda-csf", "chi-sep-medi-dr-pos", "chi-sep-medi-dr-neg", "chi-sep-medi-pad",
-    "chi-sep-medi-tol", "chi-sep-medi-max-iter", "chi-sep-medi-cg-tol", "chi-sep-medi-cg-max-iter",
-    "chi-sep-medi-qsm-max-iter", "chi-sep-medi-qsm-tol", "chi-sep-medi-qsm-pad-mm",
-    "chi-sep-medi-qsm-precision", "chi-sep-medi-csf-r2star", "wavesep-dr-pos", "wavesep-dr-neg",
-    "wavesep-alpha", "wavesep-lambda", "wavesep-wavelet-order", "wavesep-max-iter", "wavesep-tol",
-    "hc-chisep-dr-pos-3t", "hc-chisep-bin-hz", "chi-sepnet-route", "chi-sepnet-patch",
-    "chi-sepnet-frame-patch", "susep-net-patch", "qsm-reference", "qsm-per-echo", "swi-unwrapping",
-    "swi-hp-sigma", "swi-scaling", "swi-strength", "swi-mip-window", "swi-filtered-phase",
-    "dismiss-recommendation",
-];
-
-/// Every flag a command can say, in order: [`EMIT_ORDER`], and each registry flag it does not list
-/// after the flag of the entry before it.
-fn emit_order() -> &'static [&'static str] {
-    static ORDER: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
-        let registry: Vec<&'static str> =
-            crate::schema::settings().iter().filter_map(|s| s.cli_flag).map(|f| f.trim_start_matches("--")).collect();
-        crate::schema::cli::in_registry_place(EMIT_ORDER, &registry)
-    });
-    &ORDER
-}
-
 /// The command for `config`, with flags where it differs from `base`: QSMxT's defaults, or
 /// `pipeline`'s settings. Most flags set one registry setting ([`setting_of`]) and are said
 /// when that setting is shown and differs from `base`; the rest are spelled out below.
-fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<&str>) -> String {
+fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<&str>) -> Vec<String> {
     let mut parts: Vec<String> = vec!["qsmxt".into(), "run".into(), "<bids_dir>".into()];
     if let Some(id) = pipeline {
-        parts.push(format!("--pipeline {id}"));
+        say(&mut parts, &["--pipeline", id]);
     }
     let visible: Vec<&str> = crate::schema::settings_view(config, &crate::schema::ViewFacts::default())
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
-    let (values, base_values) = (serde_json::to_value(config).unwrap_or_default(), serde_json::to_value(base).unwrap_or_default());
+    // A config is plain data with string keys: serialising it cannot fail.
+    let json = |c: &PipelineConfig| serde_json::to_value(c).expect("a config serialises");
+    let (values, base_values) = (json(config), json(base));
     let m = &config.multi_orientation;
-    for long in emit_order() {
-        let flag = PIPELINE_FLAGS.iter().find(|f| f.long == *long).expect("every flag said is in the table");
+    // In the table's order: the registry's (`schema::cli`), each opposite switch said at its
+    // switch's place.
+    for flag in PIPELINE_FLAGS.iter() {
+        let long = &flag.long;
         match *long {
             // Said first, above.
             "pipeline" => {}
             // The pattern is what switches grouping on, so it and the reconstruction are said
             // whenever it is on; the patterns are quoted so that a shell leaves their globs alone.
-            "orientation-group" if m.enabled() => parts.push(format!("--orientation-group {}", shell_quote(&m.group_by))),
+            "orientation-group" if m.enabled() => say(&mut parts, &["--orientation-group", &m.group_by]),
             "orientation-reference" if m.enabled() && !m.reference.trim().is_empty() => {
-                parts.push(format!("--orientation-reference {}", shell_quote(m.reference.trim())));
+                say(&mut parts, &["--orientation-reference", m.reference.trim()]);
             }
-            "multi-orientation-algorithm" if m.enabled() => parts.push(format!("--multi-orientation-algorithm {}", m.algorithm)),
+            "multi-orientation-algorithm" if m.enabled() => say(&mut parts, &["--multi-orientation-algorithm", &m.algorithm.to_string()]),
             "orientation-group" | "orientation-reference" | "multi-orientation-algorithm" => {}
             // --do-analysis implies segmentation, so saying both adds noise.
             "do-segmentation" => {
@@ -187,18 +95,16 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
             "romeo-template" => {
                 let (t, bt) = (config.field_mapping.romeo.template, base.field_mapping.romeo.template);
                 if !config.field_mapping.romeo.individual && t != bt {
-                    parts.push(format!("--romeo-template {}", t + 1));
+                    say(&mut parts, &["--romeo-template", &(t + 1).to_string()]);
                 }
             }
             // One value when the three are the same.
             "laplacian-fft-pad" => {
                 let pad = config.field_mapping.laplacian_fft_pad;
                 if config.field_mapping.laplacian_solver == LaplacianSolver::Fft && pad != base.field_mapping.laplacian_fft_pad {
-                    parts.push(if pad[0] == pad[1] && pad[1] == pad[2] {
-                        format!("--laplacian-fft-pad {}", pad[0])
-                    } else {
-                        format!("--laplacian-fft-pad {} {} {}", pad[0], pad[1], pad[2])
-                    });
+                    let pad: Vec<String> = if pad[0] == pad[1] && pad[1] == pad[2] { vec![pad[0].to_string()] } else { pad.map(|p| p.to_string()).to_vec() };
+                    parts.push("--laplacian-fft-pad".into());
+                    parts.extend(pad);
                 }
             }
             "mask-preset" => masking_flags(&mut parts, config, base),
@@ -209,7 +115,7 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
                 if let Some(sections) = config.masking.two_pass_sections.as_ref().filter(|_| config.masking.two_pass) {
                     if *sections != crate::masking::default_two_pass_sections() {
                         for section in sections {
-                            parts.push(format!("--two-pass-mask {}", section.compact_spec()));
+                            say(&mut parts, &["--two-pass-mask", &section.compact_spec()]);
                         }
                     }
                 }
@@ -221,7 +127,7 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
             "qsm-reference" => {
                 let spec = config.qsm.reference_spec();
                 if spec != base.qsm.reference_spec() {
-                    parts.push(format!("--qsm-reference {spec}"));
+                    say(&mut parts, &["--qsm-reference", &spec]);
                 }
             }
             "dismiss-recommendation" => dismissal_flags(&mut parts, config),
@@ -229,14 +135,33 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
                 let Some(setting) = setting_of(flag) else { continue };
                 let (v, b) = (lookup(&values, setting.path), lookup(&base_values, setting.path));
                 if v != b && visible.contains(&setting.path) {
-                    if let Some(arg) = render(flag, setting, &v) {
-                        parts.push(arg);
+                    if let Some(words) = render(flag, setting, &v) {
+                        parts.extend(words);
                     }
                 }
             }
         }
     }
-    parts.join(" ")
+    parts
+}
+
+/// Add `words` to a command's.
+fn say(parts: &mut Vec<String>, words: &[&str]) {
+    parts.extend(words.iter().map(|w| w.to_string()));
+}
+
+/// A command's words as a shell takes them: each word a shell would split or expand (a glob, a
+/// space, a quote) is quoted, so the command runs as it reads. A placeholder (`<bids_dir>`) is
+/// left as it is written, for the user to fill in.
+pub fn to_shell(words: &[String]) -> String {
+    words.iter().map(|w| {
+        let placeholder = w.starts_with('<') && w.ends_with('>');
+        if placeholder || (!w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || "-_.,/=:+@%".contains(c))) {
+            w.clone()
+        } else {
+            format!("'{}'", w.replace('\'', r"'\''"))
+        }
+    }).collect::<Vec<_>>().join(" ")
 }
 
 /// The value at `path`, `null` for an unset optional value (left out of the serialised config).
@@ -247,34 +172,34 @@ fn lookup(config: &Value, path: &str) -> Value {
 /// `--flag value` for a setting `qsmxt` keeps outside the registry's flags.
 fn emit_value(parts: &mut Vec<String>, flag: &Flag, value: &f64, base: &f64) {
     if value != base {
-        parts.push(format!("--{} {value}", flag.long));
+        say(parts, &[&format!("--{}", flag.long), &value.to_string()]);
     }
 }
 
 /// How `flag` says `value` of `setting`, or `None` where it cannot: an unset optional value is
 /// the one qsm-core derives, said by leaving the flag out, and a switch is said only by a flag
 /// for its direction.
-fn render(flag: &Flag, setting: &Setting, value: &Value) -> Option<String> {
+fn render(flag: &Flag, setting: &Setting, value: &Value) -> Option<Vec<String>> {
     let long = flag.long;
     let text = match (value, &setting.value_type) {
         (Value::Null, _) => return None,
         (Value::Bool(on), ValueType::Bool) if flag.action == FlagAction::SetTrue => {
             // `--x` turns it on and `--no-x` off; the other direction is its opposite's.
             if *on != long.starts_with("no-") {
-                return Some(format!("--{long}"));
+                return Some(vec![format!("--{long}")]);
             }
             return PIPELINE_FLAGS.iter().find(|f| opposite_of(f).is_some_and(|(o, _)| o.long == long))
-                .map(|f| format!("--{}", f.long));
+                .map(|f| vec![format!("--{}", f.long)]);
         }
-        (v, ValueType::EchoTime { .. }) => serde_json::from_value::<EchoTimeChoice>(v.clone()).ok()?.to_string(),
-        (v, ValueType::NumberOrChoice { .. }) => serde_json::from_value::<ChiBoundChoice>(v.clone()).ok()?.to_string(),
-        (v, ValueType::EchoReference { .. }) => serde_json::from_value::<crate::MotionReference>(v.clone()).ok()?.to_string(),
+        (v, ValueType::EchoTime { .. }) => vec![serde_json::from_value::<EchoTimeChoice>(v.clone()).ok()?.to_string()],
+        (v, ValueType::NumberOrChoice { .. }) => vec![serde_json::from_value::<ChiBoundChoice>(v.clone()).ok()?.to_string()],
+        (v, ValueType::EchoReference { .. }) => vec![serde_json::from_value::<crate::MotionReference>(v.clone()).ok()?.to_string()],
         // A bare flag stands for the value it takes when given without one (`*`, any tool).
-        (Value::String(s), _) if flag.default_missing.contains(&s.as_str()) => return Some(format!("--{long}")),
-        (Value::Array(xs), _) => xs.iter().map(scalar).collect::<Vec<_>>().join(" "),
-        (v, _) => scalar(v),
+        (Value::String(s), _) if flag.default_missing.contains(&s.as_str()) => return Some(vec![format!("--{long}")]),
+        (Value::Array(xs), _) => xs.iter().map(scalar).collect(),
+        (v, _) => vec![scalar(v)],
     };
-    Some(format!("--{long} {text}"))
+    Some(std::iter::once(format!("--{long}")).chain(text).collect())
 }
 
 /// A number as Rust writes it (`100`, not `100.0`), and other values as they are.
@@ -302,20 +227,20 @@ fn masking_flags(parts: &mut Vec<String>, config: &PipelineConfig, base: &Pipeli
     }
     match crate::masking::masking_preset_command(c) {
         Some((preset, input)) => {
-            parts.push(format!("--mask-preset {preset}"));
+            say(parts, &["--mask-preset", preset]);
             if let Some(input) = input {
-                parts.push(format!("--masking-input {input}"));
+                say(parts, &["--masking-input", &input.to_string()]);
             }
         }
         None => {
             for section in &c.sections {
-                parts.push(format!("--mask {}", section.compact_spec()));
+                say(parts, &["--mask", &section.compact_spec()]);
             }
             if c.combine != b.combine {
-                parts.push(format!("--mask-combine {}", c.combine));
+                say(parts, &["--mask-combine", &c.combine.to_string()]);
             }
             for op in &c.refinements {
-                parts.push(format!("--mask-refine {}", op.compact_spec()));
+                say(parts, &["--mask-refine", &op.compact_spec()]);
             }
         }
     }
@@ -331,10 +256,7 @@ fn dismissal_flags(parts: &mut Vec<String>, config: &PipelineConfig) {
         held = c.dismissed_recommendations;
     }
     for x in &held {
-        let arg = format!("{}={}", x.rule, x.chosen);
-        // Rule ids and dismissed values are written in characters a shell leaves alone.
-        let plain = arg.chars().all(|c| c.is_ascii_alphanumeric() || "-_.=,/".contains(c));
-        parts.push(format!("--dismiss-recommendation {}", if plain { arg } else { shell_quote(&arg) }));
+        say(parts, &["--dismiss-recommendation", &format!("{}={}", x.rule, x.chosen)]);
     }
 }
 
@@ -343,17 +265,48 @@ mod every_flag_tests;
 
 #[cfg(test)]
 mod tests {
+    /// Whether a generated command says `words`: the same whole tokens, in a row. A plain
+    /// substring test would take `--medi-smv` to be in `--medi-smv-radius 5`, or
+    /// `--qsm-algorithm tv` to be in `--qsm-algorithm tvx`.
+    pub(super) trait Says {
+        fn says(&self, words: &str) -> bool;
+    }
+
+    impl Says for str {
+        fn says(&self, words: &str) -> bool {
+            let have: Vec<&str> = self.split_whitespace().collect();
+            let want: Vec<&str> = words.split_whitespace().collect();
+            !want.is_empty() && have.windows(want.len()).any(|w| w == want.as_slice())
+        }
+    }
+
+    /// A word a shell would split or expand is quoted; a placeholder is left for the user.
+    #[test]
+    fn to_shell_quotes_what_a_shell_would_change() {
+        let words: Vec<String> = ["qsmxt", "run", "<bids_dir>", "/data/my bids", "--include", "sub-1*", "--x", "it's"]
+            .map(String::from).to_vec();
+        assert_eq!(to_shell(&words), r"qsmxt run <bids_dir> '/data/my bids' --include 'sub-1*' --x 'it'\''s'");
+    }
+
+    #[test]
+    fn says_matches_whole_tokens() {
+        let cmd = "qsmxt run <bids_dir> --medi-smv-radius 5 --qsm-algorithm tvx";
+        assert!(cmd.says("--medi-smv-radius 5"));
+        assert!(!cmd.says("--medi-smv"));
+        assert!(!cmd.says("--qsm-algorithm tv"));
+        assert!(!cmd.says(""));
+    }
     /// A mask supplied for the run (qsmbly writes it to derivatives/qsmbly/, `crate::supplied`)
     /// is read back with `--use-custom-masks qsmbly`.
     #[test]
     fn a_supplied_mask_is_read_from_its_tools_derivatives() {
         let mut config = crate::config::PipelineConfig::default();
-        assert!(!super::generate_command(&config).contains("--use-custom-masks"));
+        assert!(!super::generate_command(&config).says("--use-custom-masks"));
         config.masking.custom_mask_tool = Some("qsmbly".into());
-        assert!(super::generate_command(&config).contains("--use-custom-masks qsmbly"));
+        assert!(super::generate_command(&config).says("--use-custom-masks qsmbly"));
         config.masking.custom_mask_tool = Some("*".into());
         let command = super::generate_command(&config);
-        assert!(command.contains("--use-custom-masks") && !command.contains("--use-custom-masks *"), "{command}");
+        assert!(command.says("--use-custom-masks") && !command.says("--use-custom-masks *"), "{command}");
     }
 
     /// A relaxometry map the selected χ-separation method does not need is still asked for on
@@ -367,14 +320,14 @@ mod tests {
         c.pipeline.do_r2map = true;
         enforce_separation_dependencies(&mut c);
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--do-r2map"), "R2 is not implied by r2star-qsm: {cmd}");
-        assert!(!cmd.contains("--do-r2starmap"), "R2* is: {cmd}");
+        assert!(cmd.says("--do-r2map"), "R2 is not implied by r2star-qsm: {cmd}");
+        assert!(!cmd.says("--do-r2starmap"), "R2* is: {cmd}");
         // R2'-based separation implies R2' and with it R2* and R2: none spelled out.
         c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
         enforce_separation_dependencies(&mut c);
         let cmd = generate_command(&c);
         for f in ["--do-r2primemap", "--do-r2map", "--do-r2starmap"] {
-            assert!(!cmd.contains(f), "{f} is implied: {cmd}");
+            assert!(!cmd.says(f), "{f} is implied: {cmd}");
         }
     }
 
@@ -399,12 +352,12 @@ mod tests {
             refinements: vec![],
         }];
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--bet-voxel-scale 10"), "cmd: {cmd}");
-        assert!(cmd.contains("--mask magnitude,bet:0.50:scale=10"), "cmd: {cmd}");
+        assert!(cmd.says("--bet-voxel-scale 10"), "cmd: {cmd}");
+        assert!(cmd.says("--mask magnitude,bet:0.50:scale=10"), "cmd: {cmd}");
 
         // The default is silent — the clinical command line is unchanged.
         let cmd = generate_command(&PipelineConfig::default());
-        assert!(!cmd.contains("--bet-voxel-scale"), "cmd: {cmd}");
+        assert!(!cmd.says("--bet-voxel-scale"), "cmd: {cmd}");
         assert!(!cmd.contains("scale="), "cmd: {cmd}");
     }
 
@@ -413,7 +366,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Tv;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--qsm-algorithm tv"));
+        assert!(cmd.says("--qsm-algorithm tv"));
     }
 
     #[test]
@@ -428,15 +381,15 @@ mod tests {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = a;
             let cmd = generate_command(&c);
-            assert!(cmd.contains(&format!("--qsm-algorithm {}", a)), "missing {} in: {}", a, cmd);
+            assert!(cmd.says(&format!("--qsm-algorithm {}", a)), "missing {} in: {}", a, cmd);
         }
         // iQFM background removal + χ-sepnet separation (deep-learning; patches in the profile tests).
         let mut c = PipelineConfig::default();
         c.bg_removal.algorithm = BfAlgorithm::Iqfm;
-        assert!(generate_command(&c).contains("--bf-algorithm iqfm"));
+        assert!(generate_command(&c).says("--bf-algorithm iqfm"));
         c.pipeline.do_chi_separation = true;
         c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
-        assert!(generate_command(&c).contains("--chisep chi-sepnet"));
+        assert!(generate_command(&c).says("--chisep chi-sepnet"));
     }
 
     #[test]
@@ -446,28 +399,28 @@ mod tests {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Xqsm;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--tile-size"), "got: {}", cmd);
-        assert!(!cmd.contains("--tile-halo"), "got: {}", cmd);
+        assert!(!cmd.says("--tile-size"), "got: {}", cmd);
+        assert!(!cmd.says("--tile-halo"), "got: {}", cmd);
         // Setting tile_size enables tiling; halo emitted only when set.
         c.inversion.tile_size = Some(64);
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--tile-size 64"), "got: {}", cmd);
-        assert!(!cmd.contains("--tile-halo"), "got: {}", cmd);
+        assert!(cmd.says("--tile-size 64"), "got: {}", cmd);
+        assert!(!cmd.says("--tile-halo"), "got: {}", cmd);
         c.inversion.tile_halo = Some(4);
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--tile-size 64") && cmd.contains("--tile-halo 4"), "got: {}", cmd);
+        assert!(cmd.says("--tile-size 64") && cmd.says("--tile-halo 4"), "got: {}", cmd);
         // Native-patch nets ignore tiling options (no flags emitted).
         c.inversion.algorithm = QsmAlgorithm::Autoqsm;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--tile-size"), "autoqsm should not emit tiling: {}", cmd);
+        assert!(!cmd.says("--tile-size"), "autoqsm should not emit tiling: {}", cmd);
         // A classical inversion after a tiled background-removal network keeps them.
         c.inversion.algorithm = QsmAlgorithm::Tkd;
         c.bg_removal.algorithm = crate::enums::BfAlgorithm::Bfrnet;
-        assert!(generate_command(&c).contains("--tile-size 64"), "BFRnet tiles");
+        assert!(generate_command(&c).says("--tile-size 64"), "BFRnet tiles");
         // The phase-input reconstructions tile too.
         c.bg_removal.algorithm = crate::enums::BfAlgorithm::Vsharp;
         c.inversion.algorithm = QsmAlgorithm::Iqsm;
-        assert!(generate_command(&c).contains("--tile-size 64"), "iQSM tiles");
+        assert!(generate_command(&c).says("--tile-size 64"), "iQSM tiles");
     }
 
     /// MEDI-mSMV is MEDI's option: said only with MEDI, its settings only when it is on and
@@ -480,12 +433,12 @@ mod tests {
         config.inversion.medi.msmv = true;
         config.inversion.medi.msmv_maxk = 9;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--medi-msmv") && cmd.contains("--medi-msmv-maxk 9"), "got: {cmd}");
-        assert!(!cmd.contains("--medi-msmv-vessel-radius") && !cmd.contains("prefilter"), "got: {cmd}");
+        assert!(cmd.says("--medi-msmv") && cmd.says("--medi-msmv-maxk 9"), "got: {cmd}");
+        assert!(!cmd.says("--medi-msmv-vessel-radius") && !cmd.contains("prefilter"), "got: {cmd}");
         config.inversion.medi.msmv_vessel_radius = Some(12.0);
         config.inversion.medi.msmv_prefilter = false;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--medi-msmv-vessel-radius 12") && cmd.contains("--no-medi-msmv-prefilter"), "got: {cmd}");
+        assert!(cmd.says("--medi-msmv-vessel-radius 12") && cmd.says("--no-medi-msmv-prefilter"), "got: {cmd}");
         // Under another inversion it does not apply.
         config.inversion.algorithm = QsmAlgorithm::Rts;
         assert!(!generate_command(&config).contains("msmv"));
@@ -497,11 +450,11 @@ mod tests {
     fn the_background_removal_is_named_unless_it_is_the_default() {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Medi;
-        assert!(!generate_command(&config).contains("--bf-algorithm"), "{}", generate_command(&config));
+        assert!(!generate_command(&config).says("--bf-algorithm"), "{}", generate_command(&config));
         config.bg_removal.algorithm = BfAlgorithm::Pdf;
-        assert!(generate_command(&config).contains("--bf-algorithm pdf"));
+        assert!(generate_command(&config).says("--bf-algorithm pdf"));
         config.inversion.algorithm = QsmAlgorithm::Rts;
-        assert!(generate_command(&config).contains("--bf-algorithm pdf"));
+        assert!(generate_command(&config).says("--bf-algorithm pdf"));
     }
 
     #[test]
@@ -510,7 +463,7 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Medi;
         assert!(!generate_command(&config).contains("shrink"));
         config.inversion.medi.smv_shrink_mask = false;
-        assert!(generate_command(&config).contains("--no-medi-smv-shrink-mask"));
+        assert!(generate_command(&config).says("--no-medi-smv-shrink-mask"));
     }
 
     #[test]
@@ -523,11 +476,11 @@ mod tests {
         assert!(!config.pipeline.do_r2map && !config.pipeline.do_r2primemap);
         // Those maps are implied by --do-chisep and must not appear in the command.
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--do-chisep"));
-        assert!(!cmd.contains("--do-r2starmap"), "r2starmap implied by chisep, got: {}", cmd);
-        assert!(!cmd.contains("--do-r2map"));
-        assert!(!cmd.contains("--do-r2primemap"));
-        assert!(!cmd.contains("--chisep")); // default method → not emitted
+        assert!(cmd.says("--do-chisep"));
+        assert!(!cmd.says("--do-r2starmap"), "r2starmap implied by chisep, got: {}", cmd);
+        assert!(!cmd.says("--do-r2map"));
+        assert!(!cmd.says("--do-r2primemap"));
+        assert!(!cmd.says("--chisep")); // default method → not emitted
 
         // An R2'-based method (wavesep) forces R2' → R2 → R2*, none of which should leak.
         let mut wc = PipelineConfig::default();
@@ -536,24 +489,24 @@ mod tests {
         enforce_separation_dependencies(&mut wc);
         assert!(wc.pipeline.do_r2primemap && wc.pipeline.do_r2map && wc.pipeline.do_r2starmap);
         let cmd = generate_command(&wc);
-        assert!(cmd.contains("--chisep wavesep"));
-        assert!(!cmd.contains("--do-r2map") && !cmd.contains("--do-r2primemap") && !cmd.contains("--do-r2starmap"));
+        assert!(cmd.says("--chisep wavesep"));
+        assert!(!cmd.says("--do-r2map") && !cmd.says("--do-r2primemap") && !cmd.says("--do-r2starmap"));
 
         // Selecting a non-default method emits it; editing a param emits that too.
         config.separation.algorithm = SeparationAlgorithm::Decompose;
         config.separation.decompose.lsqcurvefit.max_iterations = 99;
         config.separation.decompose.unwrap_phase = true;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--chisep decompose"));
-        assert!(cmd.contains("--decompose-max-iterations 99") && cmd.contains("--decompose-unwrap-phase true"), "{cmd}");
-        assert!(!cmd.contains("--decompose-chi-bound"), "{cmd}");
+        assert!(cmd.says("--chisep decompose"));
+        assert!(cmd.says("--decompose-max-iterations 99") && cmd.says("--decompose-unwrap-phase true"), "{cmd}");
+        assert!(!cmd.says("--decompose-chi-bound"), "{cmd}");
         config.separation.decompose.chi_bound = crate::ChiBoundChoice::EchoSpacing;
-        assert!(generate_command(&config).contains("--decompose-chi-bound echo-spacing"));
+        assert!(generate_command(&config).says("--decompose-chi-bound echo-spacing"));
         config.separation.decompose.chi_bound = crate::ChiBoundChoice::Ppm(0.3);
-        assert!(generate_command(&config).contains("--decompose-chi-bound 0.3"));
+        assert!(generate_command(&config).says("--decompose-chi-bound 0.3"));
 
         // A param for a non-selected method must NOT leak into the command.
-        assert!(!cmd.contains("--wavesep-alpha"));
+        assert!(!cmd.says("--wavesep-alpha"));
     }
 
     #[test]
@@ -562,7 +515,7 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Rts;
         config.inversion.rts.delta = 0.2;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--rts-delta 0.2"));
+        assert!(cmd.says("--rts-delta 0.2"));
     }
 
     #[test]
@@ -570,7 +523,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.field_mapping.phase_offset_removal = false;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--phase-offset-removal false"));
+        assert!(cmd.says("--phase-offset-removal false"));
     }
 
     #[test]
@@ -578,7 +531,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.field_mapping.bipolar_correction = true;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--bipolar-correction"));
+        assert!(cmd.says("--bipolar-correction"));
     }
 
     #[test]
@@ -586,10 +539,10 @@ mod tests {
         let mut config = PipelineConfig::default();
         // Template mode is the default: neither the mode nor the template echo is stated.
         assert!(!generate_command(&config).contains("romeo-individual"));
-        assert!(!generate_command(&config).contains("--romeo-template"));
+        assert!(!generate_command(&config).says("--romeo-template"));
         config.field_mapping.romeo.individual = true;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--romeo-individual") && !cmd.contains("--romeo-template"), "{cmd}");
+        assert!(cmd.says("--romeo-individual") && !cmd.says("--romeo-template"), "{cmd}");
     }
 
     #[test]
@@ -598,20 +551,20 @@ mod tests {
         config.swi.strength = 8.0;
         // SWI off — no SWI flags
         let cmd = generate_command(&config);
-        assert!(!cmd.contains("--swi-strength"));
+        assert!(!cmd.says("--swi-strength"));
         // SWI on — flag appears
         config.pipeline.do_swi = true;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--swi-strength 8"));
-        assert!(!cmd.contains("--swi-unwrapping"), "{cmd}");
+        assert!(cmd.says("--swi-strength 8"));
+        assert!(!cmd.says("--swi-unwrapping"), "{cmd}");
         config.swi.unwrap = crate::SwiUnwrap::Romeo;
-        assert!(generate_command(&config).contains("--swi-unwrapping romeo"));
-        assert!(!generate_command(&config).contains("--swi-filtered-phase"));
+        assert!(generate_command(&config).says("--swi-unwrapping romeo"));
+        assert!(!generate_command(&config).says("--swi-filtered-phase"));
         config.swi.filtered_phase = true;
-        assert!(generate_command(&config).contains("--swi-filtered-phase"));
+        assert!(generate_command(&config).says("--swi-filtered-phase"));
         // Without SWI there is no filtered phase to write.
         config.pipeline.do_swi = false;
-        assert!(!generate_command(&config).contains("--swi-filtered-phase"));
+        assert!(!generate_command(&config).says("--swi-filtered-phase"));
     }
 
     #[test]
@@ -642,7 +595,7 @@ mod tests {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = alg;
             let cmd = generate_command(&c);
-            assert!(cmd.contains(&format!("--qsm-algorithm {}", name)), "missing algorithm flag for {}", name);
+            assert!(cmd.says(&format!("--qsm-algorithm {}", name)), "missing algorithm flag for {}", name);
         }
     }
 
@@ -657,7 +610,7 @@ mod tests {
             let mut c = PipelineConfig::default();
             c.bg_removal.algorithm = alg;
             let cmd = generate_command(&c);
-            assert!(cmd.contains(&format!("--bf-algorithm {}", name)), "missing bf flag for {}", name);
+            assert!(cmd.says(&format!("--bf-algorithm {}", name)), "missing bf flag for {}", name);
         }
     }
 
@@ -668,12 +621,12 @@ mod tests {
         c.inversion.tv.lambda = 0.002;
         c.inversion.tv.max_iter = 100;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--tv-lambda 0.002"));
-        assert!(cmd.contains("--tv-max-iter 100"));
+        assert!(cmd.says("--tv-lambda 0.002"));
+        assert!(cmd.says("--tv-max-iter 100"));
         // ρ unset follows λ (qsm-core's 100·λ): no flag. Set, it is said.
-        assert!(!cmd.contains("--tv-rho"), "{cmd}");
+        assert!(!cmd.says("--tv-rho"), "{cmd}");
         c.inversion.tv.rho = Some(0.5);
-        assert!(generate_command(&c).contains("--tv-rho 0.5"));
+        assert!(generate_command(&c).says("--tv-rho 0.5"));
     }
 
     #[test]
@@ -682,7 +635,7 @@ mod tests {
         c.inversion.algorithm = QsmAlgorithm::Medi;
         c.inversion.medi.lambda = 999.0;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--medi-lambda 999"));
+        assert!(cmd.says("--medi-lambda 999"));
     }
 
     #[test]
@@ -692,8 +645,8 @@ mod tests {
         c.inversion.tgv.iterations = Some(500);
         c.inversion.tgv.erosions = 2;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--tgv-iterations 500"));
-        assert!(cmd.contains("--tgv-erosions 2"));
+        assert!(cmd.says("--tgv-iterations 500"));
+        assert!(cmd.says("--tgv-erosions 2"));
     }
 
     /// Each method's echo time, and the method settings from QSM.rs v0.40.0, are emitted only away
@@ -722,35 +675,35 @@ mod tests {
                 *te = EchoTimeChoice::Seconds(0.007);
             }
             let cmd = generate_command(&c);
-            assert!(cmd.contains(&format!("--{flag}-te 7")), "{alg}: {cmd}");
+            assert!(cmd.says(&format!("--{flag}-te 7")), "{alg}: {cmd}");
         }
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Whqsm;
         c.inversion.whqsm.weight = WhqsmWeight::InVivo;
-        assert!(generate_command(&c).contains("--whqsm-weight in-vivo"));
+        assert!(generate_command(&c).says("--whqsm-weight in-vivo"));
         c.inversion.algorithm = QsmAlgorithm::Nltv;
         c.inversion.nltv.rho = Some(0.5);
         c.inversion.nltv.tol_newton = 1e-4;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--nltv-rho 0.5") && cmd.contains("--nltv-tol-newton 0.0001"), "{cmd}");
+        assert!(cmd.says("--nltv-rho 0.5") && cmd.says("--nltv-tol-newton 0.0001"), "{cmd}");
         c.inversion.algorithm = QsmAlgorithm::Rts;
         c.inversion.rts.tau = 0.5;
         c.inversion.rts.gamma = 2.0;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--rts-tau 0.5") && cmd.contains("--rts-gamma 2"), "{cmd}");
+        assert!(cmd.says("--rts-tau 0.5") && cmd.says("--rts-gamma 2"), "{cmd}");
         c.bg_removal.algorithm = BfAlgorithm::Pdf;
         c.bg_removal.pdf.n_cg = 300;
         c.bg_removal.pdf.space = PdfSpace::Kspace;
         c.bg_removal.pdf.n_pad = 0;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--pdf-n-cg 300") && cmd.contains("--pdf-space kspace") && cmd.contains("--pdf-n-pad 0"), "{cmd}");
+        assert!(cmd.says("--pdf-n-cg 300") && cmd.says("--pdf-space kspace") && cmd.says("--pdf-n-pad 0"), "{cmd}");
         for (alg, flag) in [(BfAlgorithm::Harperella, "--harperella-pad"), (BfAlgorithm::Iharperella, "--iharperella-pad")] {
             let mut c = PipelineConfig::default();
             c.bg_removal.algorithm = alg;
-            assert!(!generate_command(&c).contains(flag));
+            assert!(!generate_command(&c).says(flag));
             c.bg_removal.harperella.pad = [2, 4, 6];
             c.bg_removal.iharperella.pad = [2, 4, 6];
-            assert!(generate_command(&c).contains(&format!("{flag} 2 4 6")));
+            assert!(generate_command(&c).says(&format!("{flag} 2 4 6")));
         }
         // the boundary rim, NDI's weight normaliser and WH-QSM's flat-in-mask weight: only when
         // they differ from the method's default
@@ -761,20 +714,20 @@ mod tests {
             assert!(!generate_command(&c).contains("-rim"));
             c.bg_removal.harperella.rim = rim;
             c.bg_removal.iharperella.rim = rim;
-            assert!(generate_command(&c).contains(&format!("{flag} {rim}")), "{}", generate_command(&c));
+            assert!(generate_command(&c).says(&format!("{flag} {rim}")), "{}", generate_command(&c));
         }
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--bf-erode-voxels"));
+        assert!(!generate_command(&c).says("--bf-erode-voxels"));
         c.bg_removal.erode_voxels = 3;
-        assert!(generate_command(&c).contains("--bf-erode-voxels 3"), "{}", generate_command(&c));
+        assert!(generate_command(&c).says("--bf-erode-voxels 3"), "{}", generate_command(&c));
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Ndi;
-        assert!(!generate_command(&c).contains("--ndi-weight-norm"));
+        assert!(!generate_command(&c).says("--ndi-weight-norm"));
         c.inversion.ndi.weight_norm = NdiWeightNorm::MaskP999;
-        assert!(generate_command(&c).contains("--ndi-weight-norm mask-p999"));
+        assert!(generate_command(&c).says("--ndi-weight-norm mask-p999"));
         c.inversion.algorithm = QsmAlgorithm::Whqsm;
         c.inversion.whqsm.weight = WhqsmWeight::FlatInMask;
-        assert!(generate_command(&c).contains("--whqsm-weight flat-in-mask"));
+        assert!(generate_command(&c).says("--whqsm-weight flat-in-mask"));
     }
 
     /// The new settings in a config file: an echo time as a name or `{ seconds = … }`, the WH-QSM
@@ -800,7 +753,7 @@ mod tests {
         c.inversion.algorithm = QsmAlgorithm::Qsmart;
         c.inversion.qsmart.vasc_sphere_radius = 10;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsmart-vasc-sphere-radius 10"));
+        assert!(cmd.says("--qsmart-vasc-sphere-radius 10"));
     }
 
     /// Under QSMART the default mask goes unsaid, as elsewhere: it is not replaced.
@@ -808,9 +761,9 @@ mod tests {
     fn qsmart_keeps_the_default_mask() {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Qsmart;
-        assert!(!generate_command(&c).contains("--mask"), "{}", generate_command(&c));
+        assert!(!generate_command(&c).says("--mask"), "{}", generate_command(&c));
         c.masking.sections = crate::masking::mask_presets().into_iter().find(|(n, _)| *n == "bet").unwrap().1.sections;
-        assert!(generate_command(&c).contains("--mask-preset bet"), "{}", generate_command(&c));
+        assert!(generate_command(&c).says("--mask-preset bet"), "{}", generate_command(&c));
     }
 
     /// Under QSMART the command says the field mapping it was given, as elsewhere; QSMART's vessel
@@ -820,35 +773,35 @@ mod tests {
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Qsmart;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--unwrapping-algorithm") && !cmd.contains("--b0-estimation"), "{cmd}");
+        assert!(!cmd.says("--unwrapping-algorithm") && !cmd.says("--b0-estimation"), "{cmd}");
         c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         c.field_mapping.laplacian_solver = LaplacianSolver::Mirror;
         c.field_mapping.b0_estimation = B0Estimation::QsmartEchofit;
         let cmd = generate_command(&c);
         for flag in ["--unwrapping-algorithm laplacian", "--laplacian-solver mirror", "--b0-estimation qsmart-echofit"] {
-            assert!(cmd.contains(flag), "{cmd}");
+            assert!(cmd.says(flag), "{cmd}");
         }
-        assert!(!cmd.contains("--qsmart-fit-threshold") && !cmd.contains("--qsmart-vessel"), "{cmd}");
-        assert!(!cmd.contains("--laplacian-unmasked"), "{cmd}");
+        assert!(!cmd.says("--qsmart-fit-threshold") && !cmd.says("--qsmart-vessel"), "{cmd}");
+        assert!(!cmd.says("--laplacian-unmasked"), "{cmd}");
         c.field_mapping.laplacian_unmasked = true;
-        assert!(generate_command(&c).contains("--laplacian-unmasked"));
+        assert!(generate_command(&c).says("--laplacian-unmasked"));
         c.inversion.qsmart.vessel_magnitude = QsmartVesselMagnitude::Combined;
         c.inversion.qsmart.vessel_size_units = VesselSizeUnits::Mm;
         let cmd = generate_command(&c);
         for flag in ["--qsmart-vessel-magnitude combined", "--qsmart-vessel-units mm"] {
-            assert!(cmd.contains(flag), "{cmd}");
+            assert!(cmd.says(flag), "{cmd}");
         }
         // The default fixed threshold (QSMART v1.0's 40): nothing; the threshold when changed.
         c.field_mapping.qsmart_fit_threshold = 30.0;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsmart-fit-threshold 30") && !cmd.contains("--qsmart-fit-threshold-mode")
-                && !cmd.contains("--qsmart-fit-percentile"), "{cmd}");
+        assert!(cmd.says("--qsmart-fit-threshold 30") && !cmd.says("--qsmart-fit-threshold-mode")
+                && !cmd.says("--qsmart-fit-percentile"), "{cmd}");
         // A percentile: the mode, and the percentile when changed; not the threshold.
         c.field_mapping.qsmart_fit_threshold_mode = QsmartFitThresholdMode::Percentile;
         c.field_mapping.qsmart_fit_percentile = 95.0;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsmart-fit-threshold-mode percentile") && cmd.contains("--qsmart-fit-percentile 95")
-                && !cmd.contains("--qsmart-fit-threshold "), "{cmd}");
+        assert!(cmd.says("--qsmart-fit-threshold-mode percentile") && cmd.says("--qsmart-fit-percentile 95")
+                && !cmd.says("--qsmart-fit-threshold "), "{cmd}");
     }
 
     #[test]
@@ -880,13 +833,13 @@ mod tests {
             "--qsmart-frangi-scale-ratio 1",
             "--qsmart-frangi-c 400",
         ] {
-            assert!(cmd.contains(flag), "missing `{}` in: {}", flag, cmd);
+            assert!(cmd.says(flag), "missing `{}` in: {}", flag, cmd);
         }
-        assert!(!cmd.contains("--qsmart-frangi-c-"), "{cmd}");
+        assert!(!cmd.says("--qsmart-frangi-c-"), "{cmd}");
         c.inversion.qsmart.frangi_c_mode = QsmartFrangiCMode::Relative;
         c.inversion.qsmart.frangi_c_factor = 0.3;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsmart-frangi-c-mode relative") && cmd.contains("--qsmart-frangi-c-factor 0.3"), "{cmd}");
+        assert!(cmd.says("--qsmart-frangi-c-mode relative") && cmd.says("--qsmart-frangi-c-factor 0.3"), "{cmd}");
     }
 
     /// Mirrors the WASM command path: the TOML that qsmbly's ConfigBridge emits must
@@ -920,54 +873,54 @@ frangi_c = 400.0
             "--qsmart-sdf-sigma1-stage1 11", "--qsmart-sdf-lower-lim 0.45",
             "--qsmart-frangi-scale-min 1.5", "--qsmart-frangi-c 400",
         ] {
-            assert!(cmd.contains(flag), "missing `{}` in: {}", flag, cmd);
+            assert!(cmd.says(flag), "missing `{}` in: {}", flag, cmd);
         }
         // The inner iLSQR's settings do not apply under an RTS inner inversion.
-        assert!(!cmd.contains("--qsmart-ilsqr"), "{cmd}");
+        assert!(!cmd.says("--qsmart-ilsqr"), "{cmd}");
         let config = PipelineConfig::from_toml(&toml.replace(r#"inversion = "rts""#, r#"inversion = "ilsqr""#)).unwrap();
-        assert!(generate_command(&config).contains("--qsmart-ilsqr-pad-mm 8"));
+        assert!(generate_command(&config).says("--qsmart-ilsqr-pad-mm 8"));
     }
 
     #[test]
     fn test_r2primenet_settings_round_trip() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--r2primenet"));
+        assert!(!generate_command(&c).says("--r2primenet"));
         c.separation.r2primenet.ignore_field_mismatch = true;
         c.separation.r2primenet.patch = [128, 128, 64];
         // Not said while R2' is not computed: R2PRIMEnet does not run.
-        assert!(!generate_command(&c).contains("--r2primenet"));
+        assert!(!generate_command(&c).says("--r2primenet"));
         c.pipeline.do_r2primemap = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--r2primenet-ignore-field-mismatch"), "{cmd}");
-        assert!(cmd.contains("--r2primenet-patch 128 128 64"), "{cmd}");
+        assert!(cmd.says("--r2primenet-ignore-field-mismatch"), "{cmd}");
+        assert!(cmd.says("--r2primenet-patch 128 128 64"), "{cmd}");
         // Meaningless when R2' is only ever measured.
         c.separation.r2prime_strategy = R2PrimeStrategy::Mese;
-        assert!(!generate_command(&c).contains("--r2primenet"));
+        assert!(!generate_command(&c).says("--r2primenet"));
     }
 
     #[test]
     fn test_vsharp_radius_step_flag() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--vsharp-radius-step"));
+        assert!(!generate_command(&c).says("--vsharp-radius-step"));
         c.bg_removal.vsharp.radius_step = 2.0;
-        assert!(generate_command(&c).contains("--vsharp-radius-step 2"));
+        assert!(generate_command(&c).says("--vsharp-radius-step 2"));
     }
 
     #[test]
     fn test_vsharp_grid_flags() {
         let mut c = PipelineConfig::default();
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--vsharp-grid"), "the default grid is not stated: {cmd}");
+        assert!(!cmd.says("--vsharp-grid"), "the default grid is not stated: {cmd}");
         c.bg_removal.vsharp.grid = VsharpGrid::Native;
         c.bg_removal.vsharp.grid_spacing = 0.8;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--vsharp-grid native") && !cmd.contains("--vsharp-grid-spacing"), "unused unless isotropic: {cmd}");
+        assert!(cmd.says("--vsharp-grid native") && !cmd.says("--vsharp-grid-spacing"), "unused unless isotropic: {cmd}");
         c.bg_removal.vsharp.grid = VsharpGrid::Isotropic;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--vsharp-grid ") && cmd.contains("--vsharp-grid-spacing 0.8"), "{cmd}");
+        assert!(!cmd.says("--vsharp-grid ") && cmd.says("--vsharp-grid-spacing 0.8"), "{cmd}");
         c.bg_removal.vsharp.grid = VsharpGrid::Finest;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--vsharp-grid finest") && !cmd.contains("--vsharp-grid-spacing"), "{cmd}");
+        assert!(cmd.says("--vsharp-grid finest") && !cmd.says("--vsharp-grid-spacing"), "{cmd}");
     }
 
     #[test]
@@ -976,12 +929,12 @@ frangi_c = 400.0
         assert!(!c.bg_removal.vsharp.deconvolve, "QSMxT's default is off");
         c.bg_removal.vsharp.threshold = 0.1;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--vsharp-deconvolve"), "{cmd}");
-        assert!(!cmd.contains("--vsharp-threshold"), "unused without deconvolution: {cmd}");
+        assert!(!cmd.says("--vsharp-deconvolve"), "{cmd}");
+        assert!(!cmd.says("--vsharp-threshold"), "unused without deconvolution: {cmd}");
         c.bg_removal.vsharp.deconvolve = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--vsharp-deconvolve true"), "{cmd}");
-        assert!(cmd.contains("--vsharp-threshold 0.1"), "{cmd}");
+        assert!(cmd.says("--vsharp-deconvolve true"), "{cmd}");
+        assert!(cmd.says("--vsharp-threshold 0.1"), "{cmd}");
     }
 
     #[test]
@@ -989,13 +942,13 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.field_mapping.b0_estimation = B0Estimation::ComplexFit;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--b0-estimation complex-fit") && !cmd.contains("--complex-fit-"), "{cmd}");
-        assert!(!cmd.contains("--linear-fit-"), "the linear fit's settings mean nothing to it: {cmd}");
+        assert!(cmd.says("--b0-estimation complex-fit") && !cmd.says("--complex-fit-"), "{cmd}");
+        assert!(!cmd.says("--linear-fit-"), "the linear fit's settings mean nothing to it: {cmd}");
         (c.field_mapping.complex_fit.reltol, c.field_mapping.complex_fit.max_iter) = (1e-3, 12);
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--complex-fit-reltol 0.001") && cmd.contains("--complex-fit-max-iter 12"), "{cmd}");
+        assert!(cmd.says("--complex-fit-reltol 0.001") && cmd.says("--complex-fit-max-iter 12"), "{cmd}");
         c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
-        assert!(!generate_command(&c).contains("--complex-fit-"));
+        assert!(!generate_command(&c).says("--complex-fit-"));
     }
 
     #[test]
@@ -1008,15 +961,15 @@ frangi_c = 400.0
         c.inversion.medi.zeropad = [2, 0, 2];
         let cmd = generate_command(&c);
         for f in ["--medi-lambda-csf 50", "--medi-csf-r2s-threshold 4", "--medi-csf-erode false", "--medi-zeropad 2 0 2"] {
-            assert!(cmd.contains(f), "{f} missing: {cmd}");
+            assert!(cmd.says(f), "{f} missing: {cmd}");
         }
         c.inversion.medi.csf = false;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--medi-csf false") && !cmd.contains("--medi-lambda-csf"), "{cmd}");
+        assert!(cmd.says("--medi-csf false") && !cmd.says("--medi-lambda-csf"), "{cmd}");
         c.inversion.algorithm = QsmAlgorithm::Tfi;
         (c.inversion.tfi.merit, c.inversion.tfi.linear) = (false, false);
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--tfi-merit false") && cmd.contains("--tfi-linear false") && !cmd.contains("--medi-"), "{cmd}");
+        assert!(cmd.says("--tfi-merit false") && cmd.says("--tfi-linear false") && !cmd.says("--medi-"), "{cmd}");
     }
 
     #[test]
@@ -1024,8 +977,8 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.field_mapping.b0_estimation = B0Estimation::RobustFit;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--b0-estimation robust-fit"), "{cmd}");
-        assert!(!cmd.contains("--robust-fit-"), "defaults are not emitted: {cmd}");
+        assert!(cmd.says("--b0-estimation robust-fit"), "{cmd}");
+        assert!(!cmd.says("--robust-fit-"), "defaults are not emitted: {cmd}");
         c.field_mapping.robust_fit.loss = RobustLoss::Huber;
         c.field_mapping.robust_fit.tuning = Some(2.5);
         c.field_mapping.robust_fit.iterations = 5;
@@ -1036,11 +989,11 @@ frangi_c = 400.0
         for f in ["--robust-fit-loss huber", "--robust-fit-tuning 2.5", "--robust-fit-iterations 5",
                   "--robust-fit-downweight-level 0.5", "--robust-fit-flag-ratio 4",
                   "--linear-fit-estimate-offset false"] {
-            assert!(cmd.contains(f), "missing {f}: {cmd}");
+            assert!(cmd.says(f), "missing {f}: {cmd}");
         }
         // The robust settings mean nothing to the weighted average.
         c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
-        assert!(!generate_command(&c).contains("--robust-fit-"));
+        assert!(!generate_command(&c).says("--robust-fit-"));
     }
 
     #[test]
@@ -1049,8 +1002,8 @@ frangi_c = 400.0
         assert!(!generate_command(&c).contains("motion"));
         c.motion_correction.enabled = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--motion-correction"), "{cmd}");
-        assert!(!cmd.contains("--motion-reference") && !cmd.contains("--registration-"), "defaults: {cmd}");
+        assert!(cmd.says("--motion-correction"), "{cmd}");
+        assert!(!cmd.says("--motion-reference") && !cmd.says("--registration-"), "defaults: {cmd}");
         c.motion_correction.reference = crate::motion::MotionReference::Echo(2);
         c.motion_correction.chain = false;
         c.motion_correction.min_ncc = 0.9;
@@ -1059,7 +1012,7 @@ frangi_c = 400.0
         let cmd = generate_command(&c);
         for f in ["--motion-reference 2", "--no-motion-chain", "--motion-min-ncc 0.9",
                   "--registration-levels 4", "--registration-min-overlap 0.5"] {
-            assert!(cmd.contains(f), "missing {f}: {cmd}");
+            assert!(cmd.says(f), "missing {f}: {cmd}");
         }
     }
 
@@ -1068,7 +1021,7 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.field_mapping.b0_estimation = B0Estimation::LinearFit;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--b0-estimation linear-fit"));
+        assert!(cmd.says("--b0-estimation linear-fit"));
     }
 
     #[test]
@@ -1076,7 +1029,7 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.field_mapping.b0_weight_type = B0WeightType::Average;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--b0-weight-type average"));
+        assert!(cmd.says("--b0-weight-type average"));
     }
 
     #[test]
@@ -1084,14 +1037,14 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.inversion.algorithm = QsmAlgorithm::Star;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsm-algorithm star"), "{cmd}");
-        assert!(!cmd.contains("--star-pad") && !cmd.contains("--star-te"), "defaults are not emitted: {cmd}");
+        assert!(cmd.says("--qsm-algorithm star"), "{cmd}");
+        assert!(!cmd.says("--star-pad") && !cmd.says("--star-te"), "defaults are not emitted: {cmd}");
         c.inversion.star.pad = [4, 4, 12];
         c.inversion.star.te = EchoTimeChoice::First;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--star-pad 4 4 12") && cmd.contains("--star-te first"), "{cmd}");
+        assert!(cmd.says("--star-pad 4 4 12") && cmd.says("--star-te first"), "{cmd}");
         c.inversion.star.te = EchoTimeChoice::Seconds(0.007);
-        assert!(generate_command(&c).contains("--star-te 7"), "an echo time is given in ms");
+        assert!(generate_command(&c).says("--star-te 7"), "an echo time is given in ms");
     }
 
     #[test]
@@ -1119,21 +1072,21 @@ frangi_c = 400.0
     #[test]
     fn test_laplacian_solver() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--laplacian-solver"));
+        assert!(!generate_command(&c).says("--laplacian-solver"));
         c.field_mapping.laplacian_solver = LaplacianSolver::Fft;
         // Only Laplacian unwrapping has a solver.
-        assert!(!generate_command(&c).contains("--laplacian-solver"));
+        assert!(!generate_command(&c).says("--laplacian-solver"));
         c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--laplacian-solver fft"), "{cmd}");
-        assert!(!cmd.contains("--laplacian-fft-pad"), "default pad is not emitted: {cmd}");
+        assert!(cmd.says("--laplacian-solver fft"), "{cmd}");
+        assert!(!cmd.says("--laplacian-fft-pad"), "default pad is not emitted: {cmd}");
         c.field_mapping.laplacian_fft_pad = [12; 3];
-        assert!(generate_command(&c).contains("--laplacian-fft-pad 12"));
+        assert!(generate_command(&c).says("--laplacian-fft-pad 12"));
         c.field_mapping.laplacian_fft_pad = [64, 64, 32];
-        assert!(generate_command(&c).contains("--laplacian-fft-pad 64 64 32"));
+        assert!(generate_command(&c).says("--laplacian-fft-pad 64 64 32"));
         c.field_mapping.laplacian_solver = LaplacianSolver::Mgpcg;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--laplacian-solver mgpcg") && !cmd.contains("--laplacian-fft-pad"), "{cmd}");
+        assert!(cmd.says("--laplacian-solver mgpcg") && !cmd.says("--laplacian-fft-pad"), "{cmd}");
     }
 
     /// MEDI's region growing is selected by `--unwrapping-algorithm medi-region-growing`, and a
@@ -1143,7 +1096,7 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::MediRegionGrowing;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--unwrapping-algorithm medi-region-growing") && !cmd.contains("--romeo"), "{cmd}");
+        assert!(cmd.says("--unwrapping-algorithm medi-region-growing") && !cmd.says("--romeo"), "{cmd}");
         let back = PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap();
         assert_eq!(back.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::MediRegionGrowing);
         let f: FieldMappingConfig = toml::from_str("unwrapping_algorithm = \"medi-region-growing\"\n").unwrap();
@@ -1158,17 +1111,17 @@ frangi_c = 400.0
         c.field_mapping.prelude.labelling = PreludeLabelling::Volume;
         c.field_mapping.prelude.num_phase_partitions = 6;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--prelude"), "ROMEO has no PRELUDE settings: {cmd}");
+        assert!(!cmd.says("--prelude"), "ROMEO has no PRELUDE settings: {cmd}");
         c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude;
         let cmd = generate_command(&c);
         for said in ["--unwrapping-algorithm prelude", "--prelude-labelling volume", "--prelude-partitions 6"] {
-            assert!(cmd.contains(said), "{said:?} not in {cmd}");
+            assert!(cmd.says(said), "{said:?} not in {cmd}");
         }
-        assert!(!cmd.contains("--romeo"), "{cmd}");
+        assert!(!cmd.says("--romeo"), "{cmd}");
         let mut d = PipelineConfig::default();
         d.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Prelude;
         let cmd = generate_command(&d);
-        assert!(cmd.contains("--unwrapping-algorithm prelude") && !cmd.contains("--prelude-"), "defaults are not said: {cmd}");
+        assert!(cmd.says("--unwrapping-algorithm prelude") && !cmd.says("--prelude-"), "defaults are not said: {cmd}");
         let back = PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap();
         assert_eq!(back.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Prelude);
         assert_eq!(back.field_mapping.prelude, c.field_mapping.prelude);
@@ -1184,11 +1137,11 @@ frangi_c = 400.0
     fn test_laplacian_unmasked() {
         let mut c = PipelineConfig::default();
         c.field_mapping.laplacian_unmasked = true;
-        assert!(!generate_command(&c).contains("--laplacian-unmasked"), "ROMEO has no Laplacian unwrapping");
+        assert!(!generate_command(&c).says("--laplacian-unmasked"), "ROMEO has no Laplacian unwrapping");
         c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
-        assert!(generate_command(&c).contains("--laplacian-unmasked"));
+        assert!(generate_command(&c).says("--laplacian-unmasked"));
         c.field_mapping.laplacian_unmasked = false;
-        assert!(!generate_command(&c).contains("--laplacian-unmasked"), "off is the default");
+        assert!(!generate_command(&c).says("--laplacian-unmasked"), "off is the default");
         let f: FieldMappingConfig = toml::from_str("laplacian_unmasked = true").unwrap();
         assert!(f.laplacian_unmasked);
         assert!(!toml::from_str::<FieldMappingConfig>("").unwrap().laplacian_unmasked);
@@ -1221,13 +1174,13 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.field_mapping.b0_weight_type = B0WeightType::AssumedDecay;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--b0-weight-type assumed-decay"), "{cmd}");
-        assert!(!cmd.contains("--b0-weight-assumed-t2star"), "default T2* is not emitted: {cmd}");
+        assert!(cmd.says("--b0-weight-type assumed-decay"), "{cmd}");
+        assert!(!cmd.says("--b0-weight-assumed-t2star"), "default T2* is not emitted: {cmd}");
         c.field_mapping.b0_weight_assumed_t2star_ms = 35.0;
-        assert!(generate_command(&c).contains("--b0-weight-assumed-t2star 35"));
+        assert!(generate_command(&c).says("--b0-weight-assumed-t2star 35"));
         // only meaningful with assumed-decay weighting
         c.field_mapping.b0_weight_type = B0WeightType::TEs;
-        assert!(!generate_command(&c).contains("--b0-weight-assumed-t2star"));
+        assert!(!generate_command(&c).says("--b0-weight-assumed-t2star"));
         // The config spelling round-trips, and the never-released "t2star" is not accepted.
         assert_eq!(serde_json::from_str::<B0WeightType>("\"assumed-decay\"").unwrap(), B0WeightType::AssumedDecay);
         assert_eq!(B0WeightType::AssumedDecay.to_string(), "assumed-decay");
@@ -1239,7 +1192,7 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--unwrapping-algorithm laplacian"));
+        assert!(cmd.says("--unwrapping-algorithm laplacian"));
     }
 
     #[test]
@@ -1247,7 +1200,7 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.field_mapping.romeo.correct_global = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--romeo-correct-global"));
+        assert!(cmd.says("--romeo-correct-global"));
     }
 
     #[test]
@@ -1256,8 +1209,8 @@ frangi_c = 400.0
         c.field_mapping.romeo.phase_gradient_coherence = false;
         c.field_mapping.romeo.mag_coherence = false;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--no-romeo-phase-gradient-coherence"));
-        assert!(cmd.contains("--no-romeo-mag-coherence"));
+        assert!(cmd.says("--no-romeo-phase-gradient-coherence"));
+        assert!(cmd.says("--no-romeo-mag-coherence"));
     }
 
     #[test]
@@ -1267,51 +1220,51 @@ frangi_c = 400.0
             crate::masking::MaskOp::Erode { iterations: 3 },
         ];
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--mask"));
+        assert!(cmd.says("--mask"));
         assert!(cmd.contains("erode:3"));
     }
 
     #[test]
     fn segmentation_and_analysis_emit_their_flags() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--do-segmentation"));
+        assert!(!generate_command(&c).says("--do-segmentation"));
 
         c.pipeline.do_segmentation = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--do-segmentation"), "{cmd}");
-        assert!(!cmd.contains("--synthseg-version"), "the default version stays off: {cmd}");
+        assert!(cmd.says("--do-segmentation"), "{cmd}");
+        assert!(!cmd.says("--synthseg-version"), "the default version stays off: {cmd}");
 
         // --do-analysis implies segmentation, so emitting both would be noise.
         c.pipeline.do_analysis = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--do-analysis"), "{cmd}");
-        assert!(!cmd.contains("--do-segmentation"), "implied, so not repeated: {cmd}");
+        assert!(cmd.says("--do-analysis"), "{cmd}");
+        assert!(!cmd.says("--do-segmentation"), "implied, so not repeated: {cmd}");
 
         c.segmentation.version = crate::enums::SynthSegVersion::V2;
         c.segmentation.flip_averaging = false;
         c.segmentation.crop = Some(192);
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--synthseg-version v2"), "{cmd}");
-        assert!(cmd.contains("--no-synthseg-flip-averaging"), "{cmd}");
-        assert!(cmd.contains("--synthseg-crop 192"), "{cmd}");
+        assert!(cmd.says("--synthseg-version v2"), "{cmd}");
+        assert!(cmd.says("--no-synthseg-flip-averaging"), "{cmd}");
+        assert!(cmd.says("--synthseg-crop 192"), "{cmd}");
     }
 
     #[test]
     fn smwi_emits_its_flag_and_non_default_params() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--do-smwi"));
+        assert!(!generate_command(&c).says("--do-smwi"));
 
         c.pipeline.do_smwi = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--do-smwi"), "{cmd}");
-        assert!(!cmd.contains("--smwi-threshold"), "defaults stay off: {cmd}");
+        assert!(cmd.says("--do-smwi"), "{cmd}");
+        assert!(!cmd.says("--smwi-threshold"), "defaults stay off: {cmd}");
 
         c.smwi.threshold_ppm = 0.2;
         c.smwi.mip_window = 7;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--smwi-threshold 0.2"), "{cmd}");
-        assert!(cmd.contains("--smwi-mip-window 7"), "{cmd}");
-        assert!(!cmd.contains("--smwi-power"), "an untouched parameter stays off: {cmd}");
+        assert!(cmd.says("--smwi-threshold 0.2"), "{cmd}");
+        assert!(cmd.says("--smwi-mip-window 7"), "{cmd}");
+        assert!(!cmd.says("--smwi-power"), "an untouched parameter stays off: {cmd}");
     }
 
     /// HEIDI is `--heidi` after any inversion, with its own group; LSQR+HEIDI emits LSQR's group
@@ -1323,20 +1276,20 @@ frangi_c = 400.0
         c.inversion.lsqr.tol = 1e-7;
         c.inversion.heidi.cone_threshold = 0.2;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsm-algorithm lsqr"), "{cmd}");
-        assert!(cmd.contains("--lsqr-tol 0.0000001"), "{cmd}");
-        assert!(!cmd.contains("--heidi"), "plain LSQR should not emit HEIDI: {cmd}");
+        assert!(cmd.says("--qsm-algorithm lsqr"), "{cmd}");
+        assert!(cmd.says("--lsqr-tol 0.0000001"), "{cmd}");
+        assert!(!cmd.says("--heidi"), "plain LSQR should not emit HEIDI: {cmd}");
 
         c.inversion.heidi.enabled = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsm-algorithm lsqr --lsqr-tol 0.0000001 --heidi"), "{cmd}");
-        assert!(cmd.contains("--heidi-cone-threshold 0.2"), "{cmd}");
+        assert!(cmd.says("--qsm-algorithm lsqr --lsqr-tol 0.0000001 --heidi"), "{cmd}");
+        assert!(cmd.says("--heidi-cone-threshold 0.2"), "{cmd}");
 
         c.inversion.algorithm = QsmAlgorithm::Rts;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsm-algorithm rts"), "{cmd}");
-        assert!(cmd.contains("--heidi --heidi-cone-threshold 0.2"), "{cmd}");
-        assert!(!cmd.contains("--lsqr-tol"), "RTS does not read LSQR's: {cmd}");
+        assert!(cmd.says("--qsm-algorithm rts"), "{cmd}");
+        assert!(cmd.says("--heidi --heidi-cone-threshold 0.2"), "{cmd}");
+        assert!(!cmd.says("--lsqr-tol"), "RTS does not read LSQR's: {cmd}");
     }
 
     /// Defaults stay off the command line, and the two `no-` flags only appear when the switch is
@@ -1347,43 +1300,43 @@ frangi_c = 400.0
         c.inversion.algorithm = QsmAlgorithm::Lsqr;
         c.inversion.heidi.enabled = true;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--lsqr-tol"), "{cmd}");
-        assert!(!cmd.contains("--no-lsqr-global-offset"), "{cmd}");
-        assert!(!cmd.contains("--no-heidi-denoise"), "{cmd}");
-        assert!(!cmd.contains("--heidi-denoise-iterations"), "defaults stay off: {cmd}");
+        assert!(!cmd.says("--lsqr-tol"), "{cmd}");
+        assert!(!cmd.says("--no-lsqr-global-offset"), "{cmd}");
+        assert!(!cmd.says("--no-heidi-denoise"), "{cmd}");
+        assert!(!cmd.says("--heidi-denoise-iterations"), "defaults stay off: {cmd}");
 
         c.inversion.lsqr.fit_global_offset = false;
         c.inversion.heidi.denoise = false;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--no-lsqr-global-offset"), "{cmd}");
-        assert!(cmd.contains("--no-heidi-denoise"), "{cmd}");
+        assert!(cmd.says("--no-lsqr-global-offset"), "{cmd}");
+        assert!(cmd.says("--no-heidi-denoise"), "{cmd}");
         // With denoising off, its three parameters are noise on the command line.
-        assert!(!cmd.contains("--heidi-denoise-iterations"), "{cmd}");
+        assert!(!cmd.says("--heidi-denoise-iterations"), "{cmd}");
     }
 
     /// Off by default, so the bare flag says everything when the reliable mask is the default one.
     #[test]
     fn two_pass_emits_a_bare_flag() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--two-pass"));
+        assert!(!generate_command(&c).says("--two-pass"));
 
         c.masking.two_pass = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--two-pass"), "{cmd}");
-        assert!(!cmd.contains("--two-pass-mask"), "default recipe should not be spelled out: {cmd}");
+        assert!(cmd.says("--two-pass"), "{cmd}");
+        assert!(!cmd.says("--two-pass-mask"), "default recipe should not be spelled out: {cmd}");
 
         // Explicitly setting the default recipe means the same thing as leaving it unset.
         c.masking.two_pass_sections = Some(crate::masking::default_two_pass_sections());
-        assert!(!generate_command(&c).contains("--two-pass-mask"));
+        assert!(!generate_command(&c).says("--two-pass-mask"));
     }
 
     #[test]
     fn two_pass_names_the_original_mode() {
         let mut c = PipelineConfig::default();
         c.masking.two_pass = true;
-        assert!(!generate_command(&c).contains("--two-pass-mode"));
+        assert!(!generate_command(&c).says("--two-pass-mode"));
         c.masking.two_pass_mode = crate::enums::TwoPassMode::Original;
-        assert!(generate_command(&c).contains("--two-pass-mode original"), "{}", generate_command(&c));
+        assert!(generate_command(&c).says("--two-pass-mode original"), "{}", generate_command(&c));
     }
 
     #[test]
@@ -1399,14 +1352,14 @@ frangi_c = 400.0
             refinements: vec![],
         }]);
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--two-pass"), "{cmd}");
-        assert!(cmd.contains("--two-pass-mask magnitude,threshold:percentile:30.0"), "{cmd}");
-        assert!(!cmd.contains("--two-pass-mask-combine"), "unset, it is the main mask's: {cmd}");
+        assert!(cmd.says("--two-pass"), "{cmd}");
+        assert!(cmd.says("--two-pass-mask magnitude,threshold:percentile:30.0"), "{cmd}");
+        assert!(!cmd.says("--two-pass-mask-combine"), "unset, it is the main mask's: {cmd}");
         // Its own combine mode, once it has sections to combine.
         c.masking.two_pass_combine = Some(crate::masking::MaskCombine::And);
-        assert!(!generate_command(&c).contains("--two-pass-mask-combine"));
+        assert!(!generate_command(&c).says("--two-pass-mask-combine"));
         c.masking.two_pass_sections.as_mut().unwrap().extend(crate::masking::default_two_pass_sections());
-        assert!(generate_command(&c).contains("--two-pass-mask-combine and"));
+        assert!(generate_command(&c).says("--two-pass-mask-combine and"));
     }
 
     #[test]
@@ -1417,10 +1370,10 @@ frangi_c = 400.0
         c.pipeline.do_t2starmap = true;
         c.pipeline.do_r2starmap = true;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--no-qsm"));
-        assert!(cmd.contains("--do-swi"));
-        assert!(cmd.contains("--do-t2starmap"));
-        assert!(cmd.contains("--do-r2starmap"));
+        assert!(cmd.says("--no-qsm"));
+        assert!(cmd.says("--do-swi"));
+        assert!(cmd.says("--do-t2starmap"));
+        assert!(cmd.says("--do-r2starmap"));
     }
 
     #[test]
@@ -1428,7 +1381,7 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.n4.shrink_factor = 2;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--inhomogeneity-method") && !cmd.contains("--n4-"), "makehomogeneous hides N4's settings: {cmd}");
+        assert!(!cmd.says("--inhomogeneity-method") && !cmd.says("--n4-"), "makehomogeneous hides N4's settings: {cmd}");
         c.masking.inhomogeneity_method = InhomogeneityMethod::N4;
         c.homogeneity.sigma_mm = 5.0;
         c.n4.max_iterations = vec![20, 10];
@@ -1438,9 +1391,9 @@ frangi_c = 400.0
         let cmd = generate_command(&c);
         for f in ["--inhomogeneity-method n4", "--n4-shrink-factor 2", "--n4-max-iterations 20 10",
                   "--n4-mesh 2 2 1", "--n4-wiener-noise 0.02", "--n4-geometry make-nii"] {
-            assert!(cmd.contains(f), "{f} missing: {cmd}");
+            assert!(cmd.says(f), "{f} missing: {cmd}");
         }
-        assert!(!cmd.contains("--homogeneity-sigma-mm") && !cmd.contains("--n4-spline-order"), "{cmd}");
+        assert!(!cmd.says("--homogeneity-sigma-mm") && !cmd.says("--n4-spline-order"), "{cmd}");
     }
 
     #[test]
@@ -1448,15 +1401,15 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.masking.inhomogeneity_correction = false;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--no-inhomogeneity-correction"));
+        assert!(cmd.says("--no-inhomogeneity-correction"));
     }
 
     #[test]
     fn a_per_echo_qsm_is_in_the_command() {
         let mut config = PipelineConfig::default();
-        assert!(!generate_command(&config).contains("--qsm-per-echo"));
+        assert!(!generate_command(&config).says("--qsm-per-echo"));
         config.qsm.per_echo = true;
-        assert!(generate_command(&config).contains("--qsm-per-echo true"));
+        assert!(generate_command(&config).says("--qsm-per-echo true"));
     }
 
     #[test]
@@ -1464,15 +1417,15 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         c.qsm.reference = QsmReference::None;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsm-reference none"));
+        assert!(cmd.says("--qsm-reference none"));
 
         // A region reference travels as the spec itself, not as the word "region".
         let mut c = PipelineConfig::default();
         c.qsm.reference = QsmReference::Region;
         c.qsm.reference_region = Some("left-thalamus,right-thalamus".to_string());
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--qsm-reference left-thalamus,right-thalamus"), "{cmd}");
-        assert!(!cmd.contains("--qsm-reference region"), "{cmd}");
+        assert!(cmd.says("--qsm-reference left-thalamus,right-thalamus"), "{cmd}");
+        assert!(!cmd.says("--qsm-reference region"), "{cmd}");
     }
 
     #[test]
@@ -1509,31 +1462,31 @@ algorithm = "tv"
     fn test_output_space() {
         let mut c = PipelineConfig::default();
         assert_eq!(c.pipeline.output_space, OutputSpace::Acquired, "acquired is the default");
-        assert!(!generate_command(&c).contains("--output-space"));
+        assert!(!generate_command(&c).says("--output-space"));
         c.pipeline.output_space = OutputSpace::Working;
         // Only meaningful when the data is resampled.
-        assert!(!generate_command(&c).contains("--output-space"));
+        assert!(!generate_command(&c).says("--output-space"));
         c.pipeline.axial_resampling = true;
-        assert!(generate_command(&c).contains("--output-space working"));
+        assert!(generate_command(&c).says("--output-space working"));
     }
 
     #[test]
     fn test_crop_options() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--crop"));
+        assert!(!generate_command(&c).says("--crop"));
         c.pipeline.crop_to_mask = true;
         c.pipeline.crop_margin_mm = 24.0;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--crop-to-mask"), "{cmd}");
-        assert!(cmd.contains("--crop-margin-mm 24"), "{cmd}");
+        assert!(cmd.says("--crop-to-mask"), "{cmd}");
+        assert!(cmd.says("--crop-margin-mm 24"), "{cmd}");
     }
 
     #[test]
     fn test_coil_combination_sigma() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--coil-combination-sigma"));
+        assert!(!generate_command(&c).says("--coil-combination-sigma"));
         c.field_mapping.coil_combination_sigma = [4.0, 4.0, 4.0];
-        assert!(generate_command(&c).contains("--coil-combination-sigma 4 4 4"));
+        assert!(generate_command(&c).says("--coil-combination-sigma 4 4 4"));
     }
 
     #[test]
@@ -1541,32 +1494,20 @@ algorithm = "tv"
         let mut c = PipelineConfig::default();
         c.field_mapping.phase_offset_sigma_mm = [10.0, 10.0, 5.0];
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--phase-offset-sigma-mm 10 10 5"));
-    }
-}
-
-/// Quote a pattern for a shell when it contains glob metacharacters.
-///
-/// An orientation-group pattern is almost always a glob (`*acq-dir*`), and an unquoted glob
-/// in the displayed command is one the user's shell would expand against their working
-/// directory before qsmxt ever saw it.
-fn shell_quote(s: &str) -> String {
-    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        s.to_string()
-    } else {
-        format!("'{}'", s.replace('\'', r"'\''"))
+        assert!(cmd.says("--phase-offset-sigma-mm 10 10 5"));
     }
 }
 
 #[cfg(test)]
 mod multiorient_command_tests {
     use super::*;
+    use super::tests::Says;
 
     #[test]
     fn nothing_is_emitted_when_grouping_is_off() {
         let cmd = generate_command(&PipelineConfig::default());
-        assert!(!cmd.contains("--orientation-group"), "{cmd}");
-        assert!(!cmd.contains("--multi-orientation"), "{cmd}");
+        assert!(!cmd.says("--orientation-group"), "{cmd}");
+        assert!(!cmd.says("--multi-orientation"), "{cmd}");
     }
 
     #[test]
@@ -1574,10 +1515,10 @@ mod multiorient_command_tests {
         let mut config = PipelineConfig::default();
         config.multi_orientation.group_by = "*acq-dir*".into();
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--orientation-group '*acq-dir*'"), "{cmd}");
-        assert!(cmd.contains("--multi-orientation-algorithm cosmos"), "{cmd}");
+        assert!(cmd.says("--orientation-group '*acq-dir*'"), "{cmd}");
+        assert!(cmd.says("--multi-orientation-algorithm cosmos"), "{cmd}");
         // Lambda is at its default, so it should not add noise.
-        assert!(!cmd.contains("--multi-orientation-lambda"), "{cmd}");
+        assert!(!cmd.says("--multi-orientation-lambda"), "{cmd}");
     }
 
     #[test]
@@ -1587,19 +1528,19 @@ mod multiorient_command_tests {
         config.multi_orientation.algorithm = MultiOrientAlgorithm::Sti;
         config.multi_orientation.lambda = 1e-3;
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--orientation-group acq"), "{cmd}");
-        assert!(cmd.contains("--multi-orientation-algorithm sti"), "{cmd}");
-        assert!(cmd.contains("--multi-orientation-lambda 0.001"), "{cmd}");
+        assert!(cmd.says("--orientation-group acq"), "{cmd}");
+        assert!(cmd.says("--multi-orientation-algorithm sti"), "{cmd}");
+        assert!(cmd.says("--multi-orientation-lambda 0.001"), "{cmd}");
     }
 
     #[test]
     fn the_orientation_reference_is_rendered_only_when_set() {
         let mut config = PipelineConfig::default();
         config.multi_orientation.group_by = "acq".into();
-        assert!(!generate_command(&config).contains("--orientation-reference"));
+        assert!(!generate_command(&config).says("--orientation-reference"));
         config.multi_orientation.reference = "*acq-Neutral*".into();
         let cmd = generate_command(&config);
-        assert!(cmd.contains("--orientation-reference '*acq-Neutral*'"), "{cmd}");
+        assert!(cmd.says("--orientation-reference '*acq-Neutral*'"), "{cmd}");
     }
     /// χ-sepnet's toolbox route implies R2*; an R2′ map the user asked for is a flag of its own.
     #[test]
@@ -1608,8 +1549,8 @@ mod multiorient_command_tests {
         c.pipeline.do_chi_separation = true;
         c.separation.algorithm = crate::SeparationAlgorithm::ChiSepNet;
         let cmd = generate_command(&c);
-        assert!(!cmd.contains("--do-r2primemap") && !cmd.contains("--do-r2map") && !cmd.contains("--do-r2starmap"), "{cmd}");
+        assert!(!cmd.says("--do-r2primemap") && !cmd.says("--do-r2map") && !cmd.says("--do-r2starmap"), "{cmd}");
         c.pipeline.do_r2primemap = true;
-        assert!(generate_command(&c).contains("--do-r2primemap"));
+        assert!(generate_command(&c).says("--do-r2primemap"));
     }
 }

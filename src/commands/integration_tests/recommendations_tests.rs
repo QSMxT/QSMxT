@@ -20,7 +20,7 @@ fn dry_lists_the_findings_and_what_accepting_would_change() {
     testutils::create_multi_echo_bids(&bids);
     let args = departing_args(bids.clone(), dir.path().join("out"));
     let config = super::run::build_config(None, &args.pipeline).unwrap();
-    let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+    let runs = qsmxt_io::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
     let recommendations = qsmxt_engine::recommendations::Accept { recommendations: true, reference: false };
     let text = super::recommend::dry_text(&config, &runs, recommendations);
     // The log warns of it, saying how to apply it.
@@ -68,7 +68,7 @@ fn authors_settings_are_applied_only_when_asked() {
     args.pipeline.given.retain(|g| g.flag.long != "phase-offset-removal");
     args.pipeline.add(&["--b0-estimation", "complex-fit"]);
     let config = super::run::build_config(None, &args.pipeline).unwrap();
-    let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+    let runs = qsmxt_io::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
     let logged = super::recommend::found_lines(&config, &runs);
     let line = logged.iter().find(|(_, l)| l.contains("(complex-fit.unwrap-region-growing;")).unwrap_or_else(|| panic!("{logged:?}"));
     assert!(!line.0 && line.1.starts_with("Differs from the original authors' setting")
@@ -100,21 +100,21 @@ fn accepted_recommendations_reach_the_record_and_summary() {
     let dir = tempfile::tempdir().unwrap();
     let bids = dir.path().join("bids");
     testutils::create_multi_echo_bids(&bids);
-    let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+    let runs = qsmxt_io::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
 
     let out = dir.path().join("accepted");
     let mut args = departing_args(bids.clone(), out.clone());
     args.dry = false;
-    args.accept_recommendations = true;
+    args.accept.accept_recommendations = true;
     super::run::execute(args).unwrap();
     let deriv = out.join("derivatives/qsmxt");
-    let config = qsmxt_engine::PipelineConfig::from_toml(&std::fs::read_to_string(deriv.join("pipeline_config.toml")).unwrap()).unwrap();
+    let config = qsmxt_engine::PipelineConfig::from_toml(&fs_err::read_to_string(deriv.join("pipeline_config.toml")).unwrap()).unwrap();
     assert!(config.field_mapping.phase_offset_removal, "the run took the recommended value");
     let records = super::run::current_run_records(&deriv, &config);
     let (_, file) = records.first().expect("a run record");
     let applied = file.record.recommendations.iter().find(|r| r.finding.rule == "field-mapping.phase-offsets").unwrap();
     assert_eq!(applied.outcome, qsmxt_engine::recommendations::Outcome::Applied);
-    let methods = std::fs::read_to_string(deriv.join("methods.md")).unwrap();
+    let methods = fs_err::read_to_string(deriv.join("methods.md")).unwrap();
     assert!(!methods.contains("Departures from the methods' recommendations"), "{methods}");
     let accepted = super::recommend::Accepted { applied: vec![applied.finding.clone()], ..Default::default() };
     let summary = super::recommend::summary(&config, &runs, &accepted);
@@ -124,7 +124,7 @@ fn accepted_recommendations_reach_the_record_and_summary() {
     let mut args = departing_args(bids, out.clone());
     args.dry = false;
     super::run::execute(args).unwrap();
-    let methods = std::fs::read_to_string(out.join("derivatives/qsmxt/methods.md")).unwrap();
+    let methods = fs_err::read_to_string(out.join("derivatives/qsmxt/methods.md")).unwrap();
     let note = &methods[methods.find("## Note").unwrap_or_else(|| panic!("{methods}"))..];
     assert!(note.contains("Departures from the methods' recommendations:")
         && note.contains("- Phase offset removal was off; Weighted average recommends turning it on.\n"), "{note}");

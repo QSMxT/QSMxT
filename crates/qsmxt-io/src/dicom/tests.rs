@@ -23,7 +23,7 @@ fn scan(name: &str) -> (tempfile::TempDir, DicomSession) {
 fn tree(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
     fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
-        for e in std::fs::read_dir(dir).unwrap().flatten() {
+        for e in fs_err::read_dir(dir).unwrap().flatten() {
             let p = e.path();
             if p.is_dir() {
                 walk(root, &p, out);
@@ -104,7 +104,7 @@ fn assert_images(c: &Converted, want: &[String]) {
 fn study_uids_only_when_asked_for() {
     let (_d, s) = scan("swi_qsm_and_magnitude");
     let sidecar = |root: &Path| -> serde_json::Value {
-        serde_json::from_str(&std::fs::read_to_string(root.join(format!(
+        serde_json::from_str(&fs_err::read_to_string(root.join(format!(
             "sub-synth01/ses-20240101/anat/{PREFIX}_acq-t2starSWIandQSM_part-phase_T2starw.json"))).unwrap()).unwrap()
     };
     let dir = tempfile::tempdir().unwrap();
@@ -138,13 +138,13 @@ fn swi_qsm_and_magnitude() {
         "acq-t2starSWIandQSM_rec-swi_part-mag_T2starw",
     ]));
     // BIDS requires Units for phase.
-    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+    let json: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(
         c.root.join(format!("sub-synth01/ses-20240101/anat/{PREFIX}_acq-t2starSWIandQSM_part-phase_T2starw.json"))).unwrap()).unwrap();
     assert_eq!(json["Units"], "arbitrary");
     assert!((json["EchoTime"].as_f64().unwrap() - 0.02).abs() < 1e-9);
     // Dataset files.
     assert!(c.root.join("dataset_description.json").is_file());
-    let ignore = std::fs::read_to_string(c.root.join(".bidsignore")).unwrap();
+    let ignore = fs_err::read_to_string(c.root.join(".bidsignore")).unwrap();
     assert!(ignore.lines().any(|l| l == "extra_data"), "{ignore}");
 }
 
@@ -166,7 +166,7 @@ fn duplicate_different() {
     let Some(c) = convert(&s) else { return };
     assert_images(&c, &anat(&["acq-greqsm_part-mag_T2starw", "acq-greqsm_part-phase_T2starw"]));
     assert!(c.images.contains(&"sub-synth01/ses-20240101/extra_data/11_MagImages.nii.gz".to_string()), "{:?}", c.images);
-    let readme = std::fs::read_to_string(c.root.join("README")).unwrap();
+    let readme = fs_err::read_to_string(c.root.join("README")).unwrap();
     assert!(readme.contains("extra_data/"), "{readme}");
 }
 
@@ -273,12 +273,12 @@ fn headerless() {
 fn not_dicom_files_are_counted() {
     let dir = tempfile::tempdir().unwrap();
     write_fixture("headerless", dir.path());
-    std::fs::write(dir.path().join("notes.txt"), "hello").unwrap();
-    std::fs::write(dir.path().join("image.nii"), [0u8; 400]).unwrap();
+    fs_err::write(dir.path().join("notes.txt"), "hello").unwrap();
+    fs_err::write(dir.path().join("image.nii"), [0u8; 400]).unwrap();
     let s = scan_dicom_directory(dir.path(), Arc::new(AtomicUsize::new(0))).unwrap();
     assert_eq!(s.report.not_dicom, 2);
     let empty = tempfile::tempdir().unwrap();
-    std::fs::write(empty.path().join("notes.txt"), "hello").unwrap();
+    fs_err::write(empty.path().join("notes.txt"), "hello").unwrap();
     let err = scan_dicom_directory(empty.path(), Arc::new(AtomicUsize::new(0))).unwrap_err();
     assert!(err.contains("No DICOM files found") && err.contains("1 files were not DICOM"), "{err}");
 }
@@ -382,7 +382,7 @@ fn philips_radian_phase() {
     let Some(c) = convert(&s) else { return };
     let units = |name: &str| -> String {
         let p = c.root.join(format!("sub-synth01/ses-20240101/anat/{PREFIX}_acq-WIPQSM2e_echo-1_part-{name}_MEGRE.json"));
-        let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+        let j: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(&p).unwrap()).unwrap();
         j["Units"].as_str().unwrap_or("").to_string()
     };
     assert_eq!(units("phase"), "rad", "{}", c.log.join("\n"));
@@ -414,7 +414,7 @@ fn dicom_bids_validator_fixture() {
         write_fixture(name, src.path());
         let session = scan_dicom_directory(src.path(), Arc::new(AtomicUsize::new(0))).unwrap();
         let out = root.join(name);
-        let _ = std::fs::remove_dir_all(&out);
+        let _ = fs_err::remove_dir_all(&out);
         let (errors, log) = convert_to(&session, &out).expect("dcm2niix is needed");
         assert!(errors.is_empty(), "{name}: {errors:?}\n{}", log.join("\n"));
     }

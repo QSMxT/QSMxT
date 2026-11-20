@@ -16,23 +16,23 @@ Options:
       --output-mask <OUTPUT_MASK>
           Output eroded mask (for algorithms that erode)
 
-      --max-iter <MAX_ITER>
-          Maximum iterations
-
-      --tol <TOL>
-          Convergence tolerance
-
       --te <TE>
           Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either way
 
       --field-strength <FIELD_STRENGTH>
           B0 field strength (T) of a wrapped-phase input — see --te
 
-      --pad <X> <Y> <Z>
-          Zero-padding in voxels per side, X Y Z (default: 0 0 0)
+      --iharperella-max-iter <IHARPERELLA_MAX_ITER>
+          iHARPERELLA: Maximum iterations (default: 40)
 
-      --rim <RIM>
-          Boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default)
+      --iharperella-tol <IHARPERELLA_TOL>
+          iHARPERELLA: Convergence tolerance (default: 0.001)
+
+      --iharperella-pad <X> <Y> <Z>
+          iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0)
+
+      --iharperella-rim <RIM>
+          iHARPERELLA boundary rim: whole (zero every Laplacian value in the rim) or sti (zero the 20 % largest, as STI Suite does; default)
 
   -h, --help
           Print help

@@ -710,7 +710,7 @@ mod tests {
             assert_eq!(figs.len(), 1);
             let dir = tempfile::tempdir().unwrap();
             let p = figs[0].save_in(dir.path(), "sub-01").unwrap();
-            assert!(std::fs::metadata(&p).unwrap().len() > 0);
+            assert!(fs_err::metadata(&p).unwrap().len() > 0);
             assert!(p.file_name().unwrap().to_str().unwrap().starts_with("sub-01_desc-"));
         }
     }

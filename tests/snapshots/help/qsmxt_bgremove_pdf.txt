@@ -30,17 +30,17 @@ Options:
       --magnitude <MAGNITUDE>...
           Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
 
-      --tol <TOL>
-          Tolerance, relative to the noise level
+      --pdf-tol <PDF_TOL>
+          PDF tolerance, relative to the noise level (default: 0.1)
 
-      --n-cg <N_CG>
-          Maximum conjugate-gradient iterations (default: 30)
+      --pdf-n-cg <PDF_N_CG>
+          PDF: Maximum conjugate-gradient iterations (default: 30)
 
-      --space <SPACE>
-          Dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image)
+      --pdf-space <SPACE>
+          PDF dipole kernel: image (the FFT of the dipole sampled on the voxel grid) or kspace (the analytic k-space kernel) (default: image)
 
-      --n-pad <VOXELS>
-          Zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40)
+      --pdf-n-pad <VOXELS>
+          PDF zero-padding around the mask's bounding box, in voxels; 0 runs on the full volume (default: 40)
 
   -h, --help
           Print help

@@ -2,10 +2,10 @@
 //! to the runs discovered in a BIDS directory.
 
 use crate::bids::discovery::QsmRun;
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
-pub use qsmxt_engine::requirements::*;
-pub use qsmxt_engine::scan::ScanFacts;
+use qsmxt_engine::requirements::*;
+use qsmxt_engine::scan::ScanFacts;
 
 /// `config` for `run`: a pipeline chosen on the command line (`--pipeline`, applied before any scan
 /// was read) completed with the scan's facts ([`qsmxt_engine::pipelines::on_scan`]), with the

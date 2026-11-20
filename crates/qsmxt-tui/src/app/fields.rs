@@ -45,8 +45,8 @@ pub fn chi_bound_index(b: qsmxt_engine::ChiBoundChoice) -> usize {
 pub fn qsm_ref_options() -> &'static [&'static str] { crate::settings_rows::options("qsm.reference").0 }
 
 /// The output a checkbox asks for, when another option can force that output on.
-fn forced_output(field: &str) -> Option<qsmxt_io::pipeline::requirements::Output> {
-    qsmxt_io::pipeline::requirements::Output::of_setting(&format!("pipeline.{field}"))
+fn forced_output(field: &str) -> Option<qsmxt_engine::requirements::Output> {
+    qsmxt_engine::requirements::Output::of_setting(field)
 }
 
 impl App {
@@ -95,18 +95,18 @@ impl App {
     /// The run's own rule (`requirements::implied_by` on the resolved config), so what the run
     /// makes, the refusal to untick it and the required-change pop-up cannot disagree: a supplied map
     /// (custom dseg, R2 or R2') satisfies the need and forces nothing.
-    fn forced_by(&self, out: qsmxt_io::pipeline::requirements::Output) -> Option<String> {
+    fn forced_by(&self, out: qsmxt_engine::requirements::Output) -> Option<String> {
         // On the config as the run takes it: an output needed by one that is itself needed (R2
         // for an R2′ that χ-separation needs) counts.
         let config = crate::command::config_from_app(self).ok()?.normalised().0;
-        qsmxt_io::pipeline::requirements::implied_by(&config, out)
+        qsmxt_engine::requirements::implied_by(&config, out)
     }
 
     /// [`Self::forced_by`], naming the setting by its label rather than its flag ("Reference =
     /// ventricles").
-    fn forced_by_label(&self, out: qsmxt_io::pipeline::requirements::Output) -> Option<String> {
+    fn forced_by_label(&self, out: qsmxt_engine::requirements::Output) -> Option<String> {
         let config = crate::command::config_from_app(self).ok()?.normalised().0;
-        qsmxt_io::pipeline::requirements::implied_by_label(&config, out)
+        qsmxt_engine::requirements::implied_by_label(&config, out)
     }
 
     /// A text field's value, by name: the run form's, the Input tab's, else the pipeline form's.
@@ -131,7 +131,7 @@ impl App {
         if field == "segmentation_source" {
             return usize::from(!self.form.settings.text(DSEG).trim().is_empty());
         }
-        if field == "qsm_algorithm" {
+        if field == "inversion.algorithm" {
             return self.inversion_picked();
         }
         if let Some(path) = stored_path(field) {
@@ -195,7 +195,7 @@ impl App {
             }
             return;
         }
-        if field == "qsm_algorithm" {
+        if field == "inversion.algorithm" {
             return self.pick_inversion(val);
         }
         if let Some(path) = stored_path(field) {
@@ -213,11 +213,11 @@ impl App {
     /// Whether the run makes an output: its checkbox is ticked, or another setting needs it (a
     /// required change the run makes itself when it is left off, [`App::forced_by`]).
     pub fn output_made(&self, field: &str) -> bool {
-        if field == "do_segmentation" {
+        if field == "pipeline.do_segmentation" {
             return self.field_toggle(field)
-                || self.forced_by(qsmxt_io::pipeline::requirements::Output::Segmentation).is_some();
+                || self.forced_by(qsmxt_engine::requirements::Output::Segmentation).is_some();
         }
-        if field == "do_qsm" && !self.form.settings.toggle("pipeline.do_qsm") {
+        if field == "pipeline.do_qsm" && !self.form.settings.toggle("pipeline.do_qsm") {
             return self.row_context().qsm_forced_by.is_some();
         }
         if forced_output(field).is_some_and(|out| self.forced_by(out).is_some()) {
@@ -233,7 +233,7 @@ impl App {
         if let Some(m) = dicom_map(field) {
             return !self.form.dicom_unticked.iter().any(|u| u.eq_ignore_ascii_case(m.suffix));
         }
-        if field == "do_segmentation" {
+        if field == "pipeline.do_segmentation" {
             let st = &self.form.settings;
             return st.toggle("pipeline.do_segmentation") || !st.text(DSEG).trim().is_empty();
         }
@@ -248,7 +248,7 @@ impl App {
         if let Some(m) = dicom_map(field) {
             return self.toggle_dicom_map(m);
         }
-        if field == "do_qsm" && self.form.settings.toggle("pipeline.do_qsm") {
+        if field == "pipeline.do_qsm" && self.form.settings.toggle("pipeline.do_qsm") {
             // QSM another output needs: refuse turning it off, as for the other maps.
             self.form.settings.set("pipeline.do_qsm", false);
             let why = self.row_context().qsm_forced_by;
@@ -258,7 +258,7 @@ impl App {
                 return;
             }
         }
-        if field == "do_segmentation" {
+        if field == "pipeline.do_segmentation" {
             if !self.field_toggle(field) {
                 self.form.settings.set("pipeline.do_segmentation", true);
                 return;
@@ -266,7 +266,7 @@ impl App {
             // What needs a segmentation whichever its source: asked with no dseg supplied.
             let kept = self.form.settings.clone();
             self.form.settings.reset(DSEG, false);
-            let why = self.forced_by_label(qsmxt_io::pipeline::requirements::Output::Segmentation);
+            let why = self.forced_by_label(qsmxt_engine::requirements::Output::Segmentation);
             self.form.settings = kept;
             if let Some(why) = why {
                 self.error_message = Some(format!(
@@ -300,8 +300,8 @@ impl App {
         match field {
             "slurm_account" => "(required)",
             "mem_limit_gb" | "n_procs" => "auto",
-            "orientation_lambda" => "0 (none)",
-            "orientation_reference" => "first by name",
+            "multi_orientation.lambda" => "0 (none)",
+            "multi_orientation.reference" => "first by name",
             _ if stored_path(field).is_some() => stored_placeholder(stored_path(field).unwrap_or_default()),
             _ if self.form.text(field).is_some() => "(empty)",
             _ => "(default)",
@@ -322,7 +322,7 @@ impl App {
             return self.form.dicom_unticked.retain(|u| !u.eq_ignore_ascii_case(m.suffix));
         }
         match field {
-            "segmentation_source" | "do_segmentation" => {
+            "segmentation_source" | "pipeline.do_segmentation" => {
                 self.form.settings.reset(DSEG, false);
                 self.form.settings.reset("pipeline.do_segmentation", false);
                 return;

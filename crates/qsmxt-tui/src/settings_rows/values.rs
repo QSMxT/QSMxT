@@ -120,7 +120,7 @@ pub(crate) fn setting(path: &str) -> &'static Setting {
 
 /// The config path of a row's field, when its setting is kept in [`SettingsStore`].
 pub fn stored_path(field: &str) -> Option<&'static str> {
-    field_path(field).filter(|p| STORED_SECTIONS.contains(&setting(p).section)).filter(|_| !TUI_CHOICES.contains(&field))
+    field_path(field).filter(|p| STORED_SECTIONS.contains(&setting(p).section)).filter(|_| !is_choice(field))
 }
 
 /// A select's options and their help, as the TUI words them, for the setting at `path`.

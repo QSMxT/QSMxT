@@ -2,6 +2,7 @@
 
 use log::Level;
 
+use crate::plan::Stage;
 use crate::run::{Done, Run};
 use crate::stages;
 use crate::store::{Data, Item, StageStore};
@@ -10,7 +11,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     /// CLEAR-SWI over every echo, and its minIP.
     pub(crate) fn swi(&mut self) -> Result<(), S::Error> {
         let params = stages::swi::swi_params(self.config, &self.meta)?;
-        let Some(key) = self.begin("swi", Some("clear-swi"), &params, "Skipping swi (cached)", "Computing SWI") else { return Ok(()) };
+        let Some(key) = self.begin(Stage::Swi, Some("clear-swi"), &params, "Skipping swi (cached)", "Computing SWI") else { return Ok(()) };
         let n = self.n_echoes();
         self.log(Level::Info, &format!("Computing CLEAR-SWI ({} echo{})", n, if n == 1 { "" } else { "es" }));
         let phase_items: Vec<Item> = (1..=n).map(|e| self.echo_phase(e)).collect();
@@ -29,7 +30,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             outputs.push(Item::SwiPhase);
         }
         self.complete(Done {
-            step: "swi", algorithm: Some("clear-swi"), params: &params, outcome: None, key: &key,
+            stage: Stage::Swi, algorithm: Some("clear-swi"), params: &params, outcome: None, key: &key,
             outputs: &outputs,
         }, "SWI")
     }
@@ -43,7 +44,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             self.skip("There was no susceptibility map to weight by.");
             return Ok(());
         }
-        let Some(key) = self.begin("smwi", Some("smwi"), &params, "Skipping smwi (cached)", "Computing SMWI") else { return Ok(()) };
+        let Some(key) = self.begin(Stage::Smwi, Some("smwi"), &params, "Skipping smwi (cached)", "Computing SMWI") else { return Ok(()) };
         let s = &self.config.smwi;
         self.log(Level::Info, &format!("Computing SMWI (threshold {} ppm, power {}, mIP over {} slices)",
                                        s.threshold_ppm, s.power, s.mip_window));
@@ -60,7 +61,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             outputs.extend([Item::Smwi(*contrast), Item::SmwiMip(*contrast)]);
         }
         self.complete(Done {
-            step: "smwi", algorithm: Some("smwi"), params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage: Stage::Smwi, algorithm: Some("smwi"), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, "SMWI")
     }
 }
