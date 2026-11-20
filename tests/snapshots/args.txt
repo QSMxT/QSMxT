@@ -2367,19 +2367,18 @@
 --qsm value=QSM num_args=1 action=Set required
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
---field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
 --b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
 --r2star value=R2STAR num_args=1 action=Set
 --magnitude value=MAGNITUDE num_args=1.. action=Append
 --echo-times value=ECHO_TIMES num_args=1.. action=Append delimiter=','
 --r2star-qsm-r-const-3t aliases=r-const-3t value=R2STAR_QSM_R_CONST_3T num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
 --help -h num_args=0 action=Help
 
 ## qsmxt separate decompose
 --qsm value=QSM num_args=1 action=Set required
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
---field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
 --b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
 --magnitude value=MAGNITUDE num_args=1.. action=Append required
 --qsm-per-echo value=QSM_PER_ECHO num_args=1.. action=Append required
@@ -2395,13 +2394,13 @@
 --decompose-optimality-tolerance aliases=optimality-tolerance value=DECOMPOSE_OPTIMALITY_TOLERANCE num_args=1 action=Set
 --decompose-finite-difference-step aliases=finite-difference-step value=DECOMPOSE_FINITE_DIFFERENCE_STEP num_args=1 action=Set
 --decompose-typical-x aliases=typical-x value=DECOMPOSE_TYPICAL_X num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
 --help -h num_args=0 action=Help
 
 ## qsmxt separate chi-sep-ilsqr
 --qsm value=QSM num_args=1 action=Set required
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
---field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
 --b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
 --local-field value=LOCAL_FIELD num_args=1 action=Set required
 --r2prime value=R2PRIME num_args=1 action=Set required
@@ -2417,13 +2416,13 @@
 --chi-sep-ilsqr-prc-w-i-max aliases=prc-w-i-max value=CHI_SEP_ILSQR_PRC_W_I_MAX num_args=1 action=Set
 --chi-sep-ilsqr-prc-w-g-min aliases=prc-w-g-min value=CHI_SEP_ILSQR_PRC_W_G_MIN num_args=1 action=Set
 --chi-sep-ilsqr-prc-w-g-max aliases=prc-w-g-max value=CHI_SEP_ILSQR_PRC_W_G_MAX num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
 --help -h num_args=0 action=Help
 
 ## qsmxt separate chi-sep-medi
 --qsm value=QSM num_args=1 action=Set required
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
---field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
 --b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
 --local-field value=LOCAL_FIELD num_args=1 action=Set required
 --r2prime value=R2PRIME num_args=1 action=Set required
@@ -2440,13 +2439,13 @@
 --chi-sep-medi-cg-tol aliases=cg-tol value=CHI_SEP_MEDI_CG_TOL num_args=1 action=Set
 --chi-sep-medi-cg-max-iter aliases=cg-max-iter value=CHI_SEP_MEDI_CG_MAX_ITER num_args=1 action=Set
 --chi-sep-medi-csf-r2star aliases=csf-r2star value=METHOD num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
 --help -h num_args=0 action=Help
 
 ## qsmxt separate wavesep
 --qsm value=QSM num_args=1 action=Set required
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
---field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
 --b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
 --r2prime value=R2PRIME num_args=1 action=Set required
 --wavesep-dr-pos aliases=dr-pos value=WAVESEP_DR_POS num_args=1 action=Set
@@ -2456,13 +2455,13 @@
 --wavesep-wavelet-order aliases=wavelet-order value=WAVESEP_WAVELET_ORDER num_args=1 action=Set
 --wavesep-max-iter aliases=max-iter value=WAVESEP_MAX_ITER num_args=1 action=Set
 --wavesep-tol aliases=tol value=WAVESEP_TOL num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set hidden
 --help -h num_args=0 action=Help
 
 ## qsmxt separate hc-chisep
 --qsm value=QSM num_args=1 action=Set required
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
---field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
 --b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
 --r2prime value=R2PRIME num_args=1 action=Set required
 --magnitude value=MAGNITUDE num_args=1.. action=Append required
@@ -2471,23 +2470,24 @@
 --se-echo-times value=SE_ECHO_TIMES num_args=1.. action=Append delimiter=','
 --hc-chisep-dr-pos-3t aliases=dr-pos-3t value=HC_CHISEP_DR_POS_3T num_args=1 action=Set
 --hc-chisep-bin-hz aliases=bin-hz value=HC_CHISEP_BIN_HZ num_args=1 action=Set
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set required
 --help -h num_args=0 action=Help
 
 ## qsmxt separate susep-net
 --qsm value=QSM num_args=1 action=Set required
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
---field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
 --b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
 --local-field value=LOCAL_FIELD num_args=1 action=Set required
 --r2prime value=R2PRIME num_args=1 action=Set required
 --susep-net-patch aliases=patch value=D,H,W num_args=3 action=Append
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set hidden
 --help -h num_args=0 action=Help
 
 ## qsmxt separate chi-sepnet
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
---field-strength value=FIELD_STRENGTH num_args=1 action=Set default=3
+--field-strength value=FIELD_STRENGTH num_args=1 action=Set
 --b0-direction value=B0_DIRECTION num_args=3 action=Append default=0,0,1
 --local-field value=LOCAL_FIELD num_args=1 action=Set required
 --r2prime value=R2PRIME num_args=1 action=Set

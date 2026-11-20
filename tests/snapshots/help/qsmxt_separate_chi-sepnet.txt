@@ -10,9 +10,7 @@ Options:
           Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
 
       --field-strength <FIELD_STRENGTH>
-          B0 field strength in Tesla
-
-          [default: 3]
+          B0 field strength in Tesla; required with --r2star (R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given). χ-sepnet itself does not use it
 
       --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
           B0 direction (3 values)
@@ -26,7 +24,7 @@ Options:
           R2' map NIfTI in Hz (χ-sepnet-R2')
 
       --r2star <R2STAR>
-          R2* map NIfTI in Hz (χ-sepnet-R2*: R2' predicted by R2PRIMEnet; `--route toolbox` only)
+          R2* map NIfTI in Hz (χ-sepnet-R2*: R2' predicted by R2PRIMEnet; `--route toolbox` only). Needs --field-strength
 
       --qsm <QSM>
           Conventional QSM (χ_total) NIfTI in ppm; `--route native` only (the toolbox route makes its own with QSMnetME)

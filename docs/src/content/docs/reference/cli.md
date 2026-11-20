@@ -3144,7 +3144,7 @@ Susceptibility source separation
 R2\*-QSM closed-form (Dimov 2022) — QSM + R2\* (GRE-only)
 
 ```sh
-qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> <--r2star <R2STAR>|--magnitude <MAGNITUDE>...>
+qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> <--r2star <R2STAR>|--magnitude <MAGNITUDE>...>
 ```
 
 | Argument | Description |
@@ -3152,19 +3152,19 @@ qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> 
 | `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--r2star <R2STAR>` | R2\* map NIfTI in Hz (else fit from --magnitude + --echo-times) |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or several 3D files (space-separated). Fits R2\* if --r2star absent. |
 | `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated), required with --magnitude. |
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) (default: 274) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 
 ### `qsmxt separate decompose`
 
 DECOMPOSE-QSM signal-domain fit (Chen 2021) — a QSM per echo + multi-echo magnitude (GRE-only)
 
 ```sh
-qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --qsm-per-echo <QSM_PER_ECHO>... --echo-times <ECHO_TIMES>...
+qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --qsm-per-echo <QSM_PER_ECHO>... --echo-times <ECHO_TIMES>... --field-strength <FIELD_STRENGTH>
 ```
 
 | Argument | Description |
@@ -3172,7 +3172,6 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or several 3D files (space-separated) Required. |
 | `--qsm-per-echo <QSM_PER_ECHO>` | QSM of each echo (ppm), which sets each echo's phase: one 4D file or one 3D file per echo (space-separated; the same file may be given for every echo) Required. |
@@ -3188,13 +3187,14 @@ qsmxt separate decompose [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--decompose-optimality-tolerance <DECOMPOSE_OPTIMALITY_TOLERANCE>` | DECOMPOSE: first-order optimality each fit stops at (lsqcurvefit OptimalityTolerance; default: 1e-6) |
 | `--decompose-finite-difference-step <DECOMPOSE_FINITE_DIFFERENCE_STEP>` | DECOMPOSE: relative finite-difference step of the Jacobian (lsqcurvefit FiniteDifferenceStepSize; default: √eps) |
 | `--decompose-typical-x <DECOMPOSE_TYPICAL_X>` | DECOMPOSE: typical magnitude of each fitted value (lsqcurvefit TypicalX; default: 1) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 
 ### `qsmxt separate chi-sep-ilsqr`
 
 χ-separation iLSQR (Shin 2021) — local field + R2' + QSM
 
 ```sh
-qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME>
+qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME> --field-strength <FIELD_STRENGTH>
 ```
 
 | Argument | Description |
@@ -3202,7 +3202,6 @@ qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPU
 | `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
@@ -3218,13 +3217,14 @@ qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPU
 | `--chi-sep-ilsqr-prc-w-i-max <CHI_SEP_ILSQR_PRC_W_I_MAX>` | χ-sep iLSQR: percentile of the field's Laplacian at which the LSQR weight is 0 (default: 99.8) |
 | `--chi-sep-ilsqr-prc-w-g-min <CHI_SEP_ILSQR_PRC_W_G_MIN>` | χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 1 (default: 50) |
 | `--chi-sep-ilsqr-prc-w-g-max <CHI_SEP_ILSQR_PRC_W_G_MAX>` | χ-sep iLSQR: percentile of each gradient's magnitude at which the streaking-removal weight is 0 (default: 70) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 
 ### `qsmxt separate chi-sep-medi`
 
 χ-separation MEDI — local field + R2' + multi-echo magnitude + QSM
 
 ```sh
-qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>...
+qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>... --field-strength <FIELD_STRENGTH>
 ```
 
 | Argument | Description |
@@ -3232,7 +3232,6 @@ qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT
 | `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
@@ -3249,6 +3248,7 @@ qsmxt separate chi-sep-medi [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT
 | `--chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>` | χ-sep MEDI inner CG tolerance (default: 0.05) |
 | `--chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>` | χ-sep MEDI inner CG max iterations (default: 100) |
 | `--chi-sep-medi-csf-r2star <METHOD>` | χ-sep MEDI: the R2\* its CSF mask is extracted from: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 
 ### `qsmxt separate wavesep`
 
@@ -3263,7 +3263,6 @@ qsmxt separate wavesep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --r
 | `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
 | `--wavesep-dr-pos <WAVESEP_DR_POS>` | WaveSep paramagnetic relaxivity (Hz/ppm) (default: 137) |
@@ -3279,7 +3278,7 @@ qsmxt separate wavesep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --r
 Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude
 
 ```sh
-qsmxt separate hc-chisep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --r2prime <R2PRIME> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>...
+qsmxt separate hc-chisep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --r2prime <R2PRIME> --magnitude <MAGNITUDE>... --echo-times <ECHO_TIMES>... --field-strength <FIELD_STRENGTH>
 ```
 
 | Argument | Description |
@@ -3287,7 +3286,6 @@ qsmxt separate hc-chisep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or several 3D files (space-separated) Required. |
@@ -3296,6 +3294,7 @@ qsmxt separate hc-chisep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--se-echo-times <SE_ECHO_TIMES>` | Spin-echo times in seconds (comma-separated) for --se-magnitude. |
 | `--hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>` | HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) (default: 137) |
 | `--hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>` | HC-ChiSep R2' bin width for the anchored grid search (Hz) (default: 0.25) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 
 ### `qsmxt separate susep-net`
 
@@ -3310,7 +3309,6 @@ qsmxt separate susep-net [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm. Required. |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz. Required. |
@@ -3328,11 +3326,11 @@ qsmxt separate chi-sepnet [OPTIONS] --mask <MASK> --output <OUTPUT> --local-fiel
 | --- | --- |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Default: `3`. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla; required with --r2star (R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given). χ-sepnet itself does not use it. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz (χ-sepnet-R2') |
-| `--r2star <R2STAR>` | R2\* map NIfTI in Hz (χ-sepnet-R2\*: R2' predicted by R2PRIMEnet; `--route toolbox` only) |
+| `--r2star <R2STAR>` | R2\* map NIfTI in Hz (χ-sepnet-R2\*: R2' predicted by R2PRIMEnet; `--route toolbox` only). Needs --field-strength. |
 | `--qsm <QSM>` | Conventional QSM (χ_total) NIfTI in ppm; `--route native` only (the toolbox route makes its own with QSMnetME) |
 | `--chi-sepnet-route <CHI_SEPNET_ROUTE>` | χ-sepnet's input route. `toolbox` (default), the authors': the inputs resampled to 1 mm with B0 along z, the susceptibility channel computed by QSMnetME, R2' measured or predicted from R2\* by R2PRIMEnet, the maps resampled back. `native`: the network alone on the acquired grid, given this run's QSM and R2'. Values: `toolbox`, `native`. |
 | `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route native`) sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |

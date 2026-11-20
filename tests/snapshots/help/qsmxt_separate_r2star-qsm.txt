@@ -1,6 +1,6 @@
 R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)
 
-Usage: qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> <--r2star <R2STAR>|--magnitude <MAGNITUDE>...>
+Usage: qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --field-strength <FIELD_STRENGTH> <--r2star <R2STAR>|--magnitude <MAGNITUDE>...>
 
 Options:
       --qsm <QSM>
@@ -14,8 +14,6 @@ Options:
 
       --field-strength <FIELD_STRENGTH>
           B0 field strength in Tesla
-
-          [default: 3]
 
       --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
           B0 direction (3 values)
