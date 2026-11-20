@@ -368,7 +368,7 @@ goes in the file (`a.b.c` is `c` under `[a.b]`), what it takes, its default, and
 | `field_mapping.laplacian_fft_pad` | three whole numbers, voxels | `[64, 64, 64]` | `--laplacian-fft-pad` | Zero-padding per side: one value for every axis, or three (x y z). |
 | `field_mapping.laplacian_unmasked` | true or false | `false` | `--laplacian-unmasked` | Unwrap the raw phase over the whole volume, as QSMART does, instead of the phase set to zero outside the brain mask. |
 | `field_mapping.laplacian_keep_outside` | true or false | `false` | `--laplacian-keep-outside` | Keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP (weighted-average combination). |
-| `field_mapping.phase_offset_removal` | true or false | `true` | `--phase-offset-removal` | Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only. |
+| `field_mapping.phase_offset_removal` | true or false | `true` | `--phase-offset-removal` | Remove the echoes' spatially varying phase offset with MCPC-3D-S (Eckstein et al., 2018) before unwrapping; multi-echo only. |
 | `field_mapping.phase_offset_sigma_mm` | three numbers, mm | `[7.0, 7.0, 7.0]` | `--phase-offset-sigma-mm` | Gaussian smoothing sigma (x y z). |
 | `field_mapping.bipolar_correction` | true or false | `false` | `--bipolar-correction` | Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped). |
 | `field_mapping.romeo.individual` | true or false | `false` | `--romeo-individual` | Unwrap each echo on its own (for motion or time series). Off = the template echo is unwrapped spatially and the others temporally from it. |

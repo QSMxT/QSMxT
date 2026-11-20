@@ -255,7 +255,7 @@ Options:
           Keep the Laplacian field inside the brain mask only (the default), after a `--pipeline` that keeps it over the whole volume
 
       --phase-offset-removal <PHASE_OFFSET_REMOVAL>
-          Enable phase offset removal for multi-echo data (default: true)
+          Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true)
 
           [possible values: true, false]
 
