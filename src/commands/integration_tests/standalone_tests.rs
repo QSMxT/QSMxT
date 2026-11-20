@@ -88,8 +88,8 @@ fn test_homogeneity() {
     testutils::write_magnitude(&input);
 
     super::homogeneity::execute(HomogeneityArgs {
-        input, output: output.clone(), method: InhomogeneityMethodArg::Makehomogeneous,
-        sigma: 4.0, nbox: 2, n4_params: Default::default(),
+        input, output: output.clone(),
+        settings: SettingsOf::from_flags(&["--sigma", "4", "--nbox", "2"]),
     }).unwrap();
     assert!(output.exists());
 }
@@ -102,23 +102,18 @@ fn test_homogeneity_n4() {
     let input = dir.path().join("mag.nii");
     let output = dir.path().join("corrected.nii");
     testutils::write_magnitude(&input);
-    let n4 = |shrink| crate::cli::N4ParamArgs {
-        n4_shrink_factor: Some(shrink), n4_max_iterations: Some(vec![2, 2]), ..Default::default()
+    let args = |shrink: &str, more: &[&str]| HomogeneityArgs {
+        input: input.clone(), output: output.clone(),
+        settings: SettingsOf::from_flags(&[&["--method", "n4", "--n4-shrink-factor", shrink, "--n4-max-iterations", "2", "2"], more].concat()),
     };
-    let args = |shrink| HomogeneityArgs {
-        input: input.clone(), output: output.clone(), method: InhomogeneityMethodArg::N4,
-        sigma: 7.0, nbox: 15, n4_params: n4(shrink),
-    };
-    super::homogeneity::execute(args(2)).unwrap();
+    super::homogeneity::execute(args("2", &[])).unwrap();
     assert!(output.exists());
     // --n4-geometry make-nii takes make_nii's header for the file's voxel size.
     std::fs::remove_file(&output).unwrap();
-    let mut a = args(2);
-    a.n4_params.n4_geometry = Some(qsmxt_engine::N4Geometry::MakeNii);
-    super::homogeneity::execute(a).unwrap();
+    super::homogeneity::execute(args("2", &["--n4-geometry", "make-nii"])).unwrap();
     assert!(output.exists());
-    let e = super::homogeneity::execute(args(5)).unwrap_err().to_string();
-    assert!(e.contains("--n4-shrink-factor") && e.contains("--method makehomogeneous"), "{e}");
+    let e = super::homogeneity::execute(args("5", &[])).unwrap_err().to_string();
+    assert!(e.contains("--n4-shrink-factor") && e.contains("--inhomogeneity-method makehomogeneous"), "{e}");
 }
 
 // --- Resample ---
@@ -232,7 +227,7 @@ fn test_swi() {
         phase: phase.clone(), magnitude: magnitude.clone(), tes: Some(vec![0.004, 0.008]), mask: None,
         output: output.clone(),
         mip: false, mip_output: None, filtered_phase: true, filtered_phase_output: None,
-        swi_params: Default::default(),
+        settings: Default::default(),
     }).unwrap();
     assert!(output.exists());
     // The filtered phase beside it, by default.
@@ -242,14 +237,14 @@ fn test_swi() {
     let err = super::swi::execute(SwiArgs {
         phase: phase.clone(), magnitude: magnitude.clone(), tes: None, mask: None,
         output: output.clone(), mip: false, mip_output: None, filtered_phase: false, filtered_phase_output: None,
-        swi_params: Default::default(),
+        settings: Default::default(),
     }).unwrap_err().to_string();
     assert!(err.contains("echo times"), "{err}");
     // One magnitude per phase.
     let err = super::swi::execute(SwiArgs {
         phase, magnitude: magnitude[..1].to_vec(), tes: Some(vec![0.004, 0.008]), mask: None,
         output, mip: false, mip_output: None, filtered_phase: false, filtered_phase_output: None,
-        swi_params: Default::default(),
+        settings: Default::default(),
     }).unwrap_err().to_string();
     assert!(err.contains("magnitude"), "{err}");
 }
@@ -347,7 +342,7 @@ fn test_swi_with_mip() {
         output: output.clone(),
         mip: true, mip_output: Some(mip.clone()),
         filtered_phase: false, filtered_phase_output: Some(dir.path().join("hp.nii")),
-        swi_params: Default::default(),
+        settings: Default::default(),
     }).unwrap();
     assert!(output.exists());
     assert!(mip.exists());

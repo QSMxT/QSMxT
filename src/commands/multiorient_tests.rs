@@ -314,7 +314,7 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
         phase: vec![phase.clone()], magnitude: vec![mag.clone()], tes: None, mask: Some(small_mask.clone()),
         output: d.join(name(swi.clone())),
         mip: true, mip_output: None, filtered_phase: true, filtered_phase_output: None,
-        swi_params: Default::default(),
+        settings: Default::default(),
     }).unwrap();
     exists(name(swi));
     exists(name(pipeline.swi_mip_path(&key)));

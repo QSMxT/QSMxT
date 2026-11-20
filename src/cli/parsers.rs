@@ -29,9 +29,3 @@ pub fn parse_ilsqr_precision(s: &str) -> Result<qsmxt_engine::IlsqrPrecision, St
     qsmxt_engine::IlsqrPrecision::ALL.into_iter().find(|p| p.as_str() == s.trim())
         .ok_or_else(|| format!("expected double or single, got '{s}'"))
 }
-
-/// The image geometry N4 is given: `scanner` or `make-nii`.
-pub fn parse_n4_geometry(s: &str) -> Result<qsmxt_engine::N4Geometry, String> {
-    qsmxt_engine::N4Geometry::ALL.into_iter().find(|g| g.as_str() == s.trim())
-        .ok_or_else(|| format!("expected scanner or make-nii, got '{s}'"))
-}

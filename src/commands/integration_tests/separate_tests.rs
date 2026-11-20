@@ -201,16 +201,13 @@ fn test_segment_rejects_an_unknown_version() {
     let dir = tempfile::tempdir().unwrap();
     let mag = dir.path().join("mag.nii");
     testutils::write_magnitude(&mag);
-    let err = super::segment::execute(SegmentArgs {
-        magnitude: mag,
-        output: dir.path().join("dseg.nii"),
-        lookup: None,
-        params: SegmentationParamArgs {
-            synthseg_version: Some("v3".into()),
-            ..Default::default()
-        },
-    })
-    .unwrap_err();
-    let msg = format!("{err}");
+    let argv = ["qsmxt", "segment", &mag.display().to_string(), "-o", "dseg.nii", "--synthseg-version", "v3"];
+    let msg = match <crate::cli::Cli as clap::Parser>::try_parse_from(argv) {
+        Err(e) => e.to_string(),
+        Ok(cli) => {
+            let crate::cli::Command::Segment(args) = cli.command else { panic!("segment") };
+            super::segment::execute(args).unwrap_err().to_string()
+        }
+    };
     assert!(msg.contains("v1") && msg.contains("v2"), "the error should name the options: {msg}");
 }

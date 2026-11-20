@@ -4,17 +4,12 @@ use crate::cli::SwiArgs;
 use qsmxt_io::error::QsmxtError;
 use qsmxt_io::nifti::write::write_volume;
 
-/// The CLEAR-SWI parameters `qsmxt swi` runs with: the config defaults, overridden by the flags.
-fn swi_params(p: &crate::cli::SwiParamArgs) -> qsm_core::swi::SwiParams {
-    let mut c = qsmxt_engine::SwiConfig::default();
-    if let Some(ref s) = p.swi_hp_sigma {
-        if s.len() == 3 { c.hp_sigma = [s[0], s[1], s[2]]; }
-    }
-    if let Some(a) = p.swi_unwrapping { c.unwrap = crate::cli::swi_unwrap_arg_to_config(a); }
-    if let Some(a) = p.swi_scaling { c.scaling = crate::cli::swi_scaling_arg_to_config(a); }
-    if let Some(v) = p.swi_strength { c.strength = v; }
-    if let Some(v) = p.swi_mip_window { c.mip_window = v; }
-    c.to_params()
+/// The CLEAR-SWI parameters `qsmxt swi` runs with: QSMxT's settings with the flags applied, as
+/// `qsmxt run` applies them.
+fn swi_params(settings: &[qsmxt_engine::schema::cli_apply::Given]) -> qsmxt_io::Result<qsm_core::swi::SwiParams> {
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    qsmxt_io::settings::apply(&mut cfg, settings)?;
+    Ok(cfg.swi.to_params())
 }
 
 /// Where the filtered phase goes, when it is asked for.
@@ -55,7 +50,7 @@ pub fn execute(args: SwiArgs) -> qsmxt_io::Result<()> {
         None => None,
     };
     let grid = nifti_grid(&reference);
-    let params = swi_params(&args.swi_params);
+    let params = swi_params(&args.settings.0)?;
 
     info!("Computing CLEAR-SWI ({} echo{}, {}x{}x{})",
           n_echoes, if n_echoes == 1 { "" } else { "es" }, grid.nx(), grid.ny(), grid.nz());
@@ -127,7 +122,7 @@ mod tests {
                 "qsmxt", "swi", "--phase", "p.nii", "--magnitude", "m.nii", "--output", "o.nii", "--swi-scaling", name,
             ]).unwrap();
             let crate::cli::Command::Swi(swi) = cli.command else { panic!("expected swi") };
-            assert_eq!(super::swi_params(&swi.swi_params).scaling, expected, "swi --swi-scaling {name}");
+            assert_eq!(super::swi_params(&swi.settings.0).unwrap().scaling, expected, "swi --swi-scaling {name}");
         }
         assert!(crate::cli::Cli::try_parse_from(["qsmxt", "run", "bids", "--swi-scaling", "tahn"]).is_err());
         // A config file with an unknown scaling is refused too.

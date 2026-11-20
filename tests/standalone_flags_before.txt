@@ -82,3 +82,6 @@ qsmxt separate wavesep: qsm mask output field-strength b0-direction r2prime dr-p
 qsmxt separate hc-chisep: qsm mask output field-strength b0-direction r2prime magnitude echo-times se-magnitude se-echo-times dr-pos-3t bin-hz
 qsmxt separate susep-net: qsm mask output field-strength b0-direction local-field r2prime patch
 qsmxt separate chi-sepnet: mask output field-strength b0-direction local-field r2prime r2star qsm route patch frame-patch ignore-field-mismatch
+qsmxt swi: phase magnitude tes mask output mip mip-output filtered-phase filtered-phase-output swi-unwrapping swi-hp-sigma swi-scaling swi-strength swi-mip-window
+qsmxt segment: output lookup synthseg-version synthseg-crop synthseg-patch no-synthseg-flip-averaging no-synthseg-topology-cleanup synthseg-sigma use-custom-dseg
+qsmxt homogeneity: output method sigma nbox n4-shrink-factor n4-max-iterations n4-convergence-threshold n4-mesh n4-spline-order n4-bias-field-fwhm n4-wiener-noise n4-histogram-bins n4-geometry
