@@ -91,10 +91,10 @@ impl App {
     /// Pick up the launch-time release check and announcements, and open the next pop-up
     /// that is due ([`Self::show_next_pop_up`]). Called once per frame from the main loop.
     pub fn poll_launch_checks(&mut self) {
-        if let Some(Some(info)) = self.update_state.poll() {
-            self.pending_update = Some(UpdateModal { tag: info.tag, html_url: info.html_url });
+        if let Some(Some(info)) = self.update.state.poll() {
+            self.update.pending = Some(UpdateModal { tag: info.tag, html_url: info.html_url });
         }
-        if let Some(loaded) = self.news_state.poll() {
+        if let Some(loaded) = self.announcements.state.poll() {
             self.receive_news(loaded);
         }
         self.show_next_pop_up();
@@ -103,8 +103,8 @@ impl App {
     /// Take the announcements the background fetch came back with: queue those due to pop up.
     pub fn receive_news(&mut self, loaded: qsmxt_io::news::Loaded) {
         use qsmxt_io::{news, release as update};
-        self.news_queue = news::pop_ups(&loaded.items, update::current_version(), &news::load_seen());
-        self.news = Some(loaded);
+        self.announcements.queue = news::pop_ups(&loaded.items, update::current_version(), &news::load_seen());
+        self.announcements.loaded = Some(loaded);
     }
 
     /// Open the next pop-up that is due, when its turn comes. One pop-up at a time, in this
@@ -114,28 +114,28 @@ impl App {
     /// open over another pop-up (a tip, an algorithm list, advice); the update prompt does, as
     /// it always has.
     pub fn show_next_pop_up(&mut self) {
-        if self.update_modal.is_some() || self.news_modal.is_some() {
+        if self.update.modal.is_some() || self.announcements.modal.is_some() {
             return;
         }
         let other_open = self.tip_modal.is_some()
             || self.algo_modal.is_some()
             || self.rec_modal.is_some()
             || self.refs.modal.is_some();
-        if self.news_queue.first().is_some_and(|a| a.critical) {
+        if self.announcements.queue.first().is_some_and(|a| a.critical) {
             if !other_open {
-                let next = self.news_queue.remove(0);
+                let next = self.announcements.queue.remove(0);
                 self.open_news(next);
             }
             return;
         }
-        if self.pending_update.is_some() {
-            if self.news_state.finished() {
-                self.update_modal = self.pending_update.take();
+        if self.update.pending.is_some() {
+            if self.announcements.state.finished() {
+                self.update.modal = self.update.pending.take();
             }
             return;
         }
-        if !other_open && self.update_state.finished() && !self.news_queue.is_empty() {
-            let next = self.news_queue.remove(0);
+        if !other_open && self.update.state.finished() && !self.announcements.queue.is_empty() {
+            let next = self.announcements.queue.remove(0);
             self.open_news(next);
         }
     }

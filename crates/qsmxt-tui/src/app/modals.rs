@@ -2,6 +2,59 @@
 
 use super::*;
 
+/// Which pop-up is open: [`App::top_modal`] says which one has the keys and the mouse, and
+/// [`App::open_modals`] the order they are drawn in, so the two cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModalKind {
+    /// The new-version prompt, above everything.
+    Update,
+    /// The announcements.
+    News,
+    /// A "Did you know?" tip.
+    Tip,
+    /// The recommendations to review.
+    Recommendations,
+    /// The reference-setting review.
+    References,
+    /// An option picker (an algorithm select).
+    Options,
+    /// A toolbox pipeline's preview, on the Pipeline tab.
+    PipelinePreview,
+}
+
+impl ModalKind {
+    /// Every pop-up, the one on top first.
+    pub const ON_TOP_FIRST: [ModalKind; 7] = [
+        ModalKind::Update, ModalKind::News, ModalKind::Tip, ModalKind::Recommendations, ModalKind::References,
+        ModalKind::Options, ModalKind::PipelinePreview,
+    ];
+}
+
+impl App {
+    /// Whether the pop-up `kind` is open.
+    pub fn modal_open(&self, kind: ModalKind) -> bool {
+        match kind {
+            ModalKind::Update => self.update.modal.is_some(),
+            ModalKind::News => self.announcements.modal.is_some(),
+            ModalKind::Tip => self.tip_modal.is_some(),
+            ModalKind::Recommendations => self.rec_modal.is_some(),
+            ModalKind::References => self.refs.modal.is_some(),
+            ModalKind::Options => self.algo_modal.is_some(),
+            ModalKind::PipelinePreview => self.pipelines.preview.is_some(),
+        }
+    }
+
+    /// The open pop-up on top, which has the keys and the mouse.
+    pub fn top_modal(&self) -> Option<ModalKind> {
+        ModalKind::ON_TOP_FIRST.into_iter().find(|&k| self.modal_open(k))
+    }
+
+    /// The open pop-ups in the order they are drawn: the one on top last.
+    pub fn open_modals(&self) -> Vec<ModalKind> {
+        ModalKind::ON_TOP_FIRST.into_iter().rev().filter(|&k| self.modal_open(k)).collect()
+    }
+}
+
 /// The "Did you know?" pop-up, with two buttons: OK, and one that turns startup tips off
 /// (or back on, when it was opened with `?` while they are off).
 #[derive(Debug, Clone)]
@@ -113,32 +166,32 @@ fn threshold_method_help() -> Vec<String> {
 
 impl App {
     pub(super) fn open_news(&mut self, item: qsmxt_io::news::Announcement) {
-        self.news_modal = Some(NewsModal { items: vec![item], history: false, note: None, scroll: 0 });
+        self.announcements.modal = Some(NewsModal { items: vec![item], history: false, note: None, scroll: 0 });
     }
 
     /// Open the history of announcements, newest first: what the launch fetch got, or the copy
     /// saved last time while it is still running.
     pub fn open_news_history(&mut self) {
-        let (items, note) = match &self.news {
+        let (items, note) = match &self.announcements.loaded {
             Some(loaded) => (
                 loaded.items.clone(),
                 loaded.error.as_ref().map(|_| {
                     "The announcements could not be read, so these are the ones saved the last time they could.".to_string()
                 }),
             ),
-            None if self.news_state.finished() => (qsmxt_io::news::load_cached(), None),
+            None if self.announcements.state.finished() => (qsmxt_io::news::load_cached(), None),
             None => (
                 qsmxt_io::news::load_cached(),
                 Some("Checking for new announcements; these are the ones saved last time.".to_string()),
             ),
         };
-        self.news_modal = Some(NewsModal { items, history: true, note, scroll: 0 });
+        self.announcements.modal = Some(NewsModal { items, history: true, note, scroll: 0 });
     }
 
     /// Keys while an announcement pop-up or the history is open: ↑↓/PgUp/PgDn/Home scroll, `c`
     /// copies a pop-up's link, Enter/Esc/q close it. Closing a pop-up records it as shown.
     pub fn handle_news_modal_key(&mut self, key: KeyEvent) {
-        let Some(m) = self.news_modal.as_mut() else { return };
+        let Some(m) = self.announcements.modal.as_mut() else { return };
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => m.scroll = m.scroll.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => m.scroll = m.scroll.saturating_add(1),
@@ -152,7 +205,7 @@ impl App {
                 }
             }
             KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') => {
-                let m = self.news_modal.take().expect("checked above");
+                let m = self.announcements.modal.take().expect("checked above");
                 if !m.history {
                     for a in &m.items {
                         qsmxt_io::news::mark_seen(&a.id);
@@ -167,12 +220,12 @@ impl App {
     pub fn handle_update_modal_key(&mut self, key: KeyEvent) -> UpdateChoice {
         match key.code {
             KeyCode::Enter | KeyCode::Char('u') | KeyCode::Char('U') => {
-                self.update_modal = None;
+                self.update.modal = None;
                 self.should_update = true;
                 UpdateChoice::Update
             }
             KeyCode::Esc | KeyCode::Char('l') | KeyCode::Char('L') => {
-                self.update_modal = None;
+                self.update.modal = None;
                 UpdateChoice::Later
             }
             _ => UpdateChoice::Ignored,

@@ -44,16 +44,19 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        // The recommendation pop-up captures input under the update prompt, the announcements
-        // and the tips.
-        let above = self.update_modal.is_some() || self.news_modal.is_some() || self.tip_modal.is_some();
-        if self.rec_modal.is_some() && !above {
-            self.handle_rec_modal_key(key);
-            return;
-        }
-        if self.refs.modal.is_some() && !above {
-            self.handle_ref_modal_key(key);
-            return;
+        // The pop-up on top has the keys (`top_modal`). The pipeline preview takes them on the
+        // Pipeline tab, below.
+        match self.top_modal() {
+            Some(ModalKind::Update) => {
+                self.handle_update_modal_key(key);
+                return;
+            }
+            Some(ModalKind::News) => return self.handle_news_modal_key(key),
+            Some(ModalKind::Tip) => return self.handle_tip_modal_key(key),
+            Some(ModalKind::Recommendations) => return self.handle_rec_modal_key(key),
+            Some(ModalKind::References) => return self.handle_ref_modal_key(key),
+            Some(ModalKind::Options) => return self.handle_algo_modal_key(key),
+            Some(ModalKind::PipelinePreview) | None => {}
         }
         if key.code == KeyCode::Char('!') && !self.is_typing() && Self::is_rows_tab(self.active_tab) {
             self.review_recommendations();
@@ -74,28 +77,6 @@ impl App {
     }
 
     fn handle_key_unchecked(&mut self, key: KeyEvent) {
-        // The update prompt sits on top of everything, including an algorithm modal.
-        if self.update_modal.is_some() {
-            self.handle_update_modal_key(key);
-            return;
-        }
-
-        if self.news_modal.is_some() {
-            self.handle_news_modal_key(key);
-            return;
-        }
-
-        if self.tip_modal.is_some() {
-            self.handle_tip_modal_key(key);
-            return;
-        }
-
-        // An open algorithm-selection modal captures all input until dismissed.
-        if self.algo_modal.is_some() {
-            self.handle_algo_modal_key(key);
-            return;
-        }
-
         if key.code == KeyCode::Char('?') && !self.is_typing() {
             self.open_tip();
             return;

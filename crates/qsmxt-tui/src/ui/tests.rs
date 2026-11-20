@@ -329,7 +329,7 @@ fn example_mode_renders_an_error_from_the_worker() {
 fn update_modal_shows_both_versions_and_its_choices() {
     use crate::app::UpdateModal;
     let mut app = App::new();
-    app.update_modal = Some(UpdateModal {
+    app.update.modal = Some(UpdateModal {
         tag: "v9.23.0".into(),
         html_url: "https://github.com/QSMxT/QSMxT/releases/tag/v9.23.0".into(),
     });
@@ -356,7 +356,7 @@ fn an_announcement_pop_up_shows_everything_in_it() {
     a.body = format!("{}\n\nSecond paragraph.", "word ".repeat(40));
     a.link = Some("https://example.com/a".into());
     let mut app = App::new();
-    app.news_modal = Some(NewsModal { items: vec![a], history: false, note: None, scroll: 0 });
+    app.announcements.modal = Some(NewsModal { items: vec![a], history: false, note: None, scroll: 0 });
     let text = screen_text(&render_app_sized(&mut app, 120, 40));
     for want in ["Important announcement", "2026-11-06", "Important", "Wrong results from the thing",
                  "Second paragraph.", "Affects versions from 10.0.0; fixed in 11.0.1.",
@@ -372,16 +372,16 @@ fn the_announcement_history_scrolls_and_says_when_empty() {
     use crate::app::NewsModal;
     let items: Vec<_> = (0..12).map(|i| qsmxt_io::news::item(&format!("n{i}"), &format!("2026-11-{:02}", 20 - i), false, None)).collect();
     let mut app = App::new();
-    app.news_modal = Some(NewsModal { items, history: true, note: None, scroll: 0 });
+    app.announcements.modal = Some(NewsModal { items, history: true, note: None, scroll: 0 });
     let text = screen_text(&render_app(&mut app));
     assert!(text.contains("Announcements") && text.contains("Title n0"), "{text}");
     assert!(text.contains("scroll"), "a long history scrolls:\n{text}");
     assert!(!text.contains("Title n11"), "{text}");
-    app.news_modal.as_mut().unwrap().scroll = 500;
+    app.announcements.modal.as_mut().unwrap().scroll = 500;
     let text = screen_text(&render_app(&mut app));
     assert!(text.contains("Title n11"), "scrolled to the end:\n{text}");
 
-    app.news_modal = Some(NewsModal { items: Vec::new(), history: true, note: None, scroll: 0 });
+    app.announcements.modal = Some(NewsModal { items: Vec::new(), history: true, note: None, scroll: 0 });
     let text = screen_text(&render_app(&mut app));
     assert!(text.contains("There are no announcements."), "{text}");
 }
@@ -408,7 +408,7 @@ fn update_modal_draws_on_top_of_an_algorithm_modal() {
         cursor: 0,
         offset: Default::default(),
     });
-    app.update_modal = Some(UpdateModal {
+    app.update.modal = Some(UpdateModal {
         tag: "v9.23.0".into(),
         html_url: "https://example.com/r".into(),
     });
@@ -422,7 +422,7 @@ fn update_modal_draws_on_top_of_an_algorithm_modal() {
 fn update_modal_survives_a_small_terminal() {
     use crate::app::UpdateModal;
     let mut app = App::new();
-    app.update_modal = Some(UpdateModal {
+    app.update.modal = Some(UpdateModal {
         tag: "v9.23.0".into(),
         html_url: "https://github.com/QSMxT/QSMxT/releases/tag/v9.23.0".into(),
     });
