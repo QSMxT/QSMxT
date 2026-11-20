@@ -232,17 +232,6 @@ fn test_pipeline_algorithm_selects() {
 // --- Text value accessors for different tabs ---
 
 #[test]
-fn test_filter_tab_routes_to_filter_handler() {
-    let mut app = App::new();
-    app.active_tab = TAB_RECONSTRUCTION;
-    // Should not crash — filter handler takes over
-    app.handle_key(key(KeyCode::Down));
-    app.handle_key(key(KeyCode::Up));
-    app.handle_key(key(KeyCode::Char('a')));
-    app.handle_key(key(KeyCode::Char('n')));
-}
-
-#[test]
 fn test_pipeline_get_param() {
     let mut app = App::new();
     *app.field_text_mut("bet_smoothness").unwrap() = "0.2".to_string();

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -43,9 +43,7 @@ pub struct PipelineState {
     pub version: String,
     pub config_hash: String,
     pub run_key: String,
-    pub status: String,
-    #[serde(default)]
-    pub current_step: Option<String>,
+    pub status: RunStatus,
     pub completed_steps: HashMap<String, StepRecord>,
     #[serde(default)]
     pub run_metadata: Option<RunMetadata>,
@@ -63,6 +61,19 @@ pub struct PipelineState {
     pub naming: u32,
 }
 
+/// Where a run's per-run pipeline got to, as written to its state file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    /// Started, not finished.
+    Pending,
+    /// Every step ran ([`PipelineState::mark_run_complete`]).
+    Complete,
+    /// Any other status a state file holds (none is written today).
+    #[serde(other)]
+    Other,
+}
+
 /// The version of the output names (`bids::naming`). A state recorded under another one names
 /// files the pipeline no longer writes or reads, so it is discarded and the run recomputed once.
 /// 0: before #275; 1: #275's BIDS names.
@@ -75,8 +86,7 @@ impl PipelineState {
             version: env!("CARGO_PKG_VERSION").to_string(),
             config_hash: config_hash(config),
             run_key: format!("{}", run_key),
-            status: "pending".to_string(),
-            current_step: None,
+            status: RunStatus::Pending,
             completed_steps: HashMap::new(),
             run_metadata: None,
             config_unchanged: false,
@@ -211,13 +221,6 @@ impl PipelineState {
         self.is_step_cached_with_hash(step_name, None)
     }
 
-    /// Mark a step as the current one being processed.
-    #[allow(dead_code)]
-    pub fn set_current(&mut self, step_name: &str) {
-        self.status = "in_progress".to_string();
-        self.current_step = Some(step_name.to_string());
-    }
-
     /// Mark a step as completed with its output paths and parameter hash.
     pub fn mark_completed(&mut self, step_name: &str, outputs: Vec<PathBuf>, params_hash: Option<String>) {
         self.mark_completed_with_metadata(step_name, outputs, params_hash, None);
@@ -239,7 +242,6 @@ impl PipelineState {
             step_name.to_string(),
             StepRecord { outputs, metadata, params_hash, outputs_removed: false, decisions: Vec::new(), inputs: None },
         );
-        self.current_step = None;
     }
 
     /// Keep the files a completed step read when it was computed.
@@ -258,13 +260,11 @@ impl PipelineState {
 
     /// Mark the entire run as complete, under the configuration it ran with.
     pub fn mark_run_complete(&mut self, config: &PipelineConfig) {
-        self.status = "complete".to_string();
-        self.current_step = None;
+        self.status = RunStatus::Complete;
         self.config_hash = config_hash(config);
     }
 
     /// Get output paths for a completed step.
-    #[allow(dead_code)]
     pub fn step_outputs(&self, step_name: &str) -> Option<&[PathBuf]> {
         self.completed_steps
             .get(step_name)
@@ -290,12 +290,6 @@ impl PipelineState {
         qsmxt_engine::graph::readers(step_name, outputs,
             self.completed_steps.iter().map(|(s, r)| (s.as_str(), r.inputs.as_deref())))
     }
-
-    /// Get all completed step names.
-    #[allow(dead_code)]
-    pub fn completed_step_names(&self) -> HashSet<&str> {
-        self.completed_steps.keys().map(|s| s.as_str()).collect()
-    }
 }
 
 /// Has `key`'s per-run pipeline completed under `config`? `qsmxt aggregate` asks this of every run
@@ -311,11 +305,8 @@ pub fn state_completed_under(path: &Path, config: &PipelineConfig) -> Result<(),
         .map_err(|_| format!("has not been processed (no {})", path.display()))?;
     let state: PipelineState = serde_json::from_str(&text)
         .map_err(|e| format!("has an unreadable pipeline state {}: {e}", path.display()))?;
-    if state.status != "complete" {
-        return Err(match state.current_step {
-            Some(step) => format!("did not complete (stopped in step '{step}')"),
-            None => format!("did not complete (status '{}')", state.status),
-        });
+    if state.status != RunStatus::Complete {
+        return Err("did not complete".to_string());
     }
     if state.config_hash != config_hash(config) {
         return Err("was processed with a different configuration".to_string());
@@ -417,7 +408,7 @@ mod tests {
             suffix: "MEGRE".to_string(),
         };
         let state = PipelineState::new(&config, &key);
-        assert_eq!(state.status, "pending");
+        assert_eq!(state.status, RunStatus::Pending);
         assert!(state.completed_steps.is_empty());
         assert!(!state.config_hash.is_empty());
     }
@@ -615,23 +606,6 @@ mod tests {
         assert!(!loaded.is_step_cached_with_hash("load", Some(&different_hash)));
     }
 
-    #[test]
-    fn test_set_current() {
-        let config = PipelineConfig::default();
-        let key = AcquisitionKey {
-            subject: "01".to_string(),
-            session: None,
-            acquisition: None,
-            reconstruction: None,
-            inversion: None,
-            run: None,
-            suffix: "MEGRE".to_string(),
-        };
-        let mut state = PipelineState::new(&config, &key);
-        state.set_current("mask");
-        assert_eq!(state.status, "in_progress");
-        assert_eq!(state.current_step, Some("mask".to_string()));
-    }
 
     #[test]
     fn test_step_outputs() {
@@ -653,26 +627,6 @@ mod tests {
         assert_eq!(outputs[0], PathBuf::from("/tmp/mask.nii"));
     }
 
-    #[test]
-    fn test_completed_step_names() {
-        let config = PipelineConfig::default();
-        let key = AcquisitionKey {
-            subject: "01".to_string(),
-            session: None,
-            acquisition: None,
-            reconstruction: None,
-            inversion: None,
-            run: None,
-            suffix: "MEGRE".to_string(),
-        };
-        let mut state = PipelineState::new(&config, &key);
-        state.mark_completed("load", vec![], None);
-        state.mark_completed("mask", vec![], None);
-        let names = state.completed_step_names();
-        assert!(names.contains("load"));
-        assert!(names.contains("mask"));
-        assert!(!names.contains("unwrap"));
-    }
 
     #[test]
     fn test_mark_run_complete() {
@@ -688,8 +642,7 @@ mod tests {
         };
         let mut state = PipelineState::new(&config, &key);
         state.mark_run_complete(&config);
-        assert_eq!(state.status, "complete");
-        assert!(state.current_step.is_none());
+        assert_eq!(state.status, RunStatus::Complete);
     }
 
     #[test]
@@ -776,7 +729,7 @@ mod tests {
         };
         let state = PipelineState::load_or_create(&path, &config, &key, false);
         // Should create fresh state
-        assert_eq!(state.status, "pending");
+        assert_eq!(state.status, RunStatus::Pending);
         assert!(state.completed_steps.is_empty());
     }
 

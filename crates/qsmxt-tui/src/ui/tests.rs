@@ -128,12 +128,6 @@ fn settings_are_indented_under_their_checkbox() {
     assert!(text.contains("SMWI") && text.contains("Relaxometry") && text.contains("DICOM"), "{text}");
 }
 
-#[test]
-fn test_draw_default_app_no_panic() {
-    let mut app = App::new();
-    let _ = render_app(&mut app);
-}
-
 /// The rendered screen as one string, for substring assertions.
 pub(super) fn screen_text(terminal: &Terminal<TestBackend>) -> String {
     let buf = terminal.backend().buffer();
@@ -466,6 +460,32 @@ fn test_algo_modal_scrollbar_and_legend() {
 }
 
 #[test]
+fn the_input_tab_shows_the_typed_directories() {
+    let mut app = App::new();
+    app.form.bids_dir = "/data/bids".to_string();
+    app.form.output_dir = "/data/out".to_string();
+    let text = screen_text(&render_app(&mut app));
+    assert!(text.contains("/data/bids") && text.contains("/data/out"), "{text}");
+
+    // While a directory is being edited, its text is still shown.
+    app.editing = true;
+    app.cursor_pos = 5;
+    let text = screen_text(&render_app(&mut app));
+    assert!(text.contains("/data/bids"), "{text}");
+}
+
+#[test]
+fn the_execution_tab_ticks_the_flags_that_are_on() {
+    let mut app = App::new();
+    app.active_tab = super::super::app::TAB_EXECUTION;
+    let ticked = |app: &mut App| screen_text(&render_app(app)).lines()
+        .any(|l| l.contains("[x]") && l.contains("Dry run"));
+    assert!(!ticked(&mut app));
+    app.form.dry_run = true;
+    assert!(ticked(&mut app));
+}
+
+#[test]
 fn test_draw_all_tabs() {
     // Every tab, with its sections open and with the settings that reveal the most rows:
     // QSM off and forced back on by SMWI, a grouping, motion correction, every output.
@@ -490,34 +510,6 @@ fn test_draw_all_tabs() {
             assert!(text.contains(&format!("1-{}", TAB_NAMES.len())), "help bar names every tab digit");
         }
     }
-}
-
-#[test]
-fn test_draw_editing_mode() {
-    let mut app = App::new();
-    app.editing = true;
-    app.form.bids_dir = "/some/path".to_string();
-    app.cursor_pos = 5;
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_with_form_data() {
-    let mut app = App::new();
-    app.form.bids_dir = "/data/bids".to_string();
-    app.form.output_dir = "/data/out".to_string();
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_algorithms_tab() {
-    let mut app = App::new();
-    app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-    app.active_field = 0;
-    let _ = render_app(&mut app);
-    // Move through fields
-    app.active_field = 4;
-    let _ = render_app(&mut app);
 }
 
 /// Every signal-erode parameter gets its own labelled row under the step.
@@ -567,52 +559,6 @@ fn test_draw_mask_combine_rows() {
     let text: String = terminal.backend().buffer().content().iter().map(|c| c.symbol()).collect();
     assert!(text.contains("COMBINED WITH"), "combine row not drawn");
     assert!(text.contains("AND"), "combine mode not drawn");
-}
-
-#[test]
-fn test_draw_parameters_tab() {
-    let mut app = App::new();
-    app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-    let _ = render_app(&mut app);
-    // Change algorithm
-    app.set_qsm_algorithm(3); // TSVD
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_execution_tab_with_flags() {
-    let mut app = App::new();
-    app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-    app.form.settings.set("pipeline.do_swi", true);
-    app.form.settings.set("pipeline.do_t2starmap", true);
-    app.form.dry_run = true;
-    app.form.debug = true;
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_non_focused_fields() {
-    let mut app = App::new();
-    app.active_tab = 0;
-    app.active_field = 3; // Last field focused, others not
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_select_not_focused() {
-    let mut app = App::new();
-    app.active_tab = super::super::app::TAB_RECONSTRUCTION;
-    app.active_field = 1; // field 0 (select) not focused
-    let _ = render_app(&mut app);
-}
-
-#[test]
-fn test_draw_empty_text_not_editing() {
-    let mut app = App::new();
-    // All fields empty, not editing — shows "(empty)"
-    app.active_tab = 0;
-    app.active_field = 0;
-    let _ = render_app(&mut app);
 }
 
 fn tip_app(tips_enabled: bool) -> App {

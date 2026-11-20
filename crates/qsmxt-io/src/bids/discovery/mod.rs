@@ -13,7 +13,6 @@ pub use tree::{scan_bids_tree, BidsRunLeaf, BidsSessionNode, BidsSubjectNode, Bi
 
 /// Files for a single echo in a BIDS acquisition.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct EchoFiles {
     pub echo_number: u32,
     /// The echo's phase, or its `part-real` file when the echo was exported as real/imaginary

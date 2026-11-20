@@ -310,26 +310,6 @@ pub fn create_multi_session_bids(root: &Path) -> PathBuf {
     root.to_path_buf()
 }
 
-/// Multi-acquisition BIDS dataset (two acquisitions, each with 2 echoes).
-#[allow(dead_code)]
-pub fn create_multi_acq_bids(root: &Path) -> PathBuf {
-    let anat = root.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
-
-    for acq in ["mygrea", "mygreb"] {
-        for echo in 1..=2 {
-            let te = echo as f64 * 0.004;
-            let base = format!("sub-1_acq-{}_echo-{}", acq, echo);
-            write_phase(&anat.join(format!("{}_part-phase_MEGRE.nii", base)));
-            write_sidecar(&anat.join(format!("{}_part-phase_MEGRE.json", base)), te, 3.0);
-            write_magnitude(&anat.join(format!("{}_part-mag_MEGRE.nii", base)));
-            write_sidecar(&anat.join(format!("{}_part-mag_MEGRE.json", base)), te, 3.0);
-        }
-    }
-
-    root.to_path_buf()
-}
-
 // --- Data generators ---
 
 fn magnitude_data() -> Vec<f64> {

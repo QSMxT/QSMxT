@@ -373,31 +373,4 @@ fn prune_to_selected_algorithm(root: &mut toml::value::Table, section: &str) {
 }
 
 #[cfg(test)]
-mod selected_toml_tests;
-
-#[cfg(test)]
-mod r2primenet_config_tests;
-
-#[cfg(test)]
-mod r2prime_strategy_tests;
-
-#[cfg(test)]
-mod reference_dependency_tests;
-
-#[cfg(test)]
-mod analysis_dependency_tests;
-
-#[cfg(test)]
-mod smwi_dependency_tests;
-
-#[cfg(test)]
-mod option_field_tests;
-
-#[cfg(test)]
-mod axial_resampling_tests;
-
-#[cfg(test)]
-mod removed_settings_tests;
-
-#[cfg(test)]
-mod qsmart_inputs_tests;
+mod tests;

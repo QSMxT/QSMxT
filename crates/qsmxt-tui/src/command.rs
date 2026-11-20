@@ -274,16 +274,6 @@ fn parse_optional_path(s: &str) -> Option<PathBuf> {
     }
 }
 
-#[allow(dead_code)]
-fn parse_optional_string_vec(s: &str) -> Option<Vec<String>> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.split_whitespace().map(String::from).collect())
-    }
-}
-
 /// The value of text typed on a row the TUI builds by hand: `None` when blank, which leaves the
 /// run's default, else what it reads as. Text that reads as nothing is an error naming the flag
 /// and the text, as the command line refuses it: the run never goes ahead with something other
@@ -1273,20 +1263,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_optional_string_vec_empty() {
-        assert_eq!(parse_optional_string_vec(""), None);
-        assert_eq!(parse_optional_string_vec("   "), None);
-    }
-
-    #[test]
-    fn test_parse_optional_string_vec_values() {
-        assert_eq!(
-            parse_optional_string_vec("a b c"),
-            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
-        );
-    }
-
-#[test]
     fn test_push_if_changed_same() {
         let mut parts = vec![];
         push_if_changed(&mut parts, "--flag", "val", "val");
