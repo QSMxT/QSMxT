@@ -76,10 +76,10 @@ pub(super) fn draw_dicom_series_section(
 }
 
 /// The series of `session`, one row per unique series under a header per acquisition.
-fn series_lines(ds: &crate::app::DicomConvertState, session: &qsmxt_io::dicom::DicomSession, in_io: bool, lines: &mut Vec<Line<'_>>) {
+fn series_lines(ds: &crate::app::DicomConvertState, session: &qsmxt_engine::dicom::DicomSession, in_io: bool, lines: &mut Vec<Line<'_>>) {
     // One row per UNIQUE series (shared across subjects), not per per-subject instance.
     let groups = session.unique_series();
-    let plans = qsmxt_io::dicom::plan_session(session);
+    let plans = qsmxt_engine::dicom::plan_session(session);
     let mut acq_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for g in &groups {
         *acq_counts.entry(g.acq_name.as_str()).or_default() += 1;
@@ -110,7 +110,7 @@ fn series_lines(ds: &crate::app::DicomConvertState, session: &qsmxt_io::dicom::D
             [te] => format!(" TE={:.1}ms", te),
             tes => format!(" {}×TEs=[{:.1}…{:.1}]ms", tes.len(), tes[0], tes[tes.len() - 1]),
         };
-        let echo_info = if series.coil_type == qsmxt_io::dicom::CoilType::Uncombined {
+        let echo_info = if series.coil_type == qsmxt_engine::dicom::CoilType::Uncombined {
             format!("{} [uncombined ×{}]", echo_info, series.coil_groups.len())
         } else {
             echo_info
@@ -133,12 +133,12 @@ fn series_lines(ds: &crate::app::DicomConvertState, session: &qsmxt_io::dicom::D
         };
 
         let type_style = match series.series_type {
-            qsmxt_io::dicom::SeriesType::Skip => Style::default().fg(Color::DarkGray),
-            qsmxt_io::dicom::SeriesType::Phase => Style::default().fg(Color::Cyan),
-            qsmxt_io::dicom::SeriesType::Magnitude => Style::default().fg(Color::Green),
-            qsmxt_io::dicom::SeriesType::T1w | qsmxt_io::dicom::SeriesType::Inversion | qsmxt_io::dicom::SeriesType::T1map => Style::default().fg(Color::Magenta),
-            qsmxt_io::dicom::SeriesType::Real | qsmxt_io::dicom::SeriesType::Imaginary => Style::default().fg(Color::Cyan),
-            qsmxt_io::dicom::SeriesType::Extra => Style::default().fg(Color::DarkGray),
+            qsmxt_engine::dicom::SeriesType::Skip => Style::default().fg(Color::DarkGray),
+            qsmxt_engine::dicom::SeriesType::Phase => Style::default().fg(Color::Cyan),
+            qsmxt_engine::dicom::SeriesType::Magnitude => Style::default().fg(Color::Green),
+            qsmxt_engine::dicom::SeriesType::T1w | qsmxt_engine::dicom::SeriesType::Inversion | qsmxt_engine::dicom::SeriesType::T1map => Style::default().fg(Color::Magenta),
+            qsmxt_engine::dicom::SeriesType::Real | qsmxt_engine::dicom::SeriesType::Imaginary => Style::default().fg(Color::Cyan),
+            qsmxt_engine::dicom::SeriesType::Extra => Style::default().fg(Color::DarkGray),
             _ => Style::default().fg(Color::Blue),
         };
 

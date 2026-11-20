@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 use log::{info, warn};
 use qsmxt_engine::recommendations::{self as rec, Accept, Facts, Kind, Recommendation, Strength};
 
-use crate::bids::discovery::QsmRun;
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_io::bids::discovery::QsmRun;
+use qsmxt_engine::PipelineConfig;
 
 /// What `--accept-recommendations` and `--accept-reference-settings` ask to apply.
 pub(crate) fn which(recommendations: bool, reference: bool) -> Accept {
@@ -27,7 +27,7 @@ pub(crate) struct Found {
 
 /// Each run's facts for the rules, by run key.
 fn facts(runs: &[QsmRun], config: &PipelineConfig) -> Vec<(String, Facts)> {
-    runs.iter().map(|r| (r.key.to_string(), Facts::of_scan(&crate::pipeline::requirements::scan_facts(r, config)))).collect()
+    runs.iter().map(|r| (r.key.to_string(), Facts::of_scan(&qsmxt_io::pipeline::requirements::scan_facts(r, config)))).collect()
 }
 
 /// Every finding on `config` across the dataset's runs (each run's `--pipeline` completed on its
@@ -36,7 +36,7 @@ pub(crate) fn found(config: &PipelineConfig, runs: &[QsmRun]) -> Vec<Found> {
     let mut out: Vec<Found> = Vec::new();
     for (run, (key, f)) in runs.iter().zip(facts(runs, config)) {
         // Each run's config as it will run: a `--pipeline` completed on its scan.
-        let completed = crate::pipeline::requirements::run_config(run, config).map(|(c, _)| c);
+        let completed = qsmxt_io::pipeline::requirements::run_config(run, config).map(|(c, _)| c);
         for r in rec::recommendations(completed.as_ref().unwrap_or(config), &f) {
             match out.iter_mut().find(|o| o.finding.rule == r.rule && o.finding.current == r.current) {
                 Some(o) => o.runs.push(key.clone()),
@@ -63,7 +63,7 @@ pub(crate) struct Accepted {
 fn accept_all(config: &mut PipelineConfig, runs: &[QsmRun], which: Accept) -> (Vec<Recommendation>, Vec<Recommendation>) {
     // Which settings apply, from what every run agrees on: a setting that applies to some run is
     // not hidden.
-    let scans: Vec<_> = runs.iter().map(|r| crate::pipeline::requirements::scan_facts(r, config)).collect();
+    let scans: Vec<_> = runs.iter().map(|r| qsmxt_io::pipeline::requirements::scan_facts(r, config)).collect();
     let common = Facts::of_view(&qsmxt_engine::schema::ViewFacts::from_scans(&scans));
     qsmxt_engine::advice::accept_all(config, which, &common, |c| found(c, runs).into_iter().map(|f| f.finding).collect())
 }
@@ -131,7 +131,7 @@ fn dismiss_flag(r: &Recommendation) -> String {
 /// The plan-time lines of `qsmxt run`: every departure the run keeps, a warning for a
 /// recommended or discouraged one (dismissed or not) and information for a difference from the
 /// original authors' setting. A required one is refused by the run's checks
-/// ([`crate::pipeline::requirements::check_runs`]).
+/// ([`qsmxt_io::pipeline::requirements::check_runs`]).
 pub(crate) fn log_found(config: &PipelineConfig, runs: &[QsmRun]) {
     for line in found_lines(config, runs) {
         match line {
@@ -185,7 +185,7 @@ fn flags(which: Accept) -> String {
 pub(crate) fn dry_text(config: &PipelineConfig, runs: &[QsmRun], accept: Accept) -> String {
     use std::fmt::Write;
     // As the runs will run: a `--pipeline` completed on their scans.
-    let config = &crate::pipeline::requirements::planned_config(config, runs);
+    let config = &qsmxt_io::pipeline::requirements::planned_config(config, runs);
     let mut out = String::new();
     let found = found(config, runs);
     out.push('\n');
@@ -307,8 +307,8 @@ mod tests {
         use qsmxt_engine::enums::UnwrappingAlgorithm;
         let dir = tempfile::tempdir().unwrap();
         let bids = dir.path().join("bids");
-        crate::testutils::create_multi_echo_bids(&bids);
-        let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+        qsmxt_io::testutils::create_multi_echo_bids(&bids);
+        let runs = qsmxt_io::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
         let config_of = |flags: &[&str]| {
             crate::commands::run::build_config(None, &crate::cli_settings::SettingsArgs::from_flags(flags)).unwrap()
         };

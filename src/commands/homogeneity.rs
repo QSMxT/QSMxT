@@ -1,9 +1,9 @@
 use log::info;
 use super::common::{load_nifti, save_nifti};
 use crate::cli::{HomogeneityArgs, InhomogeneityMethodArg};
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 
-pub fn execute(args: HomogeneityArgs) -> crate::Result<()> {
+pub fn execute(args: HomogeneityArgs) -> qsmxt_io::Result<()> {
     let nifti = load_nifti(&args.input)?;
     let grid = super::common::nifti_grid(&nifti);
 

@@ -61,7 +61,7 @@ fn fast_config() -> PipelineConfig {
     use qsmxt_engine::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
     let mut config = PipelineConfig::default();
     config.inversion.algorithm = QsmAlgorithm::Tkd;
-    config.field_mapping.unwrapping_algorithm = crate::pipeline::config::UnwrappingAlgorithm::Laplacian;
+    config.field_mapping.unwrapping_algorithm = qsmxt_engine::UnwrappingAlgorithm::Laplacian;
     config.masking.sections = vec![MaskSection {
         input: MaskingInput::Magnitude,
         generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
@@ -132,7 +132,7 @@ fn the_datasets_methods_come_from_its_runs_and_a_run_that_differs_is_kept_in_cha
     summarise();
     let methods = read(derivatives.join("methods.md"));
     assert!(!methods.contains("Where available") && methods.contains("A brain mask was generated"), "{methods}");
-    assert!(crate::pipeline::methods::generate_methods(&config).contains("Where available"));
+    assert!(qsmxt_engine::methods::generate_methods(&config).contains("Where available"));
     assert_eq!(methods, read(output.run_methods_path(&runs[0].key)));
     assert!(!output.changes_dir().exists());
     let graph = read(output.dataset_graph_path());
@@ -214,7 +214,7 @@ fn a_rerun_after_returning_to_the_acquired_grid_reads_the_working_grid() {
     assert_eq!(voxels(&output.mask_path(&run.key)), ACQUIRED);
 
     // Asking for the working grid on a re-run brings the working-grid outputs back.
-    config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+    config.pipeline.output_space = qsmxt_engine::OutputSpace::Working;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     // ...under their working-space names (#275).
     assert_ne!(voxels(&output.published(&run.key).qsm_path(&run.key)), ACQUIRED);
@@ -229,7 +229,7 @@ fn returning_to_the_acquired_grid_leaves_other_runs_alone() {
     let output = DerivativeOutputs::new(&dir.path().join("out"));
     let a = oblique_run(dir.path(), "a", 1);
     let mut working = resampling_config();
-    working.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+    working.pipeline.output_space = qsmxt_engine::OutputSpace::Working;
     run_pipeline_cached(&a, &working, &output, false, &|_| {}).unwrap();
     let a_mask = output.published(&a.key).mask_path(&a.key);
     let a_working = voxels(&a_mask);
@@ -657,7 +657,7 @@ fn a_recomputed_map_keeps_nothing_from_the_sidecar_it_replaced() {
     let sidecar = || read_json_object(&crate::bids::entities::sidecar_path(&output.qsm_path(&run.key)).unwrap());
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     assert!(sidecar().contains_key("QsmReferenceOffsetPpm"));
-    config.qsm.reference = crate::pipeline::config::QsmReference::None;
+    config.qsm.reference = qsmxt_engine::QsmReference::None;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     let fields = sidecar();
     assert_eq!(fields["QsmReference"], "none");
@@ -786,7 +786,7 @@ fn working_grid_outputs_are_named_in_their_space() {
     let run = oblique_run(dir.path(), "a", 2);
     let output = DerivativeOutputs::new(&dir.path().join("out"));
     let mut config = resampling_config();
-    config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+    config.pipeline.output_space = qsmxt_engine::OutputSpace::Working;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     let axial = output.in_space(Some("axial"));
     assert!(axial.qsm_path(&run.key).exists());
@@ -798,7 +798,7 @@ fn working_grid_outputs_are_named_in_their_space() {
     assert!(output.output_dir.join(reference).exists(), "{reference}");
     assert!(reference.ends_with("_part-mag_space-axial_T2starw.nii"), "{reference}");
 
-    config.pipeline.output_space = crate::pipeline::config::OutputSpace::Acquired;
+    config.pipeline.output_space = qsmxt_engine::OutputSpace::Acquired;
     run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
     assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
     let left: Vec<String> = std::fs::read_dir(output.anat_dir(&run.key)).unwrap()

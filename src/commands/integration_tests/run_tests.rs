@@ -52,7 +52,7 @@ fn run_with_a_filter_that_matches_nothing_fails() {
 fn a_missing_bids_dir_is_an_error_everywhere() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("no-such-dataset");
-    let expect = |r: crate::Result<()>| {
+    let expect = |r: qsmxt_io::Result<()>| {
         let err = r.unwrap_err().to_string();
         assert!(err.contains("does not exist"), "{err}");
     };
@@ -831,7 +831,7 @@ fn test_run_with_mask_ops() {
 /// What a `qsmxt run` hands TGV, for a dataset with `echo_times` (s) at `b0_t` (T): the
 /// plan's TGV step (what it reads), the run's metadata and the step's parameters.
 fn tgv_wiring(echo_times: &[f64], b0_t: f64)
-    -> (qsmxt_engine::plan::Step, qsmxt_engine::scan::RunMetadata, crate::pipeline::config::PipelineConfig)
+    -> (qsmxt_engine::plan::Step, qsmxt_engine::scan::RunMetadata, qsmxt_engine::PipelineConfig)
 {
     let dir = tempfile::tempdir().unwrap();
     let anat = dir.path().join("sub-1/anat");
@@ -851,8 +851,8 @@ fn tgv_wiring(echo_times: &[f64], b0_t: f64)
     args.pipeline.add(&["--tgv-alpha1", "0.0021"]);
     args.pipeline.add(&["--tgv-alpha0", "0.0037"]);
     let config = super::run::build_config(None, &args.pipeline).unwrap();
-    let runs = crate::bids::discovery::discover_runs(dir.path(), &Default::default()).unwrap();
-    let facts = crate::pipeline::requirements::scan_facts(&runs[0], &config);
+    let runs = qsmxt_io::bids::discovery::discover_runs(dir.path(), &Default::default()).unwrap();
+    let facts = qsmxt_io::pipeline::requirements::scan_facts(&runs[0], &config);
     let plan = qsmxt_engine::plan::plan(&config, &facts);
     let step = plan.steps.iter()
         .find(|s| s.stage == qsmxt_engine::plan::Stage::Tgv(qsmxt_engine::plan::Pass::Main))
@@ -930,12 +930,12 @@ fn a_single_echo_uncombined_coil_run_is_an_error_not_a_panic() {
     let err = super::run::execute(args).unwrap_err().to_string();
     assert!(err.contains("MCPC-3D-S") && err.contains("2 echoes"), "{err}");
 
-    let filter = crate::bids::discovery::DiscoveryFilter { num_echoes: Some(1), ..Default::default() };
-    let runs = crate::bids::discovery::discover_runs(&bids, &filter).unwrap();
+    let filter = qsmxt_io::bids::discovery::DiscoveryFilter { num_echoes: Some(1), ..Default::default() };
+    let runs = qsmxt_io::bids::discovery::discover_runs(&bids, &filter).unwrap();
     let coil_run = runs.iter().find(|r| r.coils.is_some()).expect("an uncombined-coil run");
-    let output = crate::bids::derivatives::DerivativeOutputs::new(&out.join("direct"));
-    let err = crate::pipeline::runner::run_pipeline_cached(
-        coil_run, &crate::pipeline::config::PipelineConfig::default(), &output, true, &|_| {},
+    let output = qsmxt_io::bids::derivatives::DerivativeOutputs::new(&out.join("direct"));
+    let err = qsmxt_io::pipeline::runner::run_pipeline_cached(
+        coil_run, &qsmxt_engine::PipelineConfig::default(), &output, true, &|_| {},
     ).unwrap_err().to_string();
     assert!(err.contains("MCPC-3D-S"), "{err}");
 }

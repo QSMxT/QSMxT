@@ -1,7 +1,7 @@
-use crate::bids::discovery::{self, DiscoveryFilter};
+use qsmxt_io::bids::discovery::{self, DiscoveryFilter};
 use crate::cli::SlurmArgs;
 
-pub fn execute(args: SlurmArgs) -> crate::Result<()> {
+pub fn execute(args: SlurmArgs) -> qsmxt_io::Result<()> {
     // Build config the same way `qsmxt run` does: file -> CLI/TUI overrides -> every check that
     // can be made before a run starts. Without the overrides the generated jobs silently fall
     // back to the pipeline defaults; without the checks a bad setting is found once per job,
@@ -26,20 +26,20 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
     }
 
     // Refuse before writing or submitting a job that would fail on its node.
-    crate::pipeline::requirements::check_runs(&runs, &config)?;
+    qsmxt_io::pipeline::requirements::check_runs(&runs, &config)?;
     // A DICOM SEG is drawn on another exported series: refuse a selection that leaves it none.
-    crate::dicom::export::check_outputs(args.dicom_outputs.as_deref(), &config).map_err(crate::error::QsmxtError::Config)?;
-    super::run::orientation_groups(&runs, &config).map_err(crate::error::QsmxtError::Config)?;
+    qsmxt_io::dicom::export::check_outputs(args.dicom_outputs.as_deref(), &config).map_err(qsmxt_io::error::QsmxtError::Config)?;
+    super::run::orientation_groups(&runs, &config).map_err(qsmxt_io::error::QsmxtError::Config)?;
     super::recommend::log_found(&config, &runs);
 
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
 
-    let jobs = crate::executor::slurm::generate_all_slurm(
+    let jobs = qsmxt_io::executor::slurm::generate_all_slurm(
         &runs,
         &args.bids_dir,
         base_dir,
         &config,
-        &crate::executor::slurm::SlurmOptions {
+        &qsmxt_io::executor::slurm::SlurmOptions {
             account: &args.account,
             partition: args.partition.as_deref(),
             time: &args.time,
@@ -63,7 +63,7 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
     println!("  {}", jobs.aggregate_script.display());
 
     if args.submit {
-        let (ids, agg) = crate::executor::slurm::submit_jobs(&jobs)?;
+        let (ids, agg) = qsmxt_io::executor::slurm::submit_jobs(&jobs)?;
         println!("Submitted {} run job(s): {}", ids.len(), ids.join(" "));
         println!("Submitted aggregation job {agg} (afterok:{})", ids.join(":"));
     } else {
@@ -77,9 +77,9 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
 mod tests {
     use std::path::Path;
 
-    use crate::executor::slurm::{generate_all_slurm, SlurmOptions};
-    use crate::pipeline::config::PipelineConfig;
-    use crate::testutils::slurm::{dummy_run_with_key, opts};
+    use qsmxt_io::executor::slurm::{generate_all_slurm, SlurmOptions};
+    use qsmxt_engine::PipelineConfig;
+    use qsmxt_io::testutils::slurm::{dummy_run_with_key, opts};
 
     /// `--debug` reaches every job; the DICOM export settings reach the run jobs, where the
     /// export happens, and not the aggregation job, which has no such flags.

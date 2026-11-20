@@ -38,7 +38,6 @@ use std::sync::LazyLock;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use qsmxt_io::bids::discovery::{self, BidsTree};
-use qsmxt_io::dicom;
 use qsmxt_io::nifti;
 
 use super::mask_builder::MaskRecipe;

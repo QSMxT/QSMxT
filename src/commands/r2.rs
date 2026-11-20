@@ -1,9 +1,9 @@
 use log::info;
 use super::common::{load_nifti, load_mask, save_nifti, nifti_grid, load_multiecho_voxel_major};
 use crate::cli::R2Args;
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 
-pub fn execute(args: R2Args) -> crate::Result<()> {
+pub fn execute(args: R2Args) -> qsmxt_io::Result<()> {
     let reference = load_nifti(&args.inputs[0])?;
     let (nx, ny, nz) = reference.dims;
     let n = nx * ny * nz;

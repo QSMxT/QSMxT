@@ -40,7 +40,7 @@ fn the_two_passes_write_to_different_places() {
     use std::path::PathBuf;
 
     let run = run_with_echoes(vec![(PathBuf::from("/in/sub-1/anat/p.nii"), None)]);
-    let config = crate::pipeline::config::PipelineConfig::default();
+    let config = qsmxt_engine::PipelineConfig::default();
     let store = super::FileStore {
         run: &run, config: &config, output: DerivativeOutputs::new(std::path::Path::new("/out")),
         meta: None, state: PipelineState::new(&config, &run.key), state_path: PathBuf::from("/out/s.json"),
@@ -78,7 +78,7 @@ fn the_header_carries_the_first_phase_images_orientation() {
     let bytes = qsm_core::io::save_nifti(&[0.0; 120], (6, 5, 4), (1.2, 1.1, 2.0), &affine).unwrap();
     std::fs::write(&phase, &bytes).unwrap();
     let run = run_with_echoes(vec![(phase.clone(), None)]);
-    let config = crate::pipeline::config::PipelineConfig::default();
+    let config = qsmxt_engine::PipelineConfig::default();
     let mut store = super::FileStore {
         run: &run, config: &config, output: DerivativeOutputs::new(dir.path()),
         meta: None, state: PipelineState::new(&config, &run.key), state_path: dir.path().join("s.json"),
@@ -107,7 +107,7 @@ fn computed_magnitude_echoes_are_kept_in_double_precision() {
 
     let dir = tempfile::tempdir().unwrap();
     let run = run_with_echoes(vec![(dir.path().join("p.nii"), Some(dir.path().join("m.nii")))]);
-    let config = crate::pipeline::config::PipelineConfig::default();
+    let config = qsmxt_engine::PipelineConfig::default();
     let affine = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
     let meta = qsmxt_engine::scan::RunMetadata {
         dims: (4, 3, 2), voxel_size: (1.0, 1.0, 1.0), affine, n_echoes: 1,
@@ -143,7 +143,7 @@ fn item_metadata_names_the_files_qsmxt_writes() {
     use std::path::PathBuf;
 
     let run = run_with_echoes(vec![(PathBuf::from("/in/sub-1/anat/p.nii"), None)]);
-    let config = crate::pipeline::config::PipelineConfig::default();
+    let config = qsmxt_engine::PipelineConfig::default();
     let store = super::FileStore {
         run: &run, config: &config, output: DerivativeOutputs::new(std::path::Path::new("/out")),
         meta: None, state: PipelineState::new(&config, &run.key), state_path: PathBuf::from("/out/s.json"),
@@ -165,7 +165,7 @@ fn item_metadata_names_the_files_qsmxt_writes() {
 /// background-removal stage to erode it.
 #[test]
 fn single_step_algorithms_skip_background_removal() {
-    use crate::pipeline::config::{PipelineConfig, QsmAlgorithm};
+    use qsmxt_engine::{PipelineConfig, QsmAlgorithm};
     let mut config = PipelineConfig::default();
 
     for alg in [QsmAlgorithm::Rts, QsmAlgorithm::Tkd, QsmAlgorithm::Ilsqr] {
@@ -192,7 +192,7 @@ fn single_step_algorithms_skip_background_removal() {
 /// single-pass one.
 #[test]
 fn a_custom_mask_turns_two_pass_off() {
-    use crate::pipeline::config::PipelineConfig;
+    use qsmxt_engine::PipelineConfig;
     let two_pass = |config: &PipelineConfig, run: &crate::bids::discovery::QsmRun| {
         qsmxt_engine::plan::plan(config, &crate::pipeline::requirements::scan_facts(run, config)).two_pass
     };
@@ -321,7 +321,7 @@ fn test_prefetch_weights_errors_for_dl_without_dl_feature() {
 #[test]
 fn test_hd_bet_mask_needs_dl_feature() {
     // The mask stage prefetches every DL op's weights; HD-BET must hit the same clear error.
-    let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::hd_bet_mask_sections(), &Default::default());
+    let sections = qsmxt_engine::to_mask_sections(&qsmxt_engine::hd_bet_mask_sections(), &Default::default());
     let ids: Vec<&str> = sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()).collect();
     assert_eq!(ids, ["hd-bet"]);
     let err = super::prefetch_weights(ids[0], "test").unwrap_err();
@@ -333,7 +333,7 @@ fn test_hd_bet_mask_needs_dl_feature() {
 fn test_rs2_net_mask_needs_dl_feature() {
     // RS2-Net is a DL generator like HD-BET, so it must reach the same prefetch error
     // rather than failing later with something about ONNX.
-    let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::rs2_net_mask_sections(), &Default::default());
+    let sections = qsmxt_engine::to_mask_sections(&qsmxt_engine::rs2_net_mask_sections(), &Default::default());
     let ids: Vec<&str> = sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()).collect();
     assert_eq!(ids, ["rs2-net"]);
     let err = super::prefetch_weights(ids[0], "test").unwrap_err();
@@ -343,7 +343,7 @@ fn test_rs2_net_mask_needs_dl_feature() {
 #[cfg(not(feature = "dl"))]
 #[test]
 fn test_mindgrab_mask_needs_dl_feature() {
-    let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::mindgrab_mask_sections(), &Default::default());
+    let sections = qsmxt_engine::to_mask_sections(&qsmxt_engine::mindgrab_mask_sections(), &Default::default());
     let ids: Vec<&str> = sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()).collect();
     assert_eq!(ids, ["mindgrab"]);
     let err = super::prefetch_weights(ids[0], "test").unwrap_err();
@@ -506,7 +506,7 @@ fn a_gapped_2d_acquisition_is_refused_unless_ignored() {
     run.echoes[0].phase_json = json.clone();
     let affine = [0.8, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0];
     let phase = nifti_with(affine, (4, 4, 4));
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
     let meta = super::resolve_run_geometry(&run, &phase, &cfg).unwrap();
     let write = |t: f64| std::fs::write(&json, format!(
         r#"{{"EchoTime": 0.004, "MagneticFieldStrength": 3, "SliceThickness": {t}, "MRAcquisitionType": "2D"}}"#)).unwrap();
@@ -529,7 +529,7 @@ fn a_gapped_2d_acquisition_is_refused_unless_ignored() {
 
 #[test]
 fn geometry_axial_run_is_untouched() {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
     cfg.pipeline.axial_resampling = true;
     cfg.pipeline.obliquity_threshold = 10.0;
     let affine = [
@@ -543,7 +543,7 @@ fn geometry_axial_run_is_untouched() {
 
 #[test]
 fn geometry_oblique_without_threshold_rotates_the_kernel() {
-    let cfg = crate::pipeline::config::PipelineConfig::default(); // threshold -1 (disabled)
+    let cfg = qsmxt_engine::PipelineConfig::default(); // threshold -1 (disabled)
     let meta = super::resolve_run_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
     assert!(meta.source_geometry.is_none(), "resampling is off by default");
     assert_eq!(meta.dims, (16, 16, 8), "grid is left alone");
@@ -555,7 +555,7 @@ fn geometry_oblique_without_threshold_rotates_the_kernel() {
 
 #[test]
 fn geometry_oblique_over_threshold_resamples_and_b0_becomes_z() {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
     cfg.pipeline.axial_resampling = true;
     cfg.pipeline.obliquity_threshold = 10.0; // obliquity here is ~32.5 degrees
     let meta = super::resolve_run_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
@@ -575,7 +575,7 @@ fn geometry_oblique_over_threshold_resamples_and_b0_becomes_z() {
 /// `origin` of the grid, so the box's affine maps it to the same point.
 #[test]
 fn scan_metadata_in_a_box_moves_the_affine_to_the_box() {
-    let cfg = crate::pipeline::config::PipelineConfig::default();
+    let cfg = qsmxt_engine::PipelineConfig::default();
     let meta = super::resolve_run_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
     let cb = qsm_core::crop::CropBox { origin: (2, -1, 3), dims: (8, 10, 4), full_dims: meta.dims };
     let m = qsmxt_engine::scan::scan_metadata_in(&meta, &cb);
@@ -593,7 +593,7 @@ fn scan_metadata_in_a_box_moves_the_affine_to_the_box() {
 
 #[test]
 fn geometry_threshold_above_obliquity_does_not_resample() {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
     cfg.pipeline.axial_resampling = true;
     cfg.pipeline.obliquity_threshold = 45.0; // above this run's ~32.5 degrees
     let meta = super::resolve_run_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
@@ -603,7 +603,7 @@ fn geometry_threshold_above_obliquity_does_not_resample() {
 
 #[test]
 fn geometry_sidecar_b0_wins_over_resampling() {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
     cfg.pipeline.axial_resampling = true;
     cfg.pipeline.obliquity_threshold = 10.0;
     let run = run_for_geometry(Some((0.0, 0.5, 0.866)));
@@ -653,7 +653,7 @@ fn mese_on(dims: (usize, usize, usize), affine: [f64; 16]) -> crate::bids::disco
 /// this picks, so it no longer has a vote.
 #[test]
 fn geometry_mese_run_is_resampled_like_any_other() {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
     cfg.pipeline.axial_resampling = true;
     cfg.pipeline.obliquity_threshold = 10.0;
     let mut run = run_for_geometry(None);
@@ -667,9 +667,9 @@ fn geometry_mese_run_is_resampled_like_any_other() {
 // --- an algorithm that only understands axial data outranks everything else ---
 
 /// A deep-learning inversion: no B0 direction to set, an axial prior baked into the weights.
-fn cfg_with_axial_only_inversion() -> crate::pipeline::config::PipelineConfig {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
-    cfg.inversion.algorithm = crate::pipeline::config::QsmAlgorithm::Qsmnet;
+fn cfg_with_axial_only_inversion() -> qsmxt_engine::PipelineConfig {
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    cfg.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Qsmnet;
     cfg
 }
 
@@ -739,10 +739,10 @@ fn geometry_mese_on_its_own_grid_does_not_change_the_decision() {
 /// take B0 as a parameter was reconstructed on the acquired grid and the network was handed it.
 #[test]
 fn geometry_r2primenet_on_an_oblique_grid_forces_a_resample() {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
     cfg.pipeline.do_chi_separation = true;
     // χ-sep-iLSQR takes B0 as a parameter, so nothing else in this run wants axial data.
-    cfg.separation.algorithm = crate::pipeline::config::SeparationAlgorithm::ChiSepIlsqr;
+    cfg.separation.algorithm = qsmxt_engine::SeparationAlgorithm::ChiSepIlsqr;
     cfg = cfg.normalised().0;
     // No MESE, so `--r2prime-strategy auto` predicts R2′ with R2PRIMEnet.
     let run = run_for_geometry(None);
@@ -756,9 +756,9 @@ fn geometry_r2primenet_on_an_oblique_grid_forces_a_resample() {
 /// runs, and the run keeps its grid. A resample here would cost an interpolation for nothing.
 #[test]
 fn geometry_a_mese_removes_the_r2primenet_reason_to_resample() {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
     cfg.pipeline.do_chi_separation = true;
-    cfg.separation.algorithm = crate::pipeline::config::SeparationAlgorithm::ChiSepIlsqr;
+    cfg.separation.algorithm = qsmxt_engine::SeparationAlgorithm::ChiSepIlsqr;
     cfg = cfg.normalised().0;
     let mut run = run_for_geometry(None);
     run.mese = Some(mese_on((16, 16, 8), oblique_affine()));
@@ -772,8 +772,8 @@ fn geometry_a_mese_removes_the_r2primenet_reason_to_resample() {
 /// placeholder. The gate asks about iQSM instead, so an oblique run is resampled.
 #[test]
 fn geometry_iqfm_on_an_oblique_grid_forces_a_resample() {
-    let mut cfg = crate::pipeline::config::PipelineConfig::default();
-    cfg.bg_removal.algorithm = crate::pipeline::config::BfAlgorithm::Iqfm;
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    cfg.bg_removal.algorithm = qsmxt_engine::BfAlgorithm::Iqfm;
     let meta = super::resolve_run_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
     assert!(meta.source_geometry.is_some(),
             "iQFM learned the same axial prior as iQSM and takes no B0 direction");
@@ -782,7 +782,7 @@ fn geometry_iqfm_on_an_oblique_grid_forces_a_resample() {
 
 #[test]
 fn geometry_classical_algorithm_needs_no_resampling() {
-    let cfg = crate::pipeline::config::PipelineConfig::default(); // iLSQR by default
+    let cfg = qsmxt_engine::PipelineConfig::default(); // iLSQR by default
     assert!(qsmxt_engine::bridge::axial_only_algorithms(&cfg, Default::default()).is_empty(),
             "the default pipeline takes B0 as a parameter throughout");
 }

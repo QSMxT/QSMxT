@@ -6,7 +6,7 @@ use crate::cli::{
     InvertNdiArgs, InvertNltvArgs, InvertRtsArgs, InvertStarArgs, InvertTfiArgs, InvertTgvArgs,
     InvertTikhonovArgs, InvertTkdArgs, InvertTsvdArgs, InvertTvArgs, InvertWhqsmArgs,
 };
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 use qsm_core::inversion as inv;
 use qsm_core::pipeline::InversionAlgorithm as A;
 
@@ -15,7 +15,7 @@ use super::{config_for, heidi_on_seed, heidi_params, invert_with, lsqr_params, p
 /// What an inversion gives back: its common args, and the χ map with the field it was made from.
 pub(super) type Inverted = (InvertCommonArgs, (Vec<f64>, qsm_core::io::NiftiData));
 
-pub(super) fn rts(args: InvertRtsArgs) -> crate::Result<Inverted> {
+pub(super) fn rts(args: InvertRtsArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::RtsParams::default();
     let rts = inv::RtsParams {
         delta: args.delta.unwrap_or(d.delta),
@@ -34,7 +34,7 @@ pub(super) fn rts(args: InvertRtsArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn tv(args: InvertTvArgs) -> crate::Result<Inverted> {
+pub(super) fn tv(args: InvertTvArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::TvParams::default();
     let tv = inv::TvParams {
         lambda: args.lambda.unwrap_or(d.lambda),
@@ -48,7 +48,7 @@ pub(super) fn tv(args: InvertTvArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn tkd(args: InvertTkdArgs) -> crate::Result<Inverted> {
+pub(super) fn tkd(args: InvertTkdArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::TkdParams::default();
     let tkd = inv::TkdParams { threshold: args.threshold.unwrap_or(d.threshold), pad: pad3(args.pad.as_deref(), d.pad) };
     let config = qsm_core::pipeline::InversionConfig { tkd, ..config_for(A::Tkd) };
@@ -56,7 +56,7 @@ pub(super) fn tkd(args: InvertTkdArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn tsvd(args: InvertTsvdArgs) -> crate::Result<Inverted> {
+pub(super) fn tsvd(args: InvertTsvdArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::TsvdParams::default();
     let tsvd = inv::TsvdParams { threshold: args.threshold.unwrap_or(d.threshold), pad: pad3(args.pad.as_deref(), d.pad) };
     let config = qsm_core::pipeline::InversionConfig { tsvd, ..config_for(A::Tsvd) };
@@ -64,7 +64,7 @@ pub(super) fn tsvd(args: InvertTsvdArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn ilsqr(args: InvertIlsqrArgs) -> crate::Result<Inverted> {
+pub(super) fn ilsqr(args: InvertIlsqrArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::IlsqrParams::default();
     let ilsqr = inv::IlsqrParams {
         tol: args.tol.unwrap_or(d.tol),
@@ -78,14 +78,14 @@ pub(super) fn ilsqr(args: InvertIlsqrArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn star(args: InvertStarArgs) -> crate::Result<Inverted> {
+pub(super) fn star(args: InvertStarArgs) -> qsmxt_io::Result<Inverted> {
     let config = qsm_core::pipeline::InversionConfig { star: star_params(&args), ..config_for(A::Star) };
     let out = invert_with(&args.common, args.scan.field_strength, &args.scan.echo_times,
         Magnitude::None, config, "STAR-QSM")?;
     Ok((args.common, out))
 }
 
-pub(super) fn lsqr(args: InvertLsqrArgs) -> crate::Result<Inverted> {
+pub(super) fn lsqr(args: InvertLsqrArgs) -> qsmxt_io::Result<Inverted> {
     require_magnitude(&args.magnitude, "LSQR")?;
     let config = qsm_core::pipeline::InversionConfig {
         lsqr: lsqr_params(&args.lsqr_params), ..config_for(A::Lsqr)
@@ -94,7 +94,7 @@ pub(super) fn lsqr(args: InvertLsqrArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn heidi(args: InvertHeidiArgs) -> crate::Result<Inverted> {
+pub(super) fn heidi(args: InvertHeidiArgs) -> qsmxt_io::Result<Inverted> {
     // LSQR+HEIDI: HEIDI runs its own LSQR seed (qsm_heidi's), with the --lsqr-*
     // settings; or, with --seed, fills the cone of a map another inversion made.
     let config = qsm_core::pipeline::InversionConfig {
@@ -114,7 +114,7 @@ pub(super) fn heidi(args: InvertHeidiArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn tikhonov(args: InvertTikhonovArgs) -> crate::Result<Inverted> {
+pub(super) fn tikhonov(args: InvertTikhonovArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::TikhonovParams::default();
     let tikhonov = inv::TikhonovParams {
         lambda: args.lambda.unwrap_or(d.lambda), pad: pad3(args.pad.as_deref(), d.pad), ..d
@@ -124,7 +124,7 @@ pub(super) fn tikhonov(args: InvertTikhonovArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn nltv(args: InvertNltvArgs) -> crate::Result<Inverted> {
+pub(super) fn nltv(args: InvertNltvArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::NltvParams::default();
     let nltv = inv::NltvParams {
         lambda: args.lambda.unwrap_or(d.lambda),
@@ -144,7 +144,7 @@ pub(super) fn nltv(args: InvertNltvArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn ndi(args: InvertNdiArgs) -> crate::Result<Inverted> {
+pub(super) fn ndi(args: InvertNdiArgs) -> qsmxt_io::Result<Inverted> {
     // With --auto-stop, unset parameters take FANSI ndi_auto's defaults, else ndi's.
     let auto_stop = args.auto_stop.unwrap_or(false);
     let d = if auto_stop { inv::NdiParams::auto() } else { inv::NdiParams::default() };
@@ -163,7 +163,7 @@ pub(super) fn ndi(args: InvertNdiArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn fansi(args: InvertFansiArgs) -> crate::Result<Inverted> {
+pub(super) fn fansi(args: InvertFansiArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::FansiParams::default();
     let fansi = inv::FansiParams {
         alpha1: args.alpha1.unwrap_or(d.alpha1),
@@ -183,7 +183,7 @@ pub(super) fn fansi(args: InvertFansiArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn fansi_tgv(args: InvertFansiTgvArgs) -> crate::Result<Inverted> {
+pub(super) fn fansi_tgv(args: InvertFansiTgvArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::FansiParams::default();
     let fansi = inv::FansiParams {
         alpha1: args.alpha1.unwrap_or(d.alpha1),
@@ -203,7 +203,7 @@ pub(super) fn fansi_tgv(args: InvertFansiTgvArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn l1qsm(args: InvertL1qsmArgs) -> crate::Result<Inverted> {
+pub(super) fn l1qsm(args: InvertL1qsmArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::L1QsmParams::default();
     let l1qsm = inv::L1QsmParams {
         alpha1: args.alpha1.unwrap_or(d.alpha1),
@@ -223,7 +223,7 @@ pub(super) fn l1qsm(args: InvertL1qsmArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn whqsm(args: InvertWhqsmArgs) -> crate::Result<Inverted> {
+pub(super) fn whqsm(args: InvertWhqsmArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::WhQsmParams::default();
     let whqsm = inv::WhQsmParams {
         alpha1: args.alpha1.unwrap_or(d.alpha1),
@@ -254,7 +254,7 @@ pub(super) fn whqsm(args: InvertWhqsmArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn hdqsm(args: InvertHdqsmArgs) -> crate::Result<Inverted> {
+pub(super) fn hdqsm(args: InvertHdqsmArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::HdQsmParams::default();
     let hdqsm = inv::HdQsmParams {
         alpha_l2: args.alpha_l2.unwrap_or(d.alpha_l2),
@@ -270,7 +270,7 @@ pub(super) fn hdqsm(args: InvertHdqsmArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn amp_pe(args: InvertAmpPeArgs) -> crate::Result<Inverted> {
+pub(super) fn amp_pe(args: InvertAmpPeArgs) -> qsmxt_io::Result<Inverted> {
     if args.magnitude.is_empty() {
         warn!(target: super::LOG_TARGET, "No --magnitude provided for AMP-PE; using uniform weights with no morphology mask");
     }
@@ -294,7 +294,7 @@ pub(super) fn amp_pe(args: InvertAmpPeArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn medi(args: InvertMediArgs) -> crate::Result<Inverted> {
+pub(super) fn medi(args: InvertMediArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::MediParams::default();
     let msmv_default = inv::MsmvParams::default();
     let medi = inv::MediParams {
@@ -332,7 +332,7 @@ pub(super) fn medi(args: InvertMediArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn tfi(args: InvertTfiArgs) -> crate::Result<Inverted> {
+pub(super) fn tfi(args: InvertTfiArgs) -> qsmxt_io::Result<Inverted> {
     let d = inv::TfiParams::default();
     let tfi = inv::TfiParams {
         lambda: args.lambda.unwrap_or(d.lambda),
@@ -356,7 +356,7 @@ pub(super) fn tfi(args: InvertTfiArgs) -> crate::Result<Inverted> {
     Ok((args.common, out))
 }
 
-pub(super) fn tgv(args: InvertTgvArgs) -> crate::Result<Inverted> {
+pub(super) fn tgv(args: InvertTgvArgs) -> qsmxt_io::Result<Inverted> {
     let c = args.common;
     let field_nifti = load_nifti(&c.input)?;
     let (mask, _) = load_mask(&c.mask)?;

@@ -8,11 +8,11 @@
 use log::{error, info};
 
 use super::run;
-use crate::bids::derivatives::DerivativeOutputs;
-use crate::bids::discovery::{self, DiscoveryFilter};
+use qsmxt_io::bids::derivatives::DerivativeOutputs;
+use qsmxt_io::bids::discovery::{self, DiscoveryFilter};
 use crate::cli::AggregateArgs;
 
-pub fn execute(args: AggregateArgs) -> crate::Result<()> {
+pub fn execute(args: AggregateArgs) -> qsmxt_io::Result<()> {
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
     let derivatives_dir = base_dir.join("derivatives").join("qsmxt");
 
@@ -61,7 +61,7 @@ pub fn execute(args: AggregateArgs) -> crate::Result<()> {
     let output = DerivativeOutputs::new(&derivatives_dir);
     let mut run_failures = Vec::new();
     let completed: Vec<bool> = runs.iter().map(|r| {
-        match crate::pipeline::graph::run_completed_under(&output.output_dir, &r.key, &config) {
+        match qsmxt_io::pipeline::graph::run_completed_under(&output.output_dir, &r.key, &config) {
             Ok(()) => true,
             Err(why) => {
                 error!("{}: {why}", r.key);

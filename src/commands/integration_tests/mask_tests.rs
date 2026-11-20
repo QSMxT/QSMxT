@@ -42,7 +42,7 @@ fn test_mask_combines_4d_magnitude_by_rss() {
     let a = qsm_core::io::read_nifti_file(&e1).unwrap();
     let b = qsm_core::io::read_nifti_file(&e2).unwrap();
     let four_d = dir.path().join("mag4d.nii");
-    crate::nifti::write::write_volumes_4d(&four_d, &[&a.data, &b.data], a.dims, a.voxel_size, &a.affine).unwrap();
+    qsmxt_io::nifti::write::write_volumes_4d(&four_d, &[&a.data, &b.data], a.dims, a.voxel_size, &a.affine).unwrap();
 
     // Echo 1 alone and the RSS cross a threshold at different voxels.
     let rss: Vec<f64> = a.data.iter().zip(&b.data).map(|(x, y)| (x * x + y * y).sqrt()).collect();
@@ -395,8 +395,8 @@ fn test_mask_fill_holes() {
     })).unwrap();
     assert!(output.exists());
     // The bare op agrees with the subcommand default and the presets: 0 = automatic.
-    assert_eq!(crate::pipeline::config::parse_mask_op("fill-holes").unwrap(),
-               crate::pipeline::config::MaskOp::FillHoles { max_size: 0 });
+    assert_eq!(qsmxt_engine::parse_mask_op("fill-holes").unwrap(),
+               qsmxt_engine::MaskOp::FillHoles { max_size: 0 });
 }
 
 #[test]

@@ -7,7 +7,7 @@ pub(super) fn defs() -> Vec<Def> {
         d("pipeline.axial_resampling", Geometry, "Axial resampling", "Resample oblique acquisitions onto an axial grid when they are tilted more than the threshold. Off: reconstruct on the acquired grid with the true B0 direction", Bool).basic().flag("--axial-resampling")
         .cli("Resample oblique acquisitions onto an axial grid when their obliquity exceeds --obliquity-threshold. Off by default (methods that only work on axial data resample regardless)")
         .negated("--no-axial-resampling", "Do not resample oblique acquisitions to axial (overrides a config's axial_resampling)").negated_conflicts(),
-        // QSMxT: --obliquity-threshold and the config file refuse a negative threshold (src/pipeline/config.rs, PipelineConfig::from_toml_migrating).
+        // QSMxT: --obliquity-threshold and the config file refuse a negative threshold (PipelineConfig::from_toml_migrating).
         d("pipeline.obliquity_threshold", Geometry, "Obliquity threshold (°)", "Resample only data more oblique than this, in degrees", Float).min(0.0).units("deg").flag("--obliquity-threshold").parent("pipeline.axial_resampling")
         .when(|x| x.c.pipeline.axial_resampling).full("Obliquity threshold")
         .gui("Resample only data more oblique than this")

@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::testutils;
+use qsmxt_io::testutils;
 use std::path::{Path, PathBuf};
 
 // The topic files call the commands as `super::<command>`, as this file does.
@@ -210,7 +210,7 @@ fn write_full_case(bids: &Path) {
         let te = 0.012 * echo as f64;
         let data = vec![1000.0 * (-15.0 * te).exp(); 512];
         qsm_core::io::save_nifti_to_file(&anat.join(format!("sub-1_echo-{echo}_MESE.nii")),
-            &data, (8, 8, 8), (1.0, 1.0, 1.0), &crate::testutils::multiorient::MO_AFFINE).unwrap();
+            &data, (8, 8, 8), (1.0, 1.0, 1.0), &qsmxt_io::testutils::multiorient::MO_AFFINE).unwrap();
         testutils::write_sidecar(&anat.join(format!("sub-1_echo-{echo}_MESE.json")), te, 3.0);
     }
     testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"));

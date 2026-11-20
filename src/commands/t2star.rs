@@ -2,7 +2,7 @@ use log::info;
 use super::common::{compute_r2star, save_nifti};
 use crate::cli::T2starArgs;
 
-pub fn execute(args: T2starArgs) -> crate::Result<()> {
+pub fn execute(args: T2starArgs) -> qsmxt_io::Result<()> {
     info!("Computing T2* from {} echoes", args.inputs.len());
     let (r2star_map, reference) = compute_r2star(&args.inputs, &args.mask, &args.echo_times)?;
 

@@ -378,8 +378,8 @@ mod tests {
     /// naming module gives it, and every name kept out of BIDS through `.bidsignore`.
     #[test]
     fn every_published_name_is_in_the_outputs_page() {
-        use crate::bids::derivatives::DerivativeOutputs;
-        use crate::bids::entities::AcquisitionKey;
+        use qsmxt_io::bids::derivatives::DerivativeOutputs;
+        use qsmxt_io::bids::entities::AcquisitionKey;
         let outputs = doc("reference/outputs.md");
         let o = DerivativeOutputs::new(Path::new("/o"));
         let k = AcquisitionKey {
@@ -403,7 +403,7 @@ mod tests {
             let tail = name.strip_prefix("sub-01").unwrap();
             assert!(outputs.contains(&format!("{tail}`")), "reference/outputs.md does not list …{tail}");
         }
-        for s in crate::bids::naming::BIDSIGNORED_SUFFIXES {
+        for s in qsmxt_io::bids::naming::BIDSIGNORED_SUFFIXES {
             assert!(outputs.contains(&format!("`{s}`")), "reference/outputs.md does not explain the bidsignored `{s}`");
         }
     }

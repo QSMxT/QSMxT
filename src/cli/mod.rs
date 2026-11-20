@@ -346,7 +346,7 @@ mod tests {
     fn a_negative_obliquity_threshold_points_to_axial_resampling() {
         let cli = parse(&["run", "bids", "--obliquity-threshold", "-1"]);
         let Command::Run(run) = cli.command else { panic!("expected run") };
-        let mut c = crate::pipeline::config::PipelineConfig::default();
+        let mut c = qsmxt_engine::PipelineConfig::default();
         let err = crate::cli_settings::apply_normalised(&mut c, &run.pipeline).unwrap_err().to_string();
         assert!(err.contains("--axial-resampling"), "{err}");
         let cli = parse(&["run", "bids", "--axial-resampling", "--obliquity-threshold", "5"]);

@@ -1,9 +1,8 @@
 use log::{info, debug};
 use super::common::{load_nifti, load_mask, save_nifti};
 use crate::cli::UnwrapCommand;
-use crate::pipeline::phase;
 
-pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
+pub fn execute(cmd: UnwrapCommand) -> qsmxt_io::Result<()> {
     match cmd {
         UnwrapCommand::Laplacian(args) => {
             let phase_nifti = load_nifti(&args.common.input)?;
@@ -11,7 +10,7 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
             let grid = super::common::nifti_grid(&phase_nifti);
 
             let mut phase_data = phase_nifti.data.clone();
-            phase::scale_phase_to_pi(&mut phase_data);
+            qsm_core::pipeline::scale_phase_to_pi(&mut phase_data);
             info!("Unwrapping phase (Laplacian, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid, qsm_core::unwrap::LaplacianSolver::Dct);
@@ -24,12 +23,12 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
             let (mask, _) = load_mask(&args.common.mask)?;
             let grid = super::common::nifti_grid(&phase_nifti);
             let mut phase_data = phase_nifti.data.clone();
-            phase::scale_phase_to_pi(&mut phase_data);
+            qsm_core::pipeline::scale_phase_to_pi(&mut phase_data);
             info!("Unwrapping phase (ROMEO, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let multi = args.romeo_params.multi_echo_flags();
             if !multi.is_empty() {
-                return Err(crate::error::QsmxtError::Config(format!(
+                return Err(qsmxt_io::error::QsmxtError::Config(format!(
                     "{}: only meaningful when several echoes are unwrapped together — use \
                      `qsmxt fieldmap romeo` or `qsmxt run`; `unwrap romeo` unwraps one 3D phase",
                     multi.join(", "))));
@@ -54,10 +53,10 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
             let phase_nifti = load_nifti(&args.input)?;
             let grid = super::common::nifti_grid(&phase_nifti);
             let mut phase_data = phase_nifti.data.clone();
-            phase::scale_phase_to_pi(&mut phase_data);
+            qsm_core::pipeline::scale_phase_to_pi(&mut phase_data);
             let mag = load_nifti(&args.magnitude)?.data;
             if mag.len() != phase_data.len() {
-                return Err(crate::error::QsmxtError::Config(format!(
+                return Err(qsmxt_io::error::QsmxtError::Config(format!(
                     "--magnitude has {} voxels and the phase {}: give one 3D magnitude on the phase's grid",
                     mag.len(), phase_data.len())));
             }
@@ -71,7 +70,7 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
             let (mask, _) = load_mask(&args.common.mask)?;
             let grid = super::common::nifti_grid(&phase_nifti);
             let mut phase_data = phase_nifti.data.clone();
-            phase::scale_phase_to_pi(&mut phase_data);
+            qsm_core::pipeline::scale_phase_to_pi(&mut phase_data);
             info!("Unwrapping phase (PRELUDE, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let params = args.prelude_params.to_prelude_params();

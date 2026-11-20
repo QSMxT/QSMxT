@@ -12,9 +12,8 @@ use crate::cli::{
     B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs, FieldmapLaplacianArgs,
     FieldmapMediRegionGrowingArgs, FieldmapPreludeArgs, FieldmapRomeoArgs,
 };
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 use crate::cli::LaplacianSolverArg;
-use crate::pipeline::phase;
 
 /// TE / B0 / geometry resolved from `--tes` / `--b0` / `--params`.
 struct ScanParams {
@@ -37,7 +36,7 @@ struct ParamsJson {
     b0_dir: Option<Vec<f64>>,
 }
 
-fn resolve_scan_params(common: &FieldmapCommonArgs) -> crate::Result<ScanParams> {
+fn resolve_scan_params(common: &FieldmapCommonArgs) -> qsmxt_io::Result<ScanParams> {
     // Start from the JSON file (if any), then let explicit CLI flags override.
     let json: ParamsJson = if let Some(ref p) = common.params {
         let text = std::fs::read_to_string(p)
@@ -111,7 +110,7 @@ fn apply_common_config(
         }
         B0EstimationArg::QsmartEchofit => {
             let mut fm = qsmxt_engine::FieldMappingConfig::default();
-            crate::pipeline::config::apply_qsmart_fit_threshold(&mut fm, common.qsmart_fit_threshold_mode.map(Into::into),
+            qsmxt_io::pipeline::config::apply_qsmart_fit_threshold(&mut fm, common.qsmart_fit_threshold_mode.map(Into::into),
                 common.qsmart_fit_percentile, common.qsmart_fit_threshold);
             qsm_core::pipeline::config::B0EstimationMethod::QsmartEchofit { fit_threshold: fm.qsmart_fit_threshold() }
         }
@@ -141,7 +140,7 @@ fn echo_weighting(common: &FieldmapCommonArgs) -> qsm_core::utils::B0WeightType 
     }
 }
 
-pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
+pub fn execute(cmd: FieldmapCommand) -> qsmxt_io::Result<()> {
     // Dispatch per algorithm; the algorithm-specific config is applied via a closure so the shared
     // run_field_mapping does the loading/validation once.
     match cmd {
@@ -179,7 +178,7 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
 }
 
 /// The Poisson solver `fieldmap laplacian`'s flags choose.
-fn laplacian_solver(args: &FieldmapLaplacianArgs) -> crate::Result<qsm_core::unwrap::LaplacianSolver> {
+fn laplacian_solver(args: &FieldmapLaplacianArgs) -> qsmxt_io::Result<qsm_core::unwrap::LaplacianSolver> {
     let pad = qsmxt_engine::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
         format!("--laplacian-fft-pad {:?}: give one value or three", args.laplacian_fft_pad)))?;
     Ok(match args.laplacian_solver {
@@ -254,7 +253,7 @@ fn run_field_mapping(
     common: &FieldmapCommonArgs,
     algorithm: qsm_core::pipeline::config::UnwrappingAlgorithm,
     apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     let params = resolve_scan_params(common)?;
     if (common.complex_fit_output.is_some() || common.complex_fit_noise_output.is_some())
         && common.b0_estimation != B0EstimationArg::ComplexFit
@@ -279,7 +278,7 @@ fn run_field_mapping(
 
     // Into radians in [-pi, pi], with one conversion for every echo (scale_phases_to_pi).
     let mut phases: Vec<Vec<f64>> = phase_me.echoes.clone();
-    phase::scale_phases_to_pi(&mut phases);
+    qsm_core::pipeline::scale_phases_to_pi(&mut phases);
     let phase_slices: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
     // ── Optional 4D magnitude ──
@@ -353,7 +352,7 @@ fn run_field_mapping(
 }
 
 /// The optional 4D magnitude, one volume per phase echo.
-fn load_magnitudes(common: &FieldmapCommonArgs, n_echoes: usize) -> crate::Result<Option<Vec<Vec<f64>>>> {
+fn load_magnitudes(common: &FieldmapCommonArgs, n_echoes: usize) -> qsmxt_io::Result<Option<Vec<Vec<f64>>>> {
     let magnitudes: Option<Vec<Vec<f64>>> = if let Some(ref mag_path) = common.magnitude {
         let mag_me = load_nifti_4d(mag_path)?;
         if mag_me.echoes.len() != n_echoes {
@@ -376,7 +375,7 @@ fn scan_metadata(params: &ScanParams, phase_me: &MultiEcho) -> qsm_core::pipelin
     let voxel_size = params.voxel_size.unwrap_or(phase_me.voxel_size);
     let b0_direction = params
         .b0_direction
-        .unwrap_or_else(|| phase::b0_direction_from_affine(&phase_me.affine));
+        .unwrap_or_else(|| qsm_core::geometry::b0_direction_from_affine(&phase_me.affine));
     qsm_core::pipeline::config::ScanMetadata {
         dims: phase_me.dims,
         voxel_size,
@@ -395,7 +394,7 @@ fn save_complex_fit(
     common: &FieldmapCommonArgs,
     fit: Option<&qsm_core::utils::FitPpmComplexResult>,
     reference: &qsm_core::io::NiftiData,
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     if common.complex_fit_output.is_none() && common.complex_fit_noise_output.is_none() {
         return Ok(());
     }

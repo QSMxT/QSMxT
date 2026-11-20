@@ -14,7 +14,7 @@ use crate::bids::derivatives::DerivativeOutputs;
 use crate::bids::discovery::QsmRun;
 use crate::error::QsmxtError;
 use crate::nifti::write::{write_volume, write_volume_f64};
-use crate::pipeline::config::*;
+use qsmxt_engine::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use crate::pipeline::stats;
 use qsmxt_engine::plan::{Pass as EnginePass, Stage};

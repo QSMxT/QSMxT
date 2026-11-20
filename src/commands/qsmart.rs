@@ -11,8 +11,8 @@ use qsm_core::io::NiftiData;
 
 use super::common::{load_mask, load_nifti, load_nifti_4d, nifti_grid, save_nifti};
 use crate::cli::QsmartArgs;
-use crate::error::QsmxtError;
-use crate::pipeline::config;
+use qsmxt_io::error::QsmxtError;
+
 
 /// The file name (without extension) `--intermediates` writes a QSMART intermediate under: the
 /// artifact names (`localfield`, `chimap`) with the stage, as QSM-CI names them.
@@ -62,9 +62,9 @@ impl qsm_core::pipeline::Observer for IntermediateWriter<'_> {
 }
 
 /// The QSMART pipeline configuration the flags describe, as `qsmxt run` would hold it.
-fn pipeline_config(args: &QsmartArgs) -> crate::Result<config::PipelineConfig> {
-    let mut cfg = config::PipelineConfig::default();
-    cfg.inversion.algorithm = config::QsmAlgorithm::Qsmart;
+fn pipeline_config(args: &QsmartArgs) -> qsmxt_io::Result<qsmxt_engine::PipelineConfig> {
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    cfg.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Qsmart;
     // The QSMART settings' flags, applied as `qsmxt run` applies them.
     qsmxt_io::settings::apply(&mut cfg, &args.qsmart_settings.0)?;
     // The inner iLSQR's arithmetic is iLSQR's own setting, as in `qsmxt run`.
@@ -72,7 +72,7 @@ fn pipeline_config(args: &QsmartArgs) -> crate::Result<config::PipelineConfig> {
     Ok(cfg)
 }
 
-pub fn execute(args: QsmartArgs) -> crate::Result<()> {
+pub fn execute(args: QsmartArgs) -> qsmxt_io::Result<()> {
     let field = load_nifti(&args.input)?;
     let (mask, _) = load_mask(&args.mask)?;
     let grid = nifti_grid(&field);
@@ -88,16 +88,16 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let inv_config = qsmxt_engine::stages::qsmart::vessel_sizes_in_voxels(&cfg, voxel_size);
 
     let scan_meta =
-        config::to_scan_metadata(dims, voxel_size, &[args.echo_time], args.field_strength, b0, Some(field.affine));
+        qsmxt_engine::to_scan_metadata(dims, voxel_size, &[args.echo_time], args.field_strength, b0, Some(field.affine));
 
     let magnitude: Option<Vec<f64>> = match (&args.magnitude, cfg.inversion.qsmart.vessel_magnitude) {
-        (Some(p), config::QsmartVesselMagnitude::MeanN4) => {
+        (Some(p), qsmxt_engine::QsmartVesselMagnitude::MeanN4) => {
             let echoes = load_nifti_4d(p)?.echoes;
             let refs: Vec<&[f64]> = echoes.iter().map(|e| e.as_slice()).collect();
             Some(qsm_core::utils::qsmart_vessel_magnitude(&refs, &scan_meta.grid())
                 .map_err(|e| QsmxtError::Config(format!("--magnitude: {e}")))?)
         }
-        (Some(p), config::QsmartVesselMagnitude::Combined) => Some(load_nifti(p)?.data),
+        (Some(p), qsmxt_engine::QsmartVesselMagnitude::Combined) => Some(load_nifti(p)?.data),
         (None, _) => None,
     };
     let reliability = match &args.reliability {
@@ -111,7 +111,7 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let mut writer = args.intermediates.as_deref().map(|dir| IntermediateWriter {
         dir, reference: &field, written: Vec::new(), error: None,
     });
-    if let (Some(w), Some(m), config::QsmartVesselMagnitude::MeanN4) =
+    if let (Some(w), Some(m), qsmxt_engine::QsmartVesselMagnitude::MeanN4) =
         (writer.as_mut(), &magnitude, cfg.inversion.qsmart.vessel_magnitude)
     {
         // QSMART's own vessel magnitude, made here from the echoes.
@@ -193,7 +193,7 @@ mod tests {
             "--qsmart-offset-grid", "qsmart-reference",
         ]);
         assert_eq!((c.ilsqr_max_iter, c.ilsqr_pad_mm, c.vasc_sphere_radius), (7, 2.5, 5));
-        assert_eq!(c.inversion, crate::pipeline::config::QsmAlgorithm::Tv);
+        assert_eq!(c.inversion, qsmxt_engine::QsmAlgorithm::Tv);
         assert_eq!((c.sdf_sigma1_stage1, c.sdf_sigma2_stage1, c.sdf_sigma1_stage2, c.sdf_sigma2_stage2), (11.0, 1.5, 9.0, 0.5));
         assert_eq!((c.sdf_lower_lim, c.sdf_curv_constant), (0.45, 600.0));
         assert_eq!((c.frangi_scale_min, c.frangi_scale_max, c.frangi_scale_ratio), (1.5, 7.0, 1.0));

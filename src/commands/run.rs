@@ -3,12 +3,12 @@ use std::sync::Mutex;
 
 use log::{error, info, warn};
 
-use crate::bids::discovery::{self, DiscoveryFilter};
-use crate::bids::derivatives::DerivativeOutputs;
+use qsmxt_io::bids::discovery::{self, DiscoveryFilter};
+use qsmxt_io::bids::derivatives::DerivativeOutputs;
 use crate::cli::RunArgs;
-use crate::executor;
-use crate::pipeline::config::PipelineConfig;
-use crate::pipeline::memory;
+use qsmxt_io::executor;
+use qsmxt_engine::PipelineConfig;
+
 
 /// Where log records go besides stderr.
 pub(crate) enum LogSink {
@@ -76,11 +76,11 @@ pub(crate) fn init_logging(sink: LogSink, debug: bool) {
                 // The logger is process-global, so once a test has run the pipeline every later
                 // test's warnings would reach the test output (tens of thousands of lines from the
                 // TUI parity test alone). Tests keep only the log sink.
-            } else if crate::pipeline::runner::MULTI_PROGRESS.is_hidden() {
+            } else if qsmxt_io::pipeline::runner::MULTI_PROGRESS.is_hidden() {
                 let _ = writeln!(std::io::stderr(), "[{level:5} {}] {}",
                                  record.target(), record.args());
             } else {
-                let _ = crate::pipeline::runner::MULTI_PROGRESS.println(line);
+                let _ = qsmxt_io::pipeline::runner::MULTI_PROGRESS.println(line);
             }
             // Plain text to the log file
             log_line(&format!("[{level:5} {}] {}", record.target(), record.args()));
@@ -95,9 +95,9 @@ pub(crate) fn init_logging(sink: LogSink, debug: bool) {
 /// and `qsmxt aggregate`, so the three cannot disagree about what a set of flags means.
 pub(crate) fn build_config(
     config_file: Option<&std::path::Path>, settings: &crate::cli_settings::SettingsArgs,
-) -> crate::Result<PipelineConfig> {
+) -> qsmxt_io::Result<PipelineConfig> {
     let config = match config_file {
-        Some(path) => crate::pipeline::config::load_config(path)?,
+        Some(path) => qsmxt_io::pipeline::config::load_config(path)?,
         None => PipelineConfig::default(),
     };
     crate::cli_settings::build_config(config, settings)
@@ -122,7 +122,7 @@ pub(crate) use qsmxt_io::dataset::{
 #[cfg(test)]
 pub(crate) use qsmxt_io::dataset::current_run_records;
 
-pub fn execute(args: RunArgs) -> crate::Result<()> {
+pub fn execute(args: RunArgs) -> qsmxt_io::Result<()> {
     // Resolve output: <dir>/derivatives/qsmxt/. Both come from args alone, so this can happen
     // before anything else — which it must, because the logger writes there.
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
@@ -152,7 +152,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     }
 
     if args.no_dataset_steps && args.clean_intermediates {
-        return Err(crate::error::QsmxtError::Config(
+        return Err(qsmxt_io::error::QsmxtError::Config(
             "--clean-intermediates runs after the dataset-level steps, which --no-dataset-steps \
              skips (a multi-orientation group still needs its members' intermediates); pass it to \
              `qsmxt aggregate` instead".to_string(),
@@ -186,15 +186,15 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     };
 
     // Every requested output every run can produce, before any run starts (#193, #273).
-    crate::pipeline::requirements::check_runs(&runs, &config)?;
+    qsmxt_io::pipeline::requirements::check_runs(&runs, &config)?;
     // A DICOM SEG is drawn on another exported series: refuse a selection that leaves it none.
-    crate::dicom::export::check_outputs(args.dicom_outputs.as_deref(), &config).map_err(crate::error::QsmxtError::Config)?;
+    qsmxt_io::dicom::export::check_outputs(args.dicom_outputs.as_deref(), &config).map_err(qsmxt_io::error::QsmxtError::Config)?;
     // The orientation groups resolve now, not after hours of per-run pipelines: a reference that
     // matches no member would otherwise only surface at the fan-in. A worker sees only its share
     // of the runs, so its partial groups prove nothing; the aggregation step checks the whole.
     if !args.no_dataset_steps && !args.dry {
         orientation_groups(&runs, &config)
-            .map_err(crate::error::QsmxtError::Config)?;
+            .map_err(qsmxt_io::error::QsmxtError::Config)?;
     }
 
     // Count unique subjects
@@ -249,7 +249,7 @@ fn execution_parameters(args: &RunArgs) -> (usize, Option<u64>, String) {
     } else {
         // Auto-detect: what the system, or a Slurm job's or container's limit, leaves; 1 GB
         // reserved for the OS.
-        let available = memory::available_memory();
+        let available = qsmxt_io::pipeline::memory::available_memory();
         let reserved = 1024 * 1024 * 1024; // 1 GB
         (Some(available.bytes.saturating_sub(reserved)), available.describe())
     };
@@ -285,7 +285,7 @@ fn print_dry_run(
     for run in runs {
         let (nx, ny, nz) = run.dims;
         let n_coils = run.coils.as_ref().map_or(1, |c| c.len());
-        let est = memory::estimate_peak_memory_bytes(
+        let est = qsmxt_engine::memory::estimate_peak_memory_bytes(
             nx, ny, nz, run.echoes.len(), n_coils, run.has_magnitude, config,
         );
         println!(
@@ -295,10 +295,10 @@ fn print_dry_run(
             if n_coils > 1 { format!(" x {} uncombined coils (MCPC-3D-S)", n_coils) } else { String::new() },
             nx, ny, nz,
             run.magnetic_field_strength,
-            crate::pipeline::requirements::centre_frequency_note(run),
-            memory::format_bytes(est),
+            qsmxt_io::pipeline::requirements::centre_frequency_note(run),
+            qsmxt_engine::memory::format_bytes(est),
         );
-        if let Ok((_, changes)) = crate::pipeline::requirements::run_config(run, config) {
+        if let Ok((_, changes)) = qsmxt_io::pipeline::requirements::run_config(run, config) {
             for c in changes {
                 println!("    {}: {} → {} (the pipeline's on this scan)", c.label, c.from_text, c.to_text);
             }
@@ -312,7 +312,7 @@ fn print_dry_run(
         let per_run_max = runs
             .iter()
             .map(|r| {
-                memory::estimate_peak_memory_bytes(
+                qsmxt_engine::memory::estimate_peak_memory_bytes(
                     r.dims.0, r.dims.1, r.dims.2,
                     r.echoes.len(), r.coils.as_ref().map_or(1, |c| c.len()), r.has_magnitude, config,
                 )
@@ -325,7 +325,7 @@ fn print_dry_run(
         println!();
         println!(
             "Memory: {} available{}, max {} concurrent run(s)",
-            memory::format_bytes(mem),
+            qsmxt_engine::memory::format_bytes(mem),
             mem_limit_source,
             max_concurrent,
         );
@@ -337,7 +337,7 @@ fn run_pipelines(
     args: &RunArgs, derivatives_dir: &std::path::Path, config: &PipelineConfig,
     runs: &[discovery::QsmRun], n_subjects: usize, exec_config: executor::local::ExecutionConfig,
     accepted: &super::recommend::Accepted,
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     if args.no_dataset_steps {
         let path = worker_log_path(derivatives_dir, runs);
         if let Some(parent) = path.parent() {
@@ -417,8 +417,8 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     // throw away a dataset's worth of work.
     let mut group_failures = Vec::new();
     let mut prov_groups = Vec::new();
-    let mut group_keys: Vec<crate::bids::entities::AcquisitionKey> = Vec::new();
-    let mut combined: std::collections::HashMap<&crate::bids::entities::AcquisitionKey, String> =
+    let mut group_keys: Vec<qsmxt_io::bids::entities::AcquisitionKey> = Vec::new();
+    let mut combined: std::collections::HashMap<&qsmxt_io::bids::entities::AcquisitionKey, String> =
         std::collections::HashMap::new();
     if config.multi_orientation.enabled() {
         match orientation_groups(runs, config) {
@@ -435,17 +435,17 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
                     let members: Vec<&discovery::QsmRun> =
                         group.members.iter().map(|&i| &runs[i]).collect();
                     let progress = |msg: &str| info!("{msg}");
-                    match crate::pipeline::multiorient::reconstruct_group(
+                    match qsmxt_io::pipeline::multiorient::reconstruct_group(
                         group, &members, config, &output, force, &progress,
                     ) {
                         Ok(paths) => {
                             for p in paths {
                                 info!("  wrote {}", p.display());
                             }
-                            group_keys.push(crate::pipeline::multiorient::group_key(&members));
+                            group_keys.push(qsmxt_io::pipeline::multiorient::group_key(&members));
                             combined.extend(members.iter().map(|&m| (&m.key, group.label.clone())));
-                            prov_groups.push(crate::bids::bidsprov::ProvGroup {
-                                key: crate::pipeline::multiorient::group_key(&members),
+                            prov_groups.push(qsmxt_io::bids::bidsprov::ProvGroup {
+                                key: qsmxt_io::pipeline::multiorient::group_key(&members),
                                 magnetic_field_strength: members[0].magnetic_field_strength,
                             });
                         }
@@ -463,7 +463,7 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     // checked, since a record can still say an earlier fan-in combined it.
     for run in runs {
         let group = combined.get(&run.key).map(String::as_str);
-        if let Err(e) = crate::pipeline::runner::record_orientation_group(run, config, &output, group) {
+        if let Err(e) = qsmxt_io::pipeline::runner::record_orientation_group(run, config, &output, group) {
             warn!("{}: could not record its orientation group: {}", run.key, e);
         }
     }
@@ -475,7 +475,7 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     }
 
     // Every key with outputs: the runs, then the orientation groups.
-    let all_keys: Vec<crate::bids::entities::AcquisitionKey> = runs.iter().map(|r| r.key.clone())
+    let all_keys: Vec<qsmxt_io::bids::entities::AcquisitionKey> = runs.iter().map(|r| r.key.clone())
         .chain(group_keys.iter().cloned()).collect();
 
     // What each run's map was referenced to — written whether or not the statistics were asked
@@ -489,7 +489,7 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     // failure here must not fail an otherwise-successful run.
     if config.pipeline.do_analysis {
         let keys: Vec<_> = all_keys.iter().collect();
-        match crate::pipeline::stats::write_group_table(derivatives_dir, &output, &keys) {
+        match qsmxt_io::pipeline::stats::write_group_table(derivatives_dir, &output, &keys) {
             Ok(Some(path)) => {
                 info!("Per-structure statistics for all runs -> {}", path.display());
                 write_group_figures(derivatives_dir, &path);
@@ -502,7 +502,7 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     // Write BEP028 (BIDS-Prov) records and per-output GeneratedBy sidecars — last, so the
     // multi-orientation outputs are covered too. Best-effort: provenance output must never fail
     // an otherwise-successful run.
-    if let Err(e) = crate::bids::bidsprov::write_provenance(
+    if let Err(e) = qsmxt_io::bids::bidsprov::write_provenance(
         derivatives_dir, runs, &prov_groups, &output, command_line,
     ) {
         warn!("Failed to write BIDS-Prov provenance records: {}", e);
@@ -523,13 +523,13 @@ pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
 /// Report what failed, as the command's result.
 pub(crate) fn finish(
     run_failures: &[String], group_failures: &[String], derivatives_dir: &std::path::Path,
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     if !run_failures.is_empty() {
         error!("{} run(s) failed:", run_failures.len());
         for f in run_failures {
             error!("  {}", f);
         }
-        return Err(crate::error::QsmxtError::Algorithm {
+        return Err(qsmxt_io::error::QsmxtError::Algorithm {
             stage: "pipeline".to_string(),
             message: format!("{} run(s) failed: {}", run_failures.len(), run_failures.join("; ")),
         });
@@ -540,7 +540,7 @@ pub(crate) fn finish(
         for f in group_failures {
             error!("  {}", f);
         }
-        return Err(crate::error::QsmxtError::Algorithm {
+        return Err(qsmxt_io::error::QsmxtError::Algorithm {
             stage: "multi-orientation".to_string(),
             message: format!("{} orientation group(s) failed: {}", group_failures.len(), group_failures.join("; ")),
         });
@@ -556,7 +556,7 @@ pub(crate) fn finish(
 /// alone.
 fn print_planned(derivatives_dir: &std::path::Path, config: &PipelineConfig, runs: &[discovery::QsmRun]) {
     // A `--pipeline` is completed on each scan: show what the runs will run when they agree.
-    let config = &crate::pipeline::requirements::planned_config(config, runs);
+    let config = &qsmxt_io::pipeline::requirements::planned_config(config, runs);
     let output = DerivativeOutputs::new(derivatives_dir);
     if let Some(graph) = dataset_graph(config, runs) {
         println!();
@@ -566,24 +566,24 @@ fn print_planned(derivatives_dir: &std::path::Path, config: &PipelineConfig, run
     println!();
     println!("Methods (a run writes them to {}):", derivatives_dir.join("methods.md").display());
     println!();
-    print!("{}", crate::pipeline::methods::generate_methods(config));
+    print!("{}", qsmxt_engine::methods::generate_methods(config));
 }
 
 /// The orientation groups `config` forms over `runs`, each with its reference member first
 /// (`--orientation-reference`). Empty when multi-orientation is off.
 pub(crate) fn orientation_groups(
     runs: &[discovery::QsmRun],
-    config: &crate::pipeline::config::PipelineConfig,
-) -> Result<Vec<crate::bids::orientation::OrientationGroup>, String> {
+    config: &qsmxt_engine::PipelineConfig,
+) -> Result<Vec<qsmxt_io::bids::orientation::OrientationGroup>, String> {
     let m = &config.multi_orientation;
-    let Some(pattern) = crate::bids::orientation::parse_pattern(&m.group_by)? else {
+    let Some(pattern) = qsmxt_io::bids::orientation::parse_pattern(&m.group_by)? else {
         return Ok(Vec::new());
     };
-    let mut groups = crate::bids::orientation::group_runs(runs, &pattern);
+    let mut groups = qsmxt_io::bids::orientation::group_runs(runs, &pattern);
     let keys: Vec<String> = runs.iter().map(|r| r.key.to_string()).collect();
-    crate::bids::orientation::apply_reference(&mut groups, &keys, &m.reference)?;
+    qsmxt_io::bids::orientation::apply_reference(&mut groups, &keys, &m.reference)?;
     let run_keys: Vec<_> = runs.iter().map(|r| r.key.clone()).collect();
-    crate::bids::orientation::distinct_outputs(&groups, &run_keys)?;
+    qsmxt_io::bids::orientation::distinct_outputs(&groups, &run_keys)?;
     Ok(groups)
 }
 
@@ -595,12 +595,12 @@ pub(crate) fn orientation_groups(
 /// decides whether the reconstruction means anything.
 fn print_orientation_groups(
     runs: &[discovery::QsmRun],
-    config: &crate::pipeline::config::PipelineConfig,
+    config: &qsmxt_engine::PipelineConfig,
 ) -> Result<(), String> {
     if !config.multi_orientation.enabled() {
         return Ok(());
     }
-    let kind = crate::pipeline::multiorient::kind_of(config);
+    let kind = qsmxt_io::pipeline::multiorient::kind_of(config);
     let groups = orientation_groups(runs, config)?;
 
     println!();
@@ -615,8 +615,8 @@ fn print_orientation_groups(
     println!("Multi-orientation ({kind}), {} group(s):", groups.len());
     for group in &groups {
         let members: Vec<&discovery::QsmRun> = group.members.iter().map(|&i| &runs[i]).collect();
-        use crate::pipeline::multiorient::RegistrationPlan;
-        let (orientations, check, plan) = crate::pipeline::multiorient::preview_group(
+        use qsmxt_io::pipeline::multiorient::RegistrationPlan;
+        let (orientations, check, plan) = qsmxt_io::pipeline::multiorient::preview_group(
             &members, kind, config.multi_orientation.register,
         );
         // A group that will be registered must not be marked REFUSED on directions read off
@@ -628,7 +628,7 @@ fn print_orientation_groups(
             RegistrationPlan::NotNeeded => "REFUSED",
         };
         println!("  {} ({} orientations) [{mark}]", group.label, members.len());
-        for row in crate::multiorient::direction_table(&orientations) {
+        for row in qsmxt_io::multiorient::direction_table(&orientations) {
             println!("      {row}");
         }
         match plan {

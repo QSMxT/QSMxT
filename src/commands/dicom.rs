@@ -2,13 +2,14 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{mpsc, Arc};
 
 use crate::cli::DicomConvertArgs;
-use crate::dicom::{self, convert::ConvertMessage, unique_target_label};
-use crate::error::QsmxtError;
+use qsmxt_io::dicom;
+use qsmxt_io::dicom::{convert::ConvertMessage, unique_target_label};
+use qsmxt_io::error::QsmxtError;
 
 /// Non-interactive DICOM → BIDS conversion. Scans the directory, auto-classifies
 /// every series (best guess — same logic the TUI uses), prints the result, and
 /// converts. Use `--dry-run` to preview the classification without converting.
-pub fn execute(args: DicomConvertArgs) -> crate::Result<()> {
+pub fn execute(args: DicomConvertArgs) -> qsmxt_io::Result<()> {
     println!("Scanning {} for DICOM series...", args.dicom_dir.display());
     let session = dicom::scan_dicom_directory(&args.dicom_dir, Arc::new(AtomicUsize::new(0)))
         .map_err(QsmxtError::Dicom)?;
@@ -21,7 +22,7 @@ pub fn execute(args: DicomConvertArgs) -> crate::Result<()> {
         )));
     }
 
-    let plans = dicom::plan_session(&session);
+    let plans = qsmxt_engine::dicom::plan_session(&session);
     println!("\nDetected {} unique series (auto-classified):", unique.len());
     for line in classification_lines(&session, &unique, &plans) {
         println!("{line}");
@@ -68,7 +69,7 @@ pub fn execute(args: DicomConvertArgs) -> crate::Result<()> {
 
 /// One line per unique series: acquisition, description, type, echoes, coils, subjects, and the
 /// name it gets.
-pub fn classification_lines(session: &dicom::DicomSession, unique: &[dicom::UniqueSeries], plans: &[dicom::SeriesPlan]) -> Vec<String> {
+pub fn classification_lines(session: &qsmxt_engine::dicom::DicomSession, unique: &[qsmxt_engine::dicom::UniqueSeries], plans: &[qsmxt_engine::dicom::SeriesPlan]) -> Vec<String> {
     unique
         .iter()
         .map(|g| {
@@ -80,7 +81,7 @@ pub fn classification_lines(session: &dicom::DicomSession, unique: &[dicom::Uniq
             };
             let n_subjects = g.subject_count();
             let subjects = if n_subjects > 1 { format!(" ×{} subjects", n_subjects) } else { String::new() };
-            let coil = if s.coil_type == dicom::CoilType::Uncombined {
+            let coil = if s.coil_type == qsmxt_engine::dicom::CoilType::Uncombined {
                 format!(" (uncombined, {} coils)", s.coil_groups.len())
             } else {
                 String::new()
@@ -96,7 +97,7 @@ pub fn classification_lines(session: &dicom::DicomSession, unique: &[dicom::Uniq
 }
 
 /// The scan's warnings, notes and skipped series.
-pub fn report_lines(r: &dicom::ScanReport) -> Vec<String> {
+pub fn report_lines(r: &qsmxt_engine::dicom::ScanReport) -> Vec<String> {
     let mut out = Vec::new();
     if r.not_dicom > 0 {
         out.push(format!("\n{} file{} not DICOM and {} ignored.", r.not_dicom, if r.not_dicom == 1 { " is" } else { "s are" }, if r.not_dicom == 1 { "was" } else { "were" }));
@@ -121,8 +122,9 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
 
-    use crate::dicom::synth::write_fixture;
-    use crate::dicom::{plan_session, scan_dicom_directory};
+    use qsmxt_io::dicom::synth::write_fixture;
+    use qsmxt_engine::dicom::plan_session;
+    use qsmxt_io::dicom::scan_dicom_directory;
 
     #[test]
     fn convert_command_dry_run_lists_names() {

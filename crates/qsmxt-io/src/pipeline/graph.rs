@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bids::entities::AcquisitionKey;
 use crate::error::QsmxtError;
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 use qsmxt_engine::cache::config_hash;
 pub use qsmxt_engine::cache::step_params_hash;
 
@@ -583,7 +583,7 @@ mod tests {
     fn test_config_change_preserves_state_with_per_step_invalidation() {
         let config1 = PipelineConfig::default();
         let mut config2 = PipelineConfig::default();
-        config2.inversion.algorithm = crate::pipeline::config::QsmAlgorithm::Tkd;
+        config2.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Tkd;
 
         let key = AcquisitionKey {
             subject: "01".to_string(),
@@ -753,7 +753,7 @@ mod tests {
         assert!(!back.completed_steps["reference"].outputs_removed);
         assert!(back.is_step_cached("unwrap"));
         let mut other = config.clone();
-        other.inversion.algorithm = crate::pipeline::config::QsmAlgorithm::Tkd;
+        other.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Tkd;
         let mut back = PipelineState::load_or_create(&state_path, &other, &key, false);
         assert!(!back.is_step_cached("unwrap"));
         assert!(back.is_step_cached("reference"), "a final step's own cache is not touched");

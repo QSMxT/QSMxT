@@ -3,8 +3,9 @@ use rayon::prelude::*;
 
 use crate::bids::derivatives::DerivativeOutputs;
 use crate::bids::discovery::QsmRun;
-use crate::pipeline::config::PipelineConfig;
-use crate::pipeline::{memory, runner};
+use qsmxt_engine::PipelineConfig;
+use crate::pipeline::runner;
+use qsmxt_engine::memory;
 
 /// Configuration for local execution.
 pub struct ExecutionConfig {
@@ -155,8 +156,8 @@ fn segmentation_export(config: &PipelineConfig, supplied: bool) -> Option<crate:
         _ => crate::dicom::export::SegmentationExport {
             synthseg: true,
             algorithm: match seg.version {
-                crate::pipeline::config::SynthSegVersion::V1 => "SynthSeg 1.0".into(),
-                crate::pipeline::config::SynthSegVersion::V2 => "SynthSeg 2.0".into(),
+                qsmxt_engine::SynthSegVersion::V1 => "SynthSeg 1.0".into(),
+                qsmxt_engine::SynthSegVersion::V2 => "SynthSeg 2.0".into(),
             },
         },
     })

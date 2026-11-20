@@ -18,11 +18,11 @@ use crate::cli::{
     SeparateChiSepNetArgs, SeparateDecomposeArgs, SeparateHcChisepArgs, SeparateR2starQsmArgs,
     SeparateSusepNetArgs, SeparateWavesepArgs,
 };
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 
 /// Write the three chi-separation maps under the output prefix.
-fn save_result(output: &Path, result: &SeparationResult, reference: &NiftiData) -> crate::Result<()> {
-    use crate::bids::naming;
+fn save_result(output: &Path, result: &SeparationResult, reference: &NiftiData) -> qsmxt_io::Result<()> {
+    use qsmxt_io::bids::naming;
     let para = naming::nifti_beside(output, &naming::chi_paramagnetic());
     let dia = naming::nifti_beside(output, &naming::chi_diamagnetic());
     let total = naming::nifti_beside(output, &naming::chi_total());
@@ -41,7 +41,7 @@ fn save_result(output: &Path, result: &SeparationResult, reference: &NiftiData) 
 /// Load the QSM + mask and build scan metadata from the common args + echo times.
 fn load_common(
     c: &SeparateCommonArgs, echo_times: &[f64],
-) -> crate::Result<(NiftiData, Vec<u8>, ScanMetadata, usize)> {
+) -> qsmxt_io::Result<(NiftiData, Vec<u8>, ScanMetadata, usize)> {
     let qsm = load_nifti(&c.qsm)?;
     let (mask, _) = load_mask(&c.mask)?;
     let n_voxels = qsm.data.len();
@@ -53,7 +53,7 @@ fn load_common(
 }
 
 /// Ensure the magnitude echo count matches the number of echo times.
-fn check_echoes(n_echoes: usize, metadata: &ScanMetadata, method: &str) -> crate::Result<()> {
+fn check_echoes(n_echoes: usize, metadata: &ScanMetadata, method: &str) -> qsmxt_io::Result<()> {
     if metadata.echo_times.is_empty() {
         return Err(QsmxtError::Config(format!("{} needs --echo-times", method)));
     }
@@ -67,7 +67,7 @@ fn check_echoes(n_echoes: usize, metadata: &ScanMetadata, method: &str) -> crate
 /// What a separation gives back: the output prefix, the reference NIfTI, and the result.
 type Separated = (std::path::PathBuf, NiftiData, SeparationResult);
 
-pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
+pub fn execute(cmd: SeparateCommand) -> qsmxt_io::Result<()> {
     // Each arm loads its inputs, runs the method, and yields (output prefix, reference NIfTI,
     // result); the three maps are written once at the end (mirrors `invert`'s single-save tail).
     let (output, reference, result) = match cmd {
@@ -84,7 +84,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
     Ok(())
 }
 
-fn r2star_qsm(args: SeparateR2starQsmArgs) -> crate::Result<Separated> {
+fn r2star_qsm(args: SeparateR2starQsmArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
     let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
     info!("Chi-separation (r2star-qsm, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
@@ -118,7 +118,7 @@ fn r2star_qsm(args: SeparateR2starQsmArgs) -> crate::Result<Separated> {
     Ok((c.output.clone(), qsm, result))
 }
 
-fn decompose(args: SeparateDecomposeArgs) -> crate::Result<Separated> {
+fn decompose(args: SeparateDecomposeArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
     let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
     info!("Chi-separation (decompose, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
@@ -162,7 +162,7 @@ fn decompose(args: SeparateDecomposeArgs) -> crate::Result<Separated> {
     Ok((c.output.clone(), qsm, result))
 }
 
-fn chi_sep_ilsqr(args: SeparateChiSepIlsqrArgs) -> crate::Result<Separated> {
+fn chi_sep_ilsqr(args: SeparateChiSepIlsqrArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
     let (qsm, mask, metadata, _) = load_common(c, &[])?;
     info!("Chi-separation (chi-sep-ilsqr, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
@@ -200,7 +200,7 @@ fn chi_sep_ilsqr(args: SeparateChiSepIlsqrArgs) -> crate::Result<Separated> {
     Ok((c.output.clone(), qsm, result))
 }
 
-fn chi_sep_medi(args: SeparateChiSepMediArgs) -> crate::Result<Separated> {
+fn chi_sep_medi(args: SeparateChiSepMediArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
     let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
     info!("Chi-separation (chi-sep-medi, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
@@ -267,7 +267,7 @@ fn chi_sep_medi(args: SeparateChiSepMediArgs) -> crate::Result<Separated> {
     Ok((c.output.clone(), qsm, result))
 }
 
-fn wavesep(args: SeparateWavesepArgs) -> crate::Result<Separated> {
+fn wavesep(args: SeparateWavesepArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
     let (qsm, mask, metadata, _) = load_common(c, &[])?;
     info!("Chi-separation (wavesep, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
@@ -296,7 +296,7 @@ fn wavesep(args: SeparateWavesepArgs) -> crate::Result<Separated> {
     Ok((c.output.clone(), qsm, result))
 }
 
-fn hc_chisep(args: SeparateHcChisepArgs) -> crate::Result<Separated> {
+fn hc_chisep(args: SeparateHcChisepArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
     let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
     info!("Chi-separation (hc-chisep, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
@@ -330,11 +330,11 @@ fn hc_chisep(args: SeparateHcChisepArgs) -> crate::Result<Separated> {
     Ok((c.output.clone(), qsm, result))
 }
 
-fn susep_net(args: SeparateSusepNetArgs) -> crate::Result<Separated> {
+fn susep_net(args: SeparateSusepNetArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
     let (qsm, mask, metadata, _) = load_common(c, &[])?;
     info!("Chi-separation (susep-net, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
-    crate::pipeline::runner::prefetch_weights("susep-net", "susep-net")?;
+    qsmxt_io::pipeline::runner::prefetch_weights("susep-net", "susep-net")?;
     let local_field = load_nifti(&args.local_field)?;
     let r2prime = load_nifti(&args.r2prime)?;
     // Weights download on first use.
@@ -353,7 +353,7 @@ fn susep_net(args: SeparateSusepNetArgs) -> crate::Result<Separated> {
     Ok((c.output.clone(), qsm, result))
 }
 
-fn chi_sep_net(args: SeparateChiSepNetArgs) -> crate::Result<Separated> {
+fn chi_sep_net(args: SeparateChiSepNetArgs) -> qsmxt_io::Result<Separated> {
     use qsm_core::separation::ChiSepNetRoute;
     let route = match args.route {
         crate::cli::ChiSepNetRouteArg::Toolbox => ChiSepNetRoute::Toolbox,
@@ -389,11 +389,11 @@ fn chi_sep_net(args: SeparateChiSepNetArgs) -> crate::Result<Separated> {
     }
     let r2prime = args.r2prime.as_ref().map(|p| load_nifti(p)).transpose()?;
     let r2star = args.r2star.as_ref().map(|p| load_nifti(p)).transpose()?;
-    crate::pipeline::runner::prefetch_weights("chi-sepnet", "chi-sepnet")?;
+    qsmxt_io::pipeline::runner::prefetch_weights("chi-sepnet", "chi-sepnet")?;
     if route == ChiSepNetRoute::Toolbox {
-        crate::pipeline::runner::prefetch_weights("qsmnetme", "QSMnetME")?;
+        qsmxt_io::pipeline::runner::prefetch_weights("qsmnetme", "QSMnetME")?;
         if r2prime.is_none() {
-            crate::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
+            qsmxt_io::pipeline::runner::prefetch_weights("r2primenet", "R2PRIMEnet")?;
         }
     }
     let cfg = SeparationConfig {

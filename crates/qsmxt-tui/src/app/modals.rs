@@ -101,7 +101,7 @@ pub enum AlgoModalTarget {
     MaskRefinementThresholdMethod { section: usize, index: usize },
     /// The type of a refinement step to add to a section ([`MaskRecipe::available_op_types`]).
     MaskAddStep(usize),
-    /// The type of the focused DICOM series (Input tab, DICOM mode), in [`dicom::SeriesType::ALL`]'s order.
+    /// The type of the focused DICOM series (Input tab, DICOM mode), in [`qsmxt_engine::dicom::SeriesType::ALL`]'s order.
     DicomSeriesType,
 }
 
@@ -276,7 +276,7 @@ impl App {
                 }
             }
             AlgoModalTarget::DicomSeriesType => {
-                if let Some(&t) = dicom::SeriesType::ALL.get(m.cursor) { self.set_focused_unique_series_type(t); }
+                if let Some(&t) = qsmxt_engine::dicom::SeriesType::ALL.get(m.cursor) { self.set_focused_unique_series_type(t); }
             }
         }
     }

@@ -281,7 +281,7 @@ fn plus_and_minus_nudge_mask_numbers() {
 /// A DICOM series' type is chosen from a list (Enter), current type highlighted; ←/→ leave it.
 #[test]
 fn a_dicom_series_type_is_chosen_from_a_list() {
-    use qsmxt_io::dicom::{DicomAcquisition, DicomSeries, DicomSession, DicomStudy, DicomSubject, SeriesType};
+    use qsmxt_engine::dicom::{DicomAcquisition, DicomSeries, DicomSession, DicomStudy, DicomSubject, SeriesType};
     let mut app = App::new();
     app.input_mode = InputMode::DicomToBids;
     app.active_tab = TAB_INPUT;

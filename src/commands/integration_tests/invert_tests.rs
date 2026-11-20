@@ -16,7 +16,7 @@ fn test_phase_net_subcommands_load_every_echo() {
     let mag = qsm_core::io::read_nifti_file(&p("m1.nii")).unwrap();
     let half: Vec<f64> = ph.data.iter().map(|v| v / 2.0).collect();
     let w = |name: &str, vols: &[&[f64]]| {
-        crate::nifti::write::write_volumes_4d(&p(name), vols, ph.dims, ph.voxel_size, &ph.affine).unwrap();
+        qsmxt_io::nifti::write::write_volumes_4d(&p(name), vols, ph.dims, ph.voxel_size, &ph.affine).unwrap();
         p(name).display().to_string()
     };
     let (phase, magnitude) = (w("phase.nii", &[&ph.data, &half]), w("mag.nii", &[&mag.data, &mag.data]));

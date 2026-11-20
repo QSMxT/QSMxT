@@ -54,13 +54,13 @@ fn test_slurm_writes_requested_pipeline_config() {
     }).unwrap();
 
     let written = std::fs::read_to_string(out.join("derivatives/qsmxt/pipeline_config.toml")).unwrap();
-    let config: crate::pipeline::config::PipelineConfig = toml::from_str(&written).unwrap();
-    assert_eq!(config.inversion.algorithm, crate::pipeline::config::QsmAlgorithm::Tkd);
+    let config: qsmxt_engine::PipelineConfig = toml::from_str(&written).unwrap();
+    assert_eq!(config.inversion.algorithm, qsmxt_engine::QsmAlgorithm::Tkd);
     assert_eq!(
         config.field_mapping.unwrapping_algorithm,
-        crate::pipeline::config::UnwrappingAlgorithm::Laplacian
+        qsmxt_engine::UnwrappingAlgorithm::Laplacian
     );
-    assert_eq!(config.bg_removal.algorithm, crate::pipeline::config::BfAlgorithm::Pdf);
+    assert_eq!(config.bg_removal.algorithm, qsmxt_engine::BfAlgorithm::Pdf);
 }
 
 /// The words of a generated job's command, as bash would split them: single-quoted strings

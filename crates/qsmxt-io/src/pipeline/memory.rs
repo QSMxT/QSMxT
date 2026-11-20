@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-pub use qsmxt_engine::memory::*;
+use qsmxt_engine::memory::*;
 
 /// Memory this process can use, and what limited it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

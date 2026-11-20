@@ -54,7 +54,7 @@ use crate::multiorient::{
     check_directions, DirectionSource, MultiOrientKind, Orientation, MIN_SPREAD_DEG,
 };
 use qsm_core::registration::{register_rigid, RigidParams, RigidTransform};
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
 mod reconstruct;
 pub use reconstruct::reconstruct_group;
@@ -202,8 +202,8 @@ pub fn preview_group(
 /// Which reconstruction the config asks for.
 pub fn kind_of(config: &PipelineConfig) -> MultiOrientKind {
     match config.multi_orientation.algorithm {
-        crate::pipeline::config::MultiOrientAlgorithm::Cosmos => MultiOrientKind::Cosmos,
-        crate::pipeline::config::MultiOrientAlgorithm::Sti => MultiOrientKind::Sti,
+        qsmxt_engine::MultiOrientAlgorithm::Cosmos => MultiOrientKind::Cosmos,
+        qsmxt_engine::MultiOrientAlgorithm::Sti => MultiOrientKind::Sti,
     }
 }
 
@@ -1006,7 +1006,7 @@ mod tests {
         assert!(m.validate().unwrap_err().contains("--cosmos-magnitude-weighting"));
         m.magnitude_weighting = true;
         assert!(m.validate().is_ok());
-        m.algorithm = crate::pipeline::config::MultiOrientAlgorithm::Sti;
+        m.algorithm = qsmxt_engine::MultiOrientAlgorithm::Sti;
         assert!(m.validate().unwrap_err().contains("STI"));
     }
 

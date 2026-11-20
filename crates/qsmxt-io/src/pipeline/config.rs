@@ -1,11 +1,11 @@
-//! The pipeline configuration: qsmxt-engine's, with the checks and mappings a run's settings go
-//! through before it starts. The binary's `pipeline::config` adds the command-line mapping.
+//! The checks and mappings a run's settings go through before it starts, and loading a settings
+//! file. The configuration itself is qsmxt-engine's ([`qsmxt_engine::PipelineConfig`]).
 
 use std::path::Path;
 
 use crate::error::QsmxtError;
 
-pub use qsmxt_engine::*;
+use qsmxt_engine::*;
 
 /// The log target these messages have always had (they were the binary's `pipeline::config`).
 const LOG_TARGET: &str = "qsmxt::pipeline::config";

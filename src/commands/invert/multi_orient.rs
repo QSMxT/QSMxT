@@ -1,6 +1,6 @@
 use log::{info, warn};
 use super::common::{load_nifti, load_mask, save_nifti};
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 
 // ─── Multi-orientation reconstructions (COSMOS, STI) ───
 
@@ -9,7 +9,7 @@ use crate::error::QsmxtError;
 /// Deliberately forgiving about the separator — people produce these with `awk`, a
 /// spreadsheet export, or by hand — but strict about the shape, because a row that is not
 /// three numbers means the file is not what the user thinks it is.
-fn read_b0_dirs_file(path: &std::path::Path) -> crate::Result<Vec<(f64, f64, f64)>> {
+fn read_b0_dirs_file(path: &std::path::Path) -> qsmxt_io::Result<Vec<(f64, f64, f64)>> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| QsmxtError::Config(format!("{}: {}", path.display(), e)))?;
     let mut dirs = Vec::new();
@@ -44,7 +44,7 @@ struct MultiOrientInputs {
     mask: Vec<u8>,
     grid: qsm_core::Grid,
     reference: qsm_core::io::NiftiData,
-    orientations: Vec<crate::multiorient::Orientation>,
+    orientations: Vec<qsmxt_io::multiorient::Orientation>,
 }
 
 /// Load N field maps, resolve their B0 directions, and refuse a set that cannot support the
@@ -55,9 +55,9 @@ struct MultiOrientInputs {
 /// being silently treated as aligned when they are not.
 fn load_multiorient(
     c: crate::cli::MultiOrientCommonArgs,
-    kind: crate::multiorient::MultiOrientKind,
-) -> crate::Result<MultiOrientInputs> {
-    use crate::multiorient::{check_directions, direction_table, resolve_directions, DirectionSource};
+    kind: qsmxt_io::multiorient::MultiOrientKind,
+) -> qsmxt_io::Result<MultiOrientInputs> {
+    use qsmxt_io::multiorient::{check_directions, direction_table, resolve_directions, DirectionSource};
 
     let n = c.inputs.len();
 
@@ -158,8 +158,8 @@ fn load_multiorient(
     Ok(MultiOrientInputs { fields, mask, grid, reference, orientations })
 }
 
-pub(super) fn run_cosmos(args: crate::cli::InvertCosmosArgs) -> crate::Result<()> {
-    use crate::multiorient::MultiOrientKind;
+pub(super) fn run_cosmos(args: crate::cli::InvertCosmosArgs) -> qsmxt_io::Result<()> {
+    use qsmxt_io::multiorient::MultiOrientKind;
 
     let out = args.output.clone();
     let magnitudes = args.magnitudes.clone();
@@ -204,8 +204,8 @@ pub(super) fn run_cosmos(args: crate::cli::InvertCosmosArgs) -> crate::Result<()
     Ok(())
 }
 
-pub(super) fn run_sti(args: crate::cli::InvertStiArgs) -> crate::Result<()> {
-    use crate::multiorient::MultiOrientKind;
+pub(super) fn run_sti(args: crate::cli::InvertStiArgs) -> qsmxt_io::Result<()> {
+    use qsmxt_io::multiorient::MultiOrientKind;
 
     let prefix = args.output.clone();
     let inputs = load_multiorient(args.common, MultiOrientKind::Sti)?;
@@ -221,22 +221,22 @@ pub(super) fn run_sti(args: crate::cli::InvertStiArgs) -> crate::Result<()> {
 
     // The pipeline's names and layout (`bids::naming`): one 4D tensor with its component order in
     // the sidecar, the scalar MMS and MSA maps, and one 4D eigenvector.
-    use crate::bids::naming;
+    use qsmxt_io::bids::naming;
     let r = &inputs.reference;
-    let write_4d = |tail: &naming::Tail, volumes: &[Vec<f64>], sidecar: serde_json::Value| -> crate::Result<()> {
+    let write_4d = |tail: &naming::Tail, volumes: &[Vec<f64>], sidecar: serde_json::Value| -> qsmxt_io::Result<()> {
         let path = naming::nifti_beside(&prefix, tail);
         let vols: Vec<&[f64]> = volumes.iter().map(|v| v.as_slice()).collect();
-        crate::nifti::write::write_volumes_4d(&path, &vols, r.dims, r.voxel_size, &r.affine)?;
-        if let Some(js) = crate::bids::entities::sidecar_path(&path) {
+        qsmxt_io::nifti::write::write_volumes_4d(&path, &vols, r.dims, r.voxel_size, &r.affine)?;
+        if let Some(js) = qsmxt_io::bids::entities::sidecar_path(&path) {
             std::fs::write(js, serde_json::to_string_pretty(&sidecar).unwrap_or_default())?;
         }
         Ok(())
     };
     write_4d(&naming::sti_tensor(), &tensor.components,
-             serde_json::Value::Object(crate::pipeline::multiorient::tensor_sidecar_fields()))?;
+             serde_json::Value::Object(qsmxt_io::pipeline::multiorient::tensor_sidecar_fields()))?;
     save_nifti(&naming::nifti_beside(&prefix, &naming::sti_mms()), &maps.mms, r)?;
     save_nifti(&naming::nifti_beside(&prefix, &naming::sti_msa()), &maps.msa, r)?;
-    write_4d(&naming::sti_eigenvector(), &maps.pev, crate::pipeline::multiorient::eigenvector_sidecar())?;
+    write_4d(&naming::sti_eigenvector(), &maps.pev, qsmxt_io::pipeline::multiorient::eigenvector_sidecar())?;
     info!(target: super::LOG_TARGET,
         "Tensor, MMS, MSA and principal eigenvector saved with prefix {}",
         prefix.display()

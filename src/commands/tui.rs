@@ -5,7 +5,7 @@
 use crate::cli::{RunArgs, SlurmArgs, UpdateArgs};
 use qsmxt_tui::{Outcome, RunOptions, SlurmOptions};
 
-pub fn execute() -> crate::Result<()> {
+pub fn execute() -> qsmxt_io::Result<()> {
     match qsmxt_tui::run_tui()? {
         Outcome::Quit => Ok(()),
         Outcome::Update => {

@@ -45,8 +45,8 @@ pub fn chi_bound_index(b: qsmxt_engine::ChiBoundChoice) -> usize {
 pub fn qsm_ref_options() -> &'static [&'static str] { crate::settings_rows::options("qsm.reference").0 }
 
 /// The output a checkbox asks for, when another option can force that output on.
-fn forced_output(field: &str) -> Option<qsmxt_io::pipeline::requirements::Output> {
-    qsmxt_io::pipeline::requirements::Output::of_setting(&format!("pipeline.{field}"))
+fn forced_output(field: &str) -> Option<qsmxt_engine::requirements::Output> {
+    qsmxt_engine::requirements::Output::of_setting(&format!("pipeline.{field}"))
 }
 
 impl App {
@@ -95,18 +95,18 @@ impl App {
     /// The run's own rule (`requirements::implied_by` on the resolved config), so what the run
     /// makes, the refusal to untick it and the required-change pop-up cannot disagree: a supplied map
     /// (custom dseg, R2 or R2') satisfies the need and forces nothing.
-    fn forced_by(&self, out: qsmxt_io::pipeline::requirements::Output) -> Option<String> {
+    fn forced_by(&self, out: qsmxt_engine::requirements::Output) -> Option<String> {
         // On the config as the run takes it: an output needed by one that is itself needed (R2
         // for an R2′ that χ-separation needs) counts.
         let config = crate::command::config_from_app(self).ok()?.normalised().0;
-        qsmxt_io::pipeline::requirements::implied_by(&config, out)
+        qsmxt_engine::requirements::implied_by(&config, out)
     }
 
     /// [`Self::forced_by`], naming the setting by its label rather than its flag ("Reference =
     /// ventricles").
-    fn forced_by_label(&self, out: qsmxt_io::pipeline::requirements::Output) -> Option<String> {
+    fn forced_by_label(&self, out: qsmxt_engine::requirements::Output) -> Option<String> {
         let config = crate::command::config_from_app(self).ok()?.normalised().0;
-        qsmxt_io::pipeline::requirements::implied_by_label(&config, out)
+        qsmxt_engine::requirements::implied_by_label(&config, out)
     }
 
     /// A text field's value, by name: the run form's, the Input tab's, else the pipeline form's.
@@ -215,7 +215,7 @@ impl App {
     pub fn output_made(&self, field: &str) -> bool {
         if field == "do_segmentation" {
             return self.field_toggle(field)
-                || self.forced_by(qsmxt_io::pipeline::requirements::Output::Segmentation).is_some();
+                || self.forced_by(qsmxt_engine::requirements::Output::Segmentation).is_some();
         }
         if field == "do_qsm" && !self.form.settings.toggle("pipeline.do_qsm") {
             return self.row_context().qsm_forced_by.is_some();
@@ -266,7 +266,7 @@ impl App {
             // What needs a segmentation whichever its source: asked with no dseg supplied.
             let kept = self.form.settings.clone();
             self.form.settings.reset(DSEG, false);
-            let why = self.forced_by_label(qsmxt_io::pipeline::requirements::Output::Segmentation);
+            let why = self.forced_by_label(qsmxt_engine::requirements::Output::Segmentation);
             self.form.settings = kept;
             if let Some(why) = why {
                 self.error_message = Some(format!(

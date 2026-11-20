@@ -213,7 +213,7 @@ pub const SEG_REFERENCES: [&str; 12] = [
 
 /// Refuse, before a run, a DICOM export that selects the segmentation (`dseg`) and none of the
 /// maps its SEG could be drawn on ([`SEG_REFERENCES`]) among those the run makes.
-pub fn check_outputs(filter: Option<&[String]>, config: &crate::pipeline::config::PipelineConfig) -> Result<(), String> {
+pub fn check_outputs(filter: Option<&[String]>, config: &qsmxt_engine::PipelineConfig) -> Result<(), String> {
     let Some(filter) = filter else { return Ok(()) };
     let p = &config.pipeline;
     let segmentation = p.do_segmentation || config.segmentation.custom_dseg_tool.is_some();
@@ -1064,7 +1064,7 @@ mod tests {
     /// A run refuses a DICOM export that selects the segmentation and nothing to draw it on.
     #[test]
     fn dseg_alone_is_refused_before_the_run() {
-        let mut config = crate::pipeline::config::PipelineConfig::default();
+        let mut config = qsmxt_engine::PipelineConfig::default();
         config.pipeline.export_dicom = true;
         config.pipeline.do_segmentation = true;
         let f = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();

@@ -1,5 +1,5 @@
 use crate::cli::UpdateArgs;
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 pub use qsmxt_io::version::{describe_version, SOURCE_COMMIT};
 use qsmxt_io::version::{strip_v, unreleased};
 // The release lookup and the TUI's check live in qsmxt-io; under the same paths here.
@@ -37,7 +37,7 @@ fn download_to(
     url: &str,
     dest: &std::path::Path,
     on_progress: &mut dyn FnMut(u64, u64),
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     let response = ureq::get(url)
         .set("User-Agent", USER_AGENT)
         .call()
@@ -87,7 +87,7 @@ fn download_to(
 }
 
 /// Detects the install directory (directory containing the current executable).
-fn install_dir() -> crate::Result<std::path::PathBuf> {
+fn install_dir() -> qsmxt_io::Result<std::path::PathBuf> {
     let exe = env::current_exe().map_err(|e| {
         QsmxtError::Update(format!("Cannot determine current executable path: {}", e))
     })?;
@@ -97,7 +97,7 @@ fn install_dir() -> crate::Result<std::path::PathBuf> {
 }
 
 /// Detects OS/arch target triple (matching install.sh conventions).
-fn detect_target() -> crate::Result<&'static str> {
+fn detect_target() -> qsmxt_io::Result<&'static str> {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     { return Ok("x86_64-unknown-linux-musl"); }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
@@ -137,7 +137,7 @@ fn archive_name(tag: &str, target: &str, ext: &str) -> String {
 /// ignores blank lines. A malformed line is an error rather than something to skip: a
 /// manifest we cannot read is not one we can trust. So is an asset listed twice with
 /// different digests.
-pub fn expected_sha256(manifest: &str, asset: &str) -> crate::Result<String> {
+pub fn expected_sha256(manifest: &str, asset: &str) -> qsmxt_io::Result<String> {
     let mut found: Option<String> = None;
     for (i, line) in manifest.lines().enumerate() {
         let line = line.trim_end_matches('\r');
@@ -179,7 +179,7 @@ pub fn expected_sha256(manifest: &str, asset: &str) -> crate::Result<String> {
 }
 
 /// Fetches the release's `SHA256SUMS` manifest as text.
-fn fetch_checksums(url: &str) -> crate::Result<String> {
+fn fetch_checksums(url: &str) -> qsmxt_io::Result<String> {
     let response = ureq::get(url).set("User-Agent", USER_AGENT).call().map_err(|e| {
         QsmxtError::Update(format!(
             "Could not download {} ({}): {}. Refusing to install an unverified binary",
@@ -208,13 +208,13 @@ fn download_verified(
     asset: &str,
     dest: &std::path::Path,
     on_progress: &mut dyn FnMut(u64, u64),
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     let manifest = fetch_checksums(&format!("{}/{}", base, CHECKSUMS_ASSET))?;
     let expected = expected_sha256(&manifest, asset)?;
 
     download_to(&format!("{}/{}", base, asset), dest, on_progress)?;
 
-    let actual = crate::example::download::sha256_file(dest).map_err(|e| {
+    let actual = qsmxt_io::example::download::sha256_file(dest).map_err(|e| {
         QsmxtError::Update(format!("Failed to checksum {}: {}", dest.display(), e))
     })?;
     if actual != expected {
@@ -229,7 +229,7 @@ fn download_verified(
 }
 
 /// Downloads and installs the release for the given tag.
-fn install_release(tag: &str) -> crate::Result<()> {
+fn install_release(tag: &str) -> qsmxt_io::Result<()> {
     let target = detect_target()?;
 
     #[cfg(target_os = "windows")]
@@ -332,7 +332,7 @@ fn install_release(tag: &str) -> crate::Result<()> {
 }
 
 /// Replaces the running qsmxt with the binary at `extracted`, and returns where it went.
-fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathBuf> {
+fn install_binary(extracted: &std::path::Path) -> qsmxt_io::Result<std::path::PathBuf> {
     let dir = install_dir()?;
 
     #[cfg(target_os = "windows")]
@@ -430,7 +430,7 @@ fn install_binary(extracted: &std::path::Path) -> crate::Result<std::path::PathB
 /// Copy `extracted` to `staged`, in the destination directory `dir`.
 fn stage_binary(
     extracted: &std::path::Path, staged: &std::path::Path, dir: &std::path::Path,
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     // Stage next to `dest`, falling back to sudo when the directory isn't
     // writable by the current user. std::fs::copy preserves the file mode, so
     // the staged binary keeps its executable bit.
@@ -478,7 +478,7 @@ fn install_bundled_dcm2niix(extract_dir: &std::path::Path) {
         return; // no bundled dcm2niix for this target
     }
 
-    let Some(bin_dir) = crate::dicom::convert::qsmxt_bin_dir() else {
+    let Some(bin_dir) = qsmxt_io::dicom::convert::qsmxt_bin_dir() else {
         eprintln!("Warning: could not determine ~/.qsmxt/bin; skipping bundled dcm2niix install");
         return;
     };
@@ -507,7 +507,7 @@ fn install_bundled_dcm2niix(extract_dir: &std::path::Path) {
     println!("Installed bundled dcm2niix to {}", dest.display());
 }
 
-pub fn execute(args: UpdateArgs) -> crate::Result<()> {
+pub fn execute(args: UpdateArgs) -> qsmxt_io::Result<()> {
     if args.main {
         return execute_main_with(args.yes, BUILD_COMMIT, find_cargo, fetch_main_commit, build_main, |built| {
             install_binary(built).map(|_| ())
@@ -547,7 +547,7 @@ fn is_commit_hash(s: &str) -> bool {
 }
 
 /// Asks GitHub for the commit at the head of main.
-fn fetch_main_commit() -> crate::Result<String> {
+fn fetch_main_commit() -> qsmxt_io::Result<String> {
     let url = format!("https://api.github.com/repos/{}/commits/main", REPO);
     let mut req = ureq::get(&url)
         // Asks for the bare commit hash rather than the whole commit as JSON.
@@ -640,8 +640,8 @@ fn prune_build_cache(dir: &std::path::Path) {
 fn build_main(
     cargo: &std::path::Path,
     commit: &str,
-    install: &mut dyn FnMut(&std::path::Path) -> crate::Result<()>,
-) -> crate::Result<()> {
+    install: &mut dyn FnMut(&std::path::Path) -> qsmxt_io::Result<()>,
+) -> qsmxt_io::Result<()> {
     let root = tempfile::tempdir()
         .map_err(|e| QsmxtError::Update(format!("Failed to create temp directory: {}", e)))?;
     // With the temporary bin directory on cargo's PATH, cargo doesn't tell the user to add
@@ -678,10 +678,10 @@ fn execute_main_with(
     yes: bool,
     running_commit: &str,
     find_cargo: impl FnOnce() -> Option<std::path::PathBuf>,
-    fetch_commit: impl FnOnce() -> crate::Result<String>,
-    build: impl FnOnce(&std::path::Path, &str, &mut dyn FnMut(&std::path::Path) -> crate::Result<()>) -> crate::Result<()>,
-    mut install: impl FnMut(&std::path::Path) -> crate::Result<()>,
-) -> crate::Result<()> {
+    fetch_commit: impl FnOnce() -> qsmxt_io::Result<String>,
+    build: impl FnOnce(&std::path::Path, &str, &mut dyn FnMut(&std::path::Path) -> qsmxt_io::Result<()>) -> qsmxt_io::Result<()>,
+    mut install: impl FnMut(&std::path::Path) -> qsmxt_io::Result<()>,
+) -> qsmxt_io::Result<()> {
     if running_commit.is_empty() {
         println!("Current version: {}", current_version());
     } else {
@@ -731,9 +731,9 @@ fn execute_main_with(
 fn execute_with(
     args: UpdateArgs,
     current_version: &str,
-    fetch: impl FnOnce() -> crate::Result<Release>,
-    install: impl FnOnce(&str) -> crate::Result<()>,
-) -> crate::Result<()> {
+    fetch: impl FnOnce() -> qsmxt_io::Result<Release>,
+    install: impl FnOnce(&str) -> qsmxt_io::Result<()>,
+) -> qsmxt_io::Result<()> {
     let dev = strip_v(current_version) == DEV_VERSION;
 
     println!("Current version: {}", current_version);

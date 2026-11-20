@@ -15,7 +15,7 @@ fn config() -> PipelineConfig {
     use qsmxt_engine::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
     let mut config = PipelineConfig::default();
     config.inversion.algorithm = QsmAlgorithm::Tkd;
-    config.field_mapping.unwrapping_algorithm = crate::pipeline::config::UnwrappingAlgorithm::Laplacian;
+    config.field_mapping.unwrapping_algorithm = qsmxt_engine::UnwrappingAlgorithm::Laplacian;
     config.masking.sections = vec![MaskSection {
         input: MaskingInput::Magnitude,
         generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },

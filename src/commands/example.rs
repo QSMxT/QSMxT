@@ -5,10 +5,10 @@ use std::path::PathBuf;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::cli::ExampleArgs;
-use crate::error::QsmxtError;
-use crate::example::{self, materialize::Outcome};
+use qsmxt_io::error::QsmxtError;
+use qsmxt_io::example::{self, materialize::Outcome};
 
-pub fn execute(args: ExampleArgs) -> crate::Result<()> {
+pub fn execute(args: ExampleArgs) -> qsmxt_io::Result<()> {
     if args.list {
         print_list();
         return Ok(());
@@ -29,7 +29,7 @@ pub fn execute(args: ExampleArgs) -> crate::Result<()> {
                     ))
                 })
             })
-            .collect::<crate::Result<_>>()?
+            .collect::<qsmxt_io::Result<_>>()?
     };
 
     let bids_dir = args.output_dir.unwrap_or_else(|| PathBuf::from("qsmxt-example"));
@@ -83,7 +83,7 @@ pub fn execute(args: ExampleArgs) -> crate::Result<()> {
 }
 
 /// Download one archive, drawing a progress bar when stderr is a terminal.
-fn download(example: &example::Example) -> crate::Result<PathBuf> {
+fn download(example: &example::Example) -> qsmxt_io::Result<PathBuf> {
     let cached = example::download::cache_path(example);
     if cached.is_file() {
         log::info!("Verifying cached {}", cached.display());
@@ -180,7 +180,7 @@ mod tests {
         let out = tempfile::tempdir().unwrap();
         let dataset = out.path().join("bids");
         std::env::set_var("QSMXT_EXAMPLE_CACHE", cache.path());
-        let server = crate::testutils::http::Server::serve(Vec::new(), "404 Not Found");
+        let server = qsmxt_io::testutils::http::Server::serve(Vec::new(), "404 Not Found");
         std::env::set_var(example::BASE_URL_ENV, &server.base);
 
         let mut a = args(vec!["prisma-bridge-run1"], false);

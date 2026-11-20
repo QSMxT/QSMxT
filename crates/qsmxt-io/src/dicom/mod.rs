@@ -22,7 +22,7 @@ use dicom::dictionary_std::tags;
 use dicom::object::{InMemDicomObject, OpenFileOptions};
 use rayon::prelude::*;
 
-pub use qsmxt_engine::dicom::*;
+use qsmxt_engine::dicom::*;
 
 /// Where a unique series goes: like [`target_label`], with `echo-<N>` when its instances (one
 /// series per echo) hold several echoes.

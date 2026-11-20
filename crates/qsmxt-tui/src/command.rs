@@ -346,7 +346,7 @@ pub fn build_slurm_args(app: &App) -> qsmxt_io::Result<SlurmOptions> {
 
 /// The methods text (Markdown) for the current settings, or why the settings are invalid.
 pub fn methods_text(app: &App) -> Result<String, String> {
-    app.current_config().as_ref().as_ref().map(qsmxt_io::pipeline::methods::generate_methods).map_err(|e| e.clone())
+    app.current_config().as_ref().as_ref().map(qsmxt_engine::methods::generate_methods).map_err(|e| e.clone())
 }
 
 /// The settings of the form's settings store the run takes: those changed from their defaults
@@ -394,7 +394,8 @@ fn with_form(mut config: PipelineConfig, own: &[(&'static str, serde_json::Value
 /// refused as it would be there. Any other setting is as it is. Kept until the form's settings
 /// are all the config's.
 fn as_spelled(path: &str, value: serde_json::Value) -> qsmxt_io::Result<serde_json::Value> {
-    use qsmxt_io::pipeline::config::{hole_closing_warnings, parse_mask_sections, MaskOp, MaskSection};
+    use qsmxt_io::pipeline::config::{hole_closing_warnings, parse_mask_sections};
+    use qsmxt_engine::{MaskOp, MaskSection};
     let unreadable = |e: serde_json::Error| qsmxt_io::error::QsmxtError::Config(format!("{path}: {e}"));
     let spell = |sections: &[MaskSection]| -> Vec<String> {
         sections.iter().map(|section| {

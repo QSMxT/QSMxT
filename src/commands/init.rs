@@ -1,7 +1,7 @@
 use crate::cli::InitArgs;
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
-pub fn execute(args: InitArgs) -> crate::Result<()> {
+pub fn execute(args: InitArgs) -> qsmxt_io::Result<()> {
     let config = PipelineConfig::default();
     let toml_str = config.to_toml().unwrap_or_default();
 

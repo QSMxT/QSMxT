@@ -1,7 +1,7 @@
 use log::info;
 use super::common::{load_nifti, load_mask, save_nifti};
 use crate::cli::{InvertCommand, InvertCommonArgs};
-use crate::error::QsmxtError;
+use qsmxt_io::error::QsmxtError;
 use super::common;
 
 mod methods;
@@ -31,13 +31,13 @@ enum Magnitude<'a> {
 fn invert_with(
     c: &InvertCommonArgs, field_strength: f64, echo_times: &[f64], magnitude: Magnitude,
     config: qsm_core::pipeline::InversionConfig, name: &str,
-) -> crate::Result<(Vec<f64>, qsm_core::io::NiftiData)> {
+) -> qsmxt_io::Result<(Vec<f64>, qsm_core::io::NiftiData)> {
     let field_nifti = load_nifti(&c.input)?;
     let (mask, _) = load_mask(&c.mask)?;
     let (nx, ny, nz) = field_nifti.dims;
     let n_voxels = field_nifti.data.len();
     if let Some(id) = config.algorithm.dl_model_id() {
-        crate::pipeline::runner::prefetch_weights(id, name)?;
+        qsmxt_io::pipeline::runner::prefetch_weights(id, name)?;
     }
     let magnitude = match magnitude {
         Magnitude::None => None,
@@ -70,7 +70,7 @@ fn invert_with(
 
 /// LSQR is weighted by the magnitude, as the HEIDI package always weights it (it warns without
 /// one: qsm_heidi computesusceptibility_heidi.m:821-822), so `--magnitude` is required.
-fn require_magnitude(magnitude: &[std::path::PathBuf], name: &str) -> crate::Result<()> {
+fn require_magnitude(magnitude: &[std::path::PathBuf], name: &str) -> qsmxt_io::Result<()> {
     if magnitude.is_empty() {
         return Err(QsmxtError::Config(format!("{name} needs --magnitude (its data weight)")));
     }
@@ -82,7 +82,7 @@ fn require_magnitude(magnitude: &[std::path::PathBuf], name: &str) -> crate::Res
 fn heidi_on_seed(
     c: &InvertCommonArgs, seed: &std::path::Path, field_strength: f64, echo_times: &[f64],
     config: &qsm_core::pipeline::InversionConfig,
-) -> crate::Result<(Vec<f64>, qsm_core::io::NiftiData)> {
+) -> qsmxt_io::Result<(Vec<f64>, qsm_core::io::NiftiData)> {
     let field_nifti = load_nifti(&c.input)?;
     let (mask, _) = load_mask(&c.mask)?;
     let seed_nifti = load_nifti(seed)?;
@@ -118,7 +118,7 @@ fn config_for(algorithm: qsm_core::pipeline::InversionAlgorithm) -> qsm_core::pi
 fn run_dl_inversion(
     c: &InvertCommonArgs, field_strength: f64,
     algorithm: qsm_core::pipeline::InversionAlgorithm, name: &str,
-) -> crate::Result<(Vec<f64>, qsm_core::io::NiftiData)> {
+) -> qsmxt_io::Result<(Vec<f64>, qsm_core::io::NiftiData)> {
     // Opt-in overlap-tiling: presence of --tile-size enables it; halo defaults to 8.
     let tile = c.tiling_params.tile_size.map(|core| (core, c.tiling_params.tile_halo.unwrap_or(8)));
     let config = qsm_core::pipeline::InversionConfig { algorithm, tile, ..Default::default() };
@@ -157,7 +157,7 @@ pub(super) struct PhaseNetInputs {
     pub reference: qsm_core::io::NiftiData,
 }
 
-pub(super) fn load_phase_net_inputs(args: &crate::cli::PhaseNetArgs) -> crate::Result<PhaseNetInputs> {
+pub(super) fn load_phase_net_inputs(args: &crate::cli::PhaseNetArgs) -> qsmxt_io::Result<PhaseNetInputs> {
     let phase = super::common::load_nifti_4d(&args.input)?;
     let n_echoes = phase.echoes.len();
     if args.scan.echo_times.len() != n_echoes {
@@ -166,7 +166,7 @@ pub(super) fn load_phase_net_inputs(args: &crate::cli::PhaseNetArgs) -> crate::R
             args.input.display(), args.scan.echo_times.len())));
     }
     let mut phases = phase.echoes.clone();
-    crate::pipeline::phase::scale_phases_to_pi(&mut phases);
+    qsm_core::pipeline::scale_phases_to_pi(&mut phases);
     let magnitudes = match &args.magnitude {
         None => Vec::new(),
         Some(path) => {
@@ -204,9 +204,9 @@ pub(super) fn run_phase_net(
     args: &crate::cli::PhaseNetArgs,
     net: PhaseNet,
     echo_weighting: qsm_core::inversion::IqsmEchoWeighting,
-) -> crate::Result<()> {
+) -> qsmxt_io::Result<()> {
     let (id, name) = net.id_and_name();
-    crate::pipeline::runner::prefetch_weights(id, name)?;
+    qsmxt_io::pipeline::runner::prefetch_weights(id, name)?;
     let inputs = load_phase_net_inputs(args)?;
     let (nx, ny, nz) = inputs.metadata.dims;
     info!("{name} ({}x{}x{}, {} echo(es))", nx, ny, nz, inputs.phases.len());
@@ -230,7 +230,7 @@ pub(super) fn run_phase_net(
 /// Defaults come from [`LsqrConfig`] — the same struct `qsmxt run` starts from — so the two
 /// surfaces cannot drift apart. `b0` and `mask_output` are the dispatcher's (as in `qsmxt run`).
 fn lsqr_params(args: &crate::cli::LsqrParamArgs) -> qsm_core::inversion::LsqrQsmParams {
-    let d = crate::pipeline::config::LsqrConfig::default();
+    let d = qsmxt_engine::LsqrConfig::default();
     qsm_core::inversion::LsqrQsmParams {
         // `None` here is meaningful — it selects qsm-core's field-strength-scaled default — so an
         // unset flag keeps the `None` rather than collapsing to a concrete 3T number.
@@ -267,7 +267,7 @@ fn star_params(args: &crate::cli::InvertStarArgs) -> qsm_core::inversion::StarPa
 /// switch plus three values; taking the defaults from it keeps `invert heidi` and
 /// `run --qsm-algorithm heidi` on one set of numbers.
 fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::HeidiParams {
-    let d = crate::pipeline::config::HeidiConfig::default();
+    let d = qsmxt_engine::HeidiConfig::default();
     qsm_core::inversion::HeidiParams {
         cone_threshold: args.heidi_cone_threshold.unwrap_or(d.cone_threshold),
         gradient_threshold: args.heidi_gradient_threshold.unwrap_or(d.gradient_threshold),
@@ -293,7 +293,7 @@ fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::Heidi
     }
 }
 
-pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
+pub fn execute(cmd: InvertCommand) -> qsmxt_io::Result<()> {
     use qsm_core::pipeline::InversionAlgorithm as A;
     // COSMOS and STI take N inputs (and STI writes many outputs), so they do not fit the
     // single-input/single-output shape the rest of this match shares.

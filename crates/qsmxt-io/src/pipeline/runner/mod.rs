@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::bids::derivatives::DerivativeOutputs;
 use crate::bids::discovery::QsmRun;
-use crate::pipeline::config::*;
+use qsmxt_engine::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use qsmxt_engine::observe::{Observer, StageEvent};
 #[cfg(test)]
@@ -18,7 +18,7 @@ use qsmxt_engine::plan::Stage;
 use qsmxt_engine::store::{Completed, StageStore};
 #[cfg(test)]
 use crate::pipeline::stats;
-use crate::pipeline::memory;
+use qsmxt_engine::memory;
 use crate::pipeline::requirements;
 use crate::nifti::write::write_volume;
 use crate::error::QsmxtError;
@@ -60,7 +60,7 @@ pub(crate) fn write_step_provenance(
         inputs: inputs.iter().map(|p| p.display().to_string()).collect(),
         outputs: outputs.iter().map(|p| p.display().to_string()).collect(),
         duration_secs: start.elapsed().as_secs_f64(),
-        peak_memory_bytes: memory::process_rss_bytes(),
+        peak_memory_bytes: crate::pipeline::memory::process_rss_bytes(),
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
     if let Some(parent) = prov_path.parent() {
@@ -106,7 +106,7 @@ fn iter_progress_bar(run_key: &str, step_name: &str) -> (Box<dyn FnMut(usize, us
             bar.set_position(current as u64);
             // Update memory info occasionally (reading /proc is cheap but not free)
             if current == 1 || finished || current.is_multiple_of(10) {
-                let rss = memory::process_rss_bytes();
+                let rss = crate::pipeline::memory::process_rss_bytes();
                 if rss > 0 {
                     bar.set_message(memory::format_bytes(rss));
                 }
@@ -192,7 +192,7 @@ pub fn prefetch_weights(model_id: &str, _label: &str) -> crate::Result<()> {
 fn log_step_done(step_name: &str, start: Instant) {
     let elapsed = start.elapsed();
     let secs = elapsed.as_secs_f64();
-    let rss = memory::process_rss_bytes();
+    let rss = crate::pipeline::memory::process_rss_bytes();
     if rss > 0 {
         log::info!(
             "{} complete ({:.1}s, Mem: {})",
@@ -448,7 +448,7 @@ fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
 /// [`naming::WORKING_SPACE`]: crate::bids::naming::WORKING_SPACE
 pub fn published_space(config: &PipelineConfig, meta: &RunMetadata) -> Option<&'static str> {
     (meta.source_geometry.is_some()
-        && config.pipeline.output_space == crate::pipeline::config::OutputSpace::Working)
+        && config.pipeline.output_space == qsmxt_engine::OutputSpace::Working)
         .then_some(crate::bids::naming::WORKING_SPACE)
 }
 

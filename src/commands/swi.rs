@@ -1,9 +1,8 @@
 use log::info;
 use super::common::{load_nifti, load_mask, save_nifti, nifti_grid};
 use crate::cli::SwiArgs;
-use crate::error::QsmxtError;
-use crate::nifti::write::write_volume;
-use crate::pipeline::phase;
+use qsmxt_io::error::QsmxtError;
+use qsmxt_io::nifti::write::write_volume;
 
 /// The CLEAR-SWI parameters `qsmxt swi` runs with: the config defaults, overridden by the flags.
 fn swi_params(p: &crate::cli::SwiParamArgs) -> qsm_core::swi::SwiParams {
@@ -11,8 +10,8 @@ fn swi_params(p: &crate::cli::SwiParamArgs) -> qsm_core::swi::SwiParams {
     if let Some(ref s) = p.swi_hp_sigma {
         if s.len() == 3 { c.hp_sigma = [s[0], s[1], s[2]]; }
     }
-    if let Some(a) = p.swi_unwrapping { c.unwrap = crate::pipeline::config::swi_unwrap_arg_to_config(a); }
-    if let Some(a) = p.swi_scaling { c.scaling = crate::pipeline::config::swi_scaling_arg_to_config(a); }
+    if let Some(a) = p.swi_unwrapping { c.unwrap = crate::cli::swi_unwrap_arg_to_config(a); }
+    if let Some(a) = p.swi_scaling { c.scaling = crate::cli::swi_scaling_arg_to_config(a); }
     if let Some(v) = p.swi_strength { c.strength = v; }
     if let Some(v) = p.swi_mip_window { c.mip_window = v; }
     c.to_params()
@@ -22,11 +21,11 @@ fn swi_params(p: &crate::cli::SwiParamArgs) -> qsm_core::swi::SwiParams {
 fn filtered_phase_path(args: &SwiArgs) -> Option<std::path::PathBuf> {
     match &args.filtered_phase_output {
         Some(path) => Some(path.clone()),
-        None => args.filtered_phase.then(|| crate::bids::naming::phase_beside_swi(&args.output)),
+        None => args.filtered_phase.then(|| qsmxt_io::bids::naming::phase_beside_swi(&args.output)),
     }
 }
 
-pub fn execute(args: SwiArgs) -> crate::Result<()> {
+pub fn execute(args: SwiArgs) -> qsmxt_io::Result<()> {
     let n_echoes = args.phase.len();
     if args.magnitude.len() != n_echoes {
         return Err(QsmxtError::Config(format!(
@@ -50,7 +49,7 @@ pub fn execute(args: SwiArgs) -> crate::Result<()> {
         mags.push(load_nifti(m)?.data);
     }
     // Into radians, with one conversion for every echo (scale_phases_to_pi).
-    phase::scale_phases_to_pi(&mut phases);
+    qsm_core::pipeline::scale_phases_to_pi(&mut phases);
     let mask = match &args.mask {
         Some(path) => Some(load_mask(path)?.0),
         None => None,
@@ -76,7 +75,7 @@ pub fn execute(args: SwiArgs) -> crate::Result<()> {
         // the geometry it reports rather than the input's (issue #211).
         let mip = qsm_core::swi::create_mip(&swi, &grid, &reference.affine, params.mip_window)
             .map_err(QsmxtError::Config)?;
-        let mip_path = args.mip_output.unwrap_or_else(|| crate::bids::naming::minip_beside_swi(&args.output));
+        let mip_path = args.mip_output.unwrap_or_else(|| qsmxt_io::bids::naming::minip_beside_swi(&args.output));
         write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
         info!("MIP saved to {}", mip_path.display());
     }
@@ -93,11 +92,11 @@ mod tests {
     fn swi_filtered_phase_implies_swi_and_round_trips() {
         let cli = crate::cli::Cli::try_parse_from(["qsmxt", "run", "bids", "--swi-filtered-phase"]).unwrap();
         let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
-        let mut config = crate::pipeline::config::PipelineConfig::default();
+        let mut config = qsmxt_engine::PipelineConfig::default();
         assert!(!config.swi.filtered_phase, "off by default");
         crate::cli_settings::apply_normalised(&mut config, &run.pipeline).unwrap();
         assert!(config.pipeline.do_swi && config.swi.filtered_phase);
-        let back = crate::pipeline::config::PipelineConfig::from_toml(&config.to_toml().unwrap()).unwrap();
+        let back = qsmxt_engine::PipelineConfig::from_toml(&config.to_toml().unwrap()).unwrap();
         assert!(back.swi.filtered_phase);
         let cmd = qsmxt_engine::command::generate_command(&back);
         assert!(cmd.contains("--do-swi") && cmd.contains("--swi-filtered-phase"), "{cmd}");
@@ -117,11 +116,11 @@ mod tests {
             let cli = crate::cli::Cli::try_parse_from(["qsmxt", "run", "bids", "--do-swi", "--swi-scaling", name])
                 .unwrap();
             let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
-            let mut config = crate::pipeline::config::PipelineConfig::default();
+            let mut config = qsmxt_engine::PipelineConfig::default();
             crate::cli_settings::apply_normalised(&mut config, &run.pipeline).unwrap();
             assert_eq!(P::from(config.swi.scaling), expected, "run --swi-scaling {name}");
             // ...and it survives the config file round trip.
-            let back = crate::pipeline::config::PipelineConfig::from_toml(&config.to_toml().unwrap()).unwrap();
+            let back = qsmxt_engine::PipelineConfig::from_toml(&config.to_toml().unwrap()).unwrap();
             assert_eq!(back.swi.scaling, config.swi.scaling, "{name} through the config file");
 
             let cli = crate::cli::Cli::try_parse_from([

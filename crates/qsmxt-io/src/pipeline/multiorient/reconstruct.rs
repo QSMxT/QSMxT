@@ -20,7 +20,7 @@ use crate::multiorient::{
     check_directions, direction_table, resolve_directions_registered, DirectionSource, MultiOrientKind,
     Orientation, OrientationCheck,
 };
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
 /// The log target these messages had before they moved into this module.
 const LOG_TARGET: &str = "qsmxt_io::pipeline::multiorient";
@@ -314,7 +314,7 @@ fn acquired_grid(
     // went there, so the group map lies on the same grid as the reference member's maps and
     // segmentation. `None` = they stay on the working grid.
     (config.pipeline.output_space
-        == crate::pipeline::config::OutputSpace::Acquired
+        == qsmxt_engine::OutputSpace::Acquired
         && returned_to_acquired(output, &members[0].key))
         .then(|| members[0].echoes.first()
             .and_then(|e| qsm_core::io::read_nifti_file(&e.phase_nifti).ok())
@@ -382,7 +382,7 @@ fn write_cosmos(
     };
 
     // Referenced like a single-orientation map, over the voxels every orientation covers.
-    let dseg = if config.qsm.reference == crate::pipeline::config::QsmReference::Region {
+    let dseg = if config.qsm.reference == qsmxt_engine::QsmReference::Region {
         let d = qsm_core::io::read_nifti_file(reference_dseg).map_err(|e| QsmxtError::Config(format!(
             "--qsm-reference: the group is referenced on {}'s segmentation, which could not \
              be read at {}: {e}", members[0].key, reference_dseg.display())))?;

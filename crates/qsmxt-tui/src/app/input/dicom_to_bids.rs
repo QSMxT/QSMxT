@@ -30,7 +30,7 @@ pub enum ScanStatus {
 }
 
 pub struct DicomConvertState {
-    pub session: Option<dicom::DicomSession>,
+    pub session: Option<qsmxt_engine::dicom::DicomSession>,
     pub convert_status: ConvertStatus,
     pub convert_log: Vec<String>,
     pub convert_errors: Vec<String>,
@@ -43,7 +43,7 @@ pub struct DicomConvertState {
     pub keep_uids: bool,
     pub scan_status: ScanStatus,
     pub scan_error: Option<String>,
-    scan_receiver: Option<mpsc::Receiver<Result<dicom::DicomSession, String>>>,
+    scan_receiver: Option<mpsc::Receiver<Result<qsmxt_engine::dicom::DicomSession, String>>>,
     scan_progress: Arc<AtomicUsize>,
     convert_receiver: Option<mpsc::Receiver<dicom::convert::ConvertMessage>>,
     /// Cached dcm2niix resolution for the availability indicator. `None` until
@@ -238,8 +238,8 @@ impl DicomConvertState {
 }
 
 /// What each DICOM series type means, for the series-type pop-up.
-fn series_type_help(t: dicom::SeriesType) -> &'static str {
-    use dicom::SeriesType as S;
+fn series_type_help(t: qsmxt_engine::dicom::SeriesType) -> &'static str {
+    use qsmxt_engine::dicom::SeriesType as S;
     match t {
         S::Magnitude => "Gradient-echo magnitude (part-mag)",
         S::Phase => "Gradient-echo phase (part-phase)",
@@ -305,7 +305,7 @@ impl App {
         let Some(session) = self.dicom_state.session.as_ref() else { return };
         let Some(g) = session.unique_series().into_iter().nth(i) else { return };
         let cur = session.series_ref(&g.refs[0]).series_type;
-        let all = dicom::SeriesType::ALL;
+        let all = qsmxt_engine::dicom::SeriesType::ALL;
         self.algo_modal = Some(AlgoModal {
             target: AlgoModalTarget::DicomSeriesType,
             title: "Series type".to_string(),
@@ -317,7 +317,7 @@ impl App {
     }
 
     /// Give the focused unique series a type, and every subject instance sharing its identity.
-    pub(crate) fn set_focused_unique_series_type(&mut self, new_type: dicom::SeriesType) {
+    pub(crate) fn set_focused_unique_series_type(&mut self, new_type: qsmxt_engine::dicom::SeriesType) {
         let DicomFocus::Series(i) = self.dicom_state.focus else { return };
         let Some(session) = self.dicom_state.session.as_mut() else { return };
         let groups = session.unique_series();

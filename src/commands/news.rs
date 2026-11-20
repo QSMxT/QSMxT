@@ -74,7 +74,7 @@ fn render(loaded: &Loaded, url: &str, version: &str) -> String {
 
 /// `qsmxt news`: fetch the announcements and print them, newest first; offline, print the copy
 /// saved last time and say so.
-pub fn execute() -> crate::Result<()> {
+pub fn execute() -> qsmxt_io::Result<()> {
     let url = url();
     let loaded = load(|| fetch(&url));
     print!("{}", render(&loaded, &url, current_version()));

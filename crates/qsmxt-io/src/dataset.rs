@@ -6,7 +6,7 @@ use log::{info, warn};
 
 use crate::bids::derivatives::DerivativeOutputs;
 use crate::bids::discovery;
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
 /// The dataset-level files written whatever happens to the runs: the BIDS derivative
 /// description (required for a valid derivative dataset), `.bidsignore` and README, the resolved
@@ -20,7 +20,7 @@ pub fn write_dataset_files(
     crate::bids::dataset_description::write_bidsignore(derivatives_dir)?;
     crate::bids::dataset_description::write_readme(derivatives_dir)?;
     std::fs::write(derivatives_dir.join("pipeline_config.toml"), config.to_toml().unwrap_or_default())?;
-    std::fs::write(derivatives_dir.join("methods.md"), crate::pipeline::methods::generate_methods(config))?;
+    std::fs::write(derivatives_dir.join("methods.md"), qsmxt_engine::methods::generate_methods(config))?;
     if let Some(graph) = dataset_graph(config, runs) {
         crate::bids::derivatives::write_graph(&DerivativeOutputs::new(derivatives_dir).dataset_graph_path(), &graph)?;
     }

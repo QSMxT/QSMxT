@@ -4,7 +4,7 @@ use std::process::Command;
 use log::info;
 
 use crate::bids::discovery::QsmRun;
-use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::PipelineConfig;
 
 /// Shell-quote a string for safe interpolation into bash scripts.
 /// Uses single quotes and escapes any embedded single quotes.
@@ -55,7 +55,7 @@ fn mem_gb_for(estimate_bytes: u64) -> usize {
 
 fn run_estimate(run: &QsmRun, config: &PipelineConfig) -> u64 {
     let (nx, ny, nz) = run.dims;
-    crate::pipeline::memory::estimate_peak_memory_bytes(
+    qsmxt_engine::memory::estimate_peak_memory_bytes(
         nx, ny, nz, run.echoes.len(), run.coils.as_ref().map_or(1, |c| c.len()), run.has_magnitude, config,
     )
 }
@@ -140,7 +140,7 @@ pub fn generate_all_slurm(
                     log::warn!(
                         "{}: estimated to peak at {}, more than --mem {gb}G; the job may be killed \
                          for exceeding its memory",
-                        run.key, crate::pipeline::memory::format_bytes(estimate)
+                        run.key, qsmxt_engine::memory::format_bytes(estimate)
                     );
                 }
                 gb

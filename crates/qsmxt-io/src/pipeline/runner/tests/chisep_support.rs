@@ -106,7 +106,7 @@ fn direct(f: &Fixture, config: &PipelineConfig, mask: &[u8]) -> [Vec<f64>; 3] {
         magnitude_rss: Some(&rss), magnitude_multi: Some(&multi), se_magnitude_multi: None,
         n_std: n_std.as_deref(), mask_csf: csf.as_deref(),
     };
-    let metadata = crate::pipeline::config::to_scan_metadata(
+    let metadata = qsmxt_engine::to_scan_metadata(
         m.dims, m.voxel_size, &m.echo_times, m.field_strength, m.b0_direction, Some(m.affine));
     let r = qsm_core::pipeline::run_separation(
         inputs, &metadata, &qsmxt_engine::bridge::to_separation_config(config), &mut |_, _| {},

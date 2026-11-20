@@ -207,3 +207,43 @@ pub enum MaskPresetArg {
     #[value(hide = true)]
     MouseBet,
 }
+
+// ─── Conversions to the engine ───
+
+/// The recipe behind a `--mask-preset` value — shared by `run` and `qsmxt mask preset`.
+pub fn mask_preset_recipe(preset: MaskPresetArg) -> qsmxt_io::Result<qsmxt_engine::MaskRecipe> {
+    use clap::ValueEnum;
+    let name = preset.to_possible_value().expect("no MaskPresetArg is skipped");
+    qsmxt_engine::masking::mask_preset(name.get_name()).map_err(qsmxt_io::error::QsmxtError::Config)
+}
+
+/// Map a CLI SWI unwrapping argument to the config enum (shared by `run` and `qsmxt swi`).
+pub fn swi_unwrap_arg_to_config(a: SwiUnwrapArg) -> qsmxt_engine::SwiUnwrap {
+    match a {
+        SwiUnwrapArg::Laplacian => qsmxt_engine::SwiUnwrap::Laplacian,
+        SwiUnwrapArg::LaplacianSlice => qsmxt_engine::SwiUnwrap::LaplacianSlice,
+        SwiUnwrapArg::Romeo => qsmxt_engine::SwiUnwrap::Romeo,
+    }
+}
+
+/// Map a CLI SWI scaling argument to the config enum — the one place `run` and `qsmxt swi` both
+/// go through, so the two cannot disagree about what a value means.
+pub fn swi_scaling_arg_to_config(a: SwiScalingArg) -> qsmxt_engine::SwiScaling {
+    use qsmxt_engine::SwiScaling as S;
+    match a {
+        SwiScalingArg::Tanh => S::Tanh,
+        SwiScalingArg::NegativeTanh => S::NegativeTanh,
+        SwiScalingArg::Positive => S::Positive,
+        SwiScalingArg::Negative => S::Negative,
+        SwiScalingArg::Triangular => S::Triangular,
+    }
+}
+
+impl From<QsmartFitThresholdModeArg> for qsmxt_engine::QsmartFitThresholdMode {
+    fn from(m: QsmartFitThresholdModeArg) -> Self {
+        match m {
+            QsmartFitThresholdModeArg::Percentile => qsmxt_engine::QsmartFitThresholdMode::Percentile,
+            QsmartFitThresholdModeArg::Absolute => qsmxt_engine::QsmartFitThresholdMode::Absolute,
+        }
+    }
+}

@@ -19,7 +19,7 @@ type Removal = (BgremoveCommonArgs, Removed);
 fn remove_with(
     c: &BgremoveCommonArgs, config: qsm_core::pipeline::BgRemovalConfig,
     scan: Option<&crate::cli::ScanParamArgs>, magnitude: &[std::path::PathBuf], name: &str,
-) -> crate::Result<Removed> {
+) -> qsmxt_io::Result<Removed> {
     let field_nifti = load_nifti(&c.input)?;
     let (mask, _) = load_mask(&c.mask)?;
     let (nx, ny, nz) = field_nifti.dims;
@@ -29,7 +29,7 @@ fn remove_with(
     } else {
         let (stack, n_echoes) = super::common::load_echo_stack(magnitude, field_nifti.data.len())?;
         if n_echoes != echo_times.len() {
-            return Err(crate::error::QsmxtError::Config(format!(
+            return Err(qsmxt_io::error::QsmxtError::Config(format!(
                 "{name} needs the magnitude of every echo: got {n_echoes} magnitude volume(s) for {} echo time(s)",
                 echo_times.len())));
         }
@@ -48,7 +48,7 @@ fn remove_with(
     };
     let result = qsm_core::pipeline::run_bg_removal(
         &field_nifti.data, &mask, &metadata, &config, magnitude.as_deref(), &mut |_, _| {},
-    ).map_err(|e| crate::error::QsmxtError::Config(format!("{name}: {e}")))?;
+    ).map_err(|e| qsmxt_io::error::QsmxtError::Config(format!("{name}: {e}")))?;
     Ok((result.local_field_ppm, field_nifti, result.eroded_mask))
 }
 
@@ -62,7 +62,7 @@ fn config_for(algorithm: qsm_core::pipeline::BgRemovalAlgorithm) -> qsm_core::pi
 /// method itself takes.
 fn harperella_with(
     args: &HarperellaArgs, config: qsm_core::pipeline::BgRemovalConfig, name: &str,
-) -> crate::Result<(BgremoveCommonArgs, Removed)> {
+) -> qsmxt_io::Result<(BgremoveCommonArgs, Removed)> {
     let common = BgremoveCommonArgs {
         input: args.input.clone(), mask: args.mask.clone(), output: args.output.clone(),
         b0_direction: vec![0.0, 0.0, 1.0], output_mask: args.output_mask.clone(),
@@ -94,7 +94,7 @@ struct HarperellaArgs {
     field_strength: Option<f64>,
 }
 
-pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
+pub fn execute(cmd: BgremoveCommand) -> qsmxt_io::Result<()> {
     use qsm_core::bgremove as bg;
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     // iQFM reads every echo's phase rather than a field, so it does not share the match below.
@@ -155,7 +155,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     Ok(())
 }
 
-fn vsharp(args: BgremoveVsharpArgs) -> crate::Result<Removal> {
+fn vsharp(args: BgremoveVsharpArgs) -> qsmxt_io::Result<Removal> {
     use qsm_core::bgremove as bg;
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     // QSMxT's defaults (qsm-core's), the same as `qsmxt run`'s.
@@ -179,7 +179,7 @@ fn vsharp(args: BgremoveVsharpArgs) -> crate::Result<Removal> {
     Ok((args.common, out))
 }
 
-fn pdf(args: BgremovePdfArgs) -> crate::Result<Removal> {
+fn pdf(args: BgremovePdfArgs) -> qsmxt_io::Result<Removal> {
     use qsm_core::bgremove as bg;
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     let d = bg::PdfParams::default();
@@ -194,7 +194,7 @@ fn pdf(args: BgremovePdfArgs) -> crate::Result<Removal> {
     Ok((args.common, out))
 }
 
-fn lbv(args: BgremoveLbvArgs) -> crate::Result<Removal> {
+fn lbv(args: BgremoveLbvArgs) -> qsmxt_io::Result<Removal> {
     use qsm_core::bgremove as bg;
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     // LBV's tolerance is in radians over the echo spacing, so it takes the scan's field
@@ -215,7 +215,7 @@ fn lbv(args: BgremoveLbvArgs) -> crate::Result<Removal> {
     Ok((args.common, out))
 }
 
-fn ismv(args: BgremoveIsmvArgs) -> crate::Result<Removal> {
+fn ismv(args: BgremoveIsmvArgs) -> qsmxt_io::Result<Removal> {
     use qsm_core::bgremove as bg;
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     let d = bg::IsmvParams::default();
@@ -230,7 +230,7 @@ fn ismv(args: BgremoveIsmvArgs) -> crate::Result<Removal> {
     Ok((args.common, out))
 }
 
-fn sharp(args: BgremoveSharpArgs) -> crate::Result<Removal> {
+fn sharp(args: BgremoveSharpArgs) -> qsmxt_io::Result<Removal> {
     use qsm_core::bgremove as bg;
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     // Each variant's own defaults: SEPIA's (4 mm, 0.03), or QSM.jl's (18 × the smallest
@@ -251,7 +251,7 @@ fn sharp(args: BgremoveSharpArgs) -> crate::Result<Removal> {
     Ok((args.common, out))
 }
 
-fn resharp(args: BgremoveResharpArgs) -> crate::Result<Removal> {
+fn resharp(args: BgremoveResharpArgs) -> qsmxt_io::Result<Removal> {
     use qsm_core::bgremove as bg;
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     let d = bg::ResharpParams::default();
@@ -266,11 +266,11 @@ fn resharp(args: BgremoveResharpArgs) -> crate::Result<Removal> {
     Ok((args.common, out))
 }
 
-fn bfrnet(args: BgremoveBfrnetArgs) -> crate::Result<Removal> {
+fn bfrnet(args: BgremoveBfrnetArgs) -> qsmxt_io::Result<Removal> {
     use qsm_core::pipeline::BgRemovalAlgorithm as A;
     // Fetch the ONNX weights with a download bar (cached under $QSM_MODEL_DIR / the cache).
     // On a build without the `dl` feature this errors here with a clear message.
-    crate::pipeline::runner::prefetch_weights("bfrnet", "bfrnet")?;
+    qsmxt_io::pipeline::runner::prefetch_weights("bfrnet", "bfrnet")?;
     let out = remove_with(&args.common, config_for(A::Bfrnet), None, &[], "BFRnet")?;
     Ok((args.common, out))
 }

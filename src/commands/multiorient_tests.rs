@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::testutils::multiorient as mo;
+use qsmxt_io::testutils::multiorient as mo;
 use std::path::{Path, PathBuf};
 
 /// Three orientations spanning a realistic in-vivo range (0–30°).
@@ -258,8 +258,8 @@ fn sti_writes_the_tensor_and_its_derived_maps() {
 /// the files the pipeline would publish for that run — the same entities and suffixes.
 #[test]
 fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
-    use crate::bids::derivatives::DerivativeOutputs;
-    use crate::bids::entities::AcquisitionKey;
+    use qsmxt_io::bids::derivatives::DerivativeOutputs;
+    use qsmxt_io::bids::entities::AcquisitionKey;
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     let key = AcquisitionKey {
@@ -306,10 +306,10 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
     // swi --mip, with the projection left to its default name
     let swi = pipeline.swi_path(&key);
     let (phase, mag) = (d.join("phase.nii"), d.join("mag.nii"));
-    crate::testutils::write_phase(&phase);
-    crate::testutils::write_magnitude(&mag);
+    qsmxt_io::testutils::write_phase(&phase);
+    qsmxt_io::testutils::write_magnitude(&mag);
     let small_mask = d.join("small_mask.nii");
-    crate::testutils::write_mask(&small_mask);
+    qsmxt_io::testutils::write_mask(&small_mask);
     super::swi::execute(SwiArgs {
         phase: vec![phase.clone()], magnitude: vec![mag.clone()], tes: None, mask: Some(small_mask.clone()),
         output: d.join(name(swi.clone())),
@@ -330,8 +330,8 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
             let stem = format!("{}_coil-0{c}_echo-{e}", unc.basename());
             let p = coil_dir.join(format!("{stem}_part-phase_MEGRE.nii"));
             let m = coil_dir.join(format!("{stem}_part-mag_MEGRE.nii"));
-            crate::testutils::write_phase(&p);
-            crate::testutils::write_magnitude(&m);
+            qsmxt_io::testutils::write_phase(&p);
+            qsmxt_io::testutils::write_magnitude(&m);
             phases.push(p);
             mags.push(m);
         }
