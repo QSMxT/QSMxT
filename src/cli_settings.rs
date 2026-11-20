@@ -215,14 +215,17 @@ fn flags_of<S: FlagSet>() -> Vec<&'static Flag> {
     }).collect()
 }
 
-/// A flag's name without its method (the method its setting's path names): `delta` for
-/// `rts-delta`, `no-msmv-prefilter` for `no-medi-msmv-prefilter`.
+/// A flag's name without its method (the part of its setting's path it starts with): `delta` for
+/// `rts-delta` (`inversion.rts.delta`), `orientation` for `bet-orientation`, `no-msmv-prefilter`
+/// for `no-medi-msmv-prefilter`.
 fn without_method(f: &Flag) -> Option<String> {
     use qsmxt_engine::schema::cli_apply::opposite_of;
     let setting = setting_of(f).or_else(|| opposite_of(f).map(|(_, s)| s))?;
-    let method = setting.path.split('.').nth(1)?.replace('_', "-");
     let (no, rest) = f.long.strip_prefix("no-").map_or(("", f.long), |r| ("no-", r));
-    rest.strip_prefix(&format!("{method}-")).map(|r| format!("{no}{r}"))
+    let parts: Vec<&str> = setting.path.split('.').collect();
+    parts[..parts.len() - 1].iter()
+        .find_map(|p| rest.strip_prefix(&format!("{}-", p.replace('_', "-"))))
+        .map(|r| format!("{no}{r}"))
 }
 
 /// `S`'s flags as clap arguments: a flag's conflicts and requirements only among them, and its

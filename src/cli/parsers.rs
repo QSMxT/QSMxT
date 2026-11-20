@@ -30,12 +30,6 @@ pub fn parse_ilsqr_precision(s: &str) -> Result<qsmxt_engine::IlsqrPrecision, St
         .ok_or_else(|| format!("expected double or single, got '{s}'"))
 }
 
-/// BET's left-right orientation: `fsl` or `as-stored`.
-pub fn parse_bet_orientation(s: &str) -> Result<qsmxt_engine::BetOrientation, String> {
-    qsmxt_engine::BetOrientation::ALL.into_iter().find(|o| o.as_str() == s.trim())
-        .ok_or_else(|| format!("expected fsl or as-stored, got '{s}'"))
-}
-
 /// The image geometry N4 is given: `scanner` or `make-nii`.
 pub fn parse_n4_geometry(s: &str) -> Result<qsmxt_engine::N4Geometry, String> {
     qsmxt_engine::N4Geometry::ALL.into_iter().find(|g| g.as_str() == s.trim())

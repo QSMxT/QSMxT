@@ -100,13 +100,12 @@ fn refine_with(mask: Vec<u8>, ops: &[String], reference: &NiftiData, magnitude: 
     refine(mask, &parsed, reference, magnitude)
 }
 
-/// The BET settings of a subcommand: qsm-core's defaults, with its orientation if it gave one.
-fn bet_config(orientation: Option<qsmxt_engine::BetOrientation>) -> qsmxt_engine::BetConfig {
-    let mut bet = qsmxt_engine::BetConfig::default();
-    if let Some(o) = orientation {
-        bet.orientation = o;
-    }
-    bet
+/// The BET settings of a subcommand: QSMxT's, with its `--bet-*` flags applied as `qsmxt run`
+/// applies them.
+fn bet_config(settings: &[qsmxt_engine::schema::cli_apply::Given]) -> qsmxt_io::Result<qsmxt_engine::BetConfig> {
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    qsmxt_io::settings::apply(&mut cfg, settings)?;
+    Ok(cfg.bet)
 }
 
 /// A generating subcommand: run `generator` on the input image, then the `--op` chain. The input
@@ -182,7 +181,7 @@ fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> qsmxt_io::Result<()> {
     }
 
     let meta = scan_meta(&magnitude);
-    let core = to_mask_sections(&recipe.sections, &bet_config(args.bet_orientation));
+    let core = to_mask_sections(&recipe.sections, &bet_config(&args.settings.0)?);
     let mut combined: Option<Vec<u8>> = None;
     for (section, core_section) in recipe.sections.iter().zip(&core) {
         let (image, what): (&[f64], &str) = match (section.input, &quality) {
@@ -280,20 +279,20 @@ fn combine(args: MaskCombineCliArgs, mode: MaskCombine) -> qsmxt_io::Result<()> 
 pub fn execute(cmd: MaskCommand) -> qsmxt_io::Result<()> {
     use qsmxt_engine::MaskThresholdMethod;
     match cmd {
-        MaskCommand::Otsu(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }, &bet_config(None)),
-        MaskCommand::Value(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(args.threshold) }, &bet_config(None)),
-        MaskCommand::StiGui(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None }, &bet_config(None)),
-        MaskCommand::Percentile(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(args.percentile) }, &bet_config(None)),
+        MaskCommand::Otsu(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }, &bet_config(&[])?),
+        MaskCommand::Value(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(args.threshold) }, &bet_config(&[])?),
+        MaskCommand::StiGui(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::StiGui, value: None }, &bet_config(&[])?),
+        MaskCommand::Percentile(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(args.percentile) }, &bet_config(&[])?),
         MaskCommand::Bet(args) => generate(&args.common, MaskOp::Bet {
             fractional_intensity: args.fractional_intensity,
             voxel_scale: args.voxel_scale.unwrap_or_else(qsmxt_engine::bet_default_voxel_scale),
-        }, &bet_config(args.orientation)),
-        MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op, &bet_config(None)) }
-        MaskCommand::Rs2Net(args) => { let op = rs2_net_op(&args)?; generate(&args.common, op, &bet_config(None)) }
-        MaskCommand::Mindgrab(args) => { let op = mindgrab_op(&args)?; generate(&args.common, op, &bet_config(None)) }
+        }, &bet_config(&args.settings.0)?),
+        MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op, &bet_config(&[])?) }
+        MaskCommand::Rs2Net(args) => { let op = rs2_net_op(&args)?; generate(&args.common, op, &bet_config(&[])?) }
+        MaskCommand::Mindgrab(args) => { let op = mindgrab_op(&args)?; generate(&args.common, op, &bet_config(&[])?) }
         MaskCommand::Preset(args) => { let recipe = mask_preset_recipe(args.preset)?; preset(&args, recipe) }
         MaskCommand::Robust(args) => preset(
-            &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None, phase: None, bet_orientation: None },
+            &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None, phase: None, settings: Default::default() },
             mask_preset_recipe(crate::cli::MaskPresetArg::RobustThreshold)?,
         ),
         MaskCommand::Erode(args) => refine_file(&args.common, MaskOp::Erode { iterations: args.iterations }),
