@@ -211,7 +211,7 @@ pub mod check {
 
     fn load() -> Cache {
         let Some(path) = cache_path() else { return Cache::default() };
-        std::fs::read_to_string(path)
+        fs_err::read_to_string(path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
@@ -220,12 +220,12 @@ pub mod check {
     fn store(cache: &Cache) {
         let Some(path) = cache_path() else { return };
         if let Some(parent) = path.parent() {
-            if std::fs::create_dir_all(parent).is_err() {
+            if fs_err::create_dir_all(parent).is_err() {
                 return;
             }
         }
         if let Ok(json) = serde_json::to_string(cache) {
-            let _ = std::fs::write(path, json);
+            let _ = fs_err::write(path, json);
         }
     }
 
@@ -365,7 +365,7 @@ pub mod check {
             let _guard = env_lock();
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("update-check.json");
-            std::fs::write(
+            fs_err::write(
                 &path,
                 r#"{"checked_at":1,"latest_tag":"v99.0.0","html_url":"https://example.com/r","dismissed_tag":"v99.0.0"}"#,
             )
@@ -398,7 +398,7 @@ pub mod check {
             let _guard = env_lock();
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("update-check.json");
-            std::fs::write(&path, b"{ not json").unwrap();
+            fs_err::write(&path, b"{ not json").unwrap();
             std::env::set_var("QSMXT_UPDATE_CACHE", &path);
 
             assert!(run(offline).is_none());

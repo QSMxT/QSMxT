@@ -165,16 +165,16 @@ impl FileStore<'_> {
     pub(super) fn keep_working_grid_copies(&mut self) -> crate::Result<()> {
         let stash = self.output.working_grid_dir(&self.run.key);
         if stash.exists() {
-            std::fs::remove_dir_all(&stash)?;
+            fs_err::remove_dir_all(&stash)?;
         }
-        std::fs::create_dir_all(&stash)?;
+        fs_err::create_dir_all(&stash)?;
         for f in self.output.run_published_niftis(&self.run.key) {
             // Not a file some other configuration left in another space.
             if f.file_name().and_then(|n| crate::bids::naming::entity_of(&n.to_string_lossy(), "space")).is_some() {
                 continue;
             }
             if let Some(name) = f.file_name() {
-                std::fs::copy(&f, stash.join(name))?;
+                fs_err::copy(&f, stash.join(name))?;
             }
         }
         self.working_grid_kept = true;
@@ -218,19 +218,19 @@ pub(super) fn copy_nifti(source: &Path, dest: &Path) -> std::io::Result<()> {
     let gz = |p: &Path| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("gz"));
     match (gz(source), gz(dest)) {
         (true, false) => {
-            let mut from = flate2::read::MultiGzDecoder::new(std::io::BufReader::new(std::fs::File::open(source)?));
-            let mut to = std::io::BufWriter::new(std::fs::File::create(dest)?);
+            let mut from = flate2::read::MultiGzDecoder::new(std::io::BufReader::new(fs_err::File::open(source)?));
+            let mut to = std::io::BufWriter::new(fs_err::File::create(dest)?);
             std::io::copy(&mut from, &mut to)?;
             std::io::Write::flush(&mut to)
         }
         (false, true) => {
-            let mut from = std::io::BufReader::new(std::fs::File::open(source)?);
+            let mut from = std::io::BufReader::new(fs_err::File::open(source)?);
             let mut to = flate2::write::GzEncoder::new(
-                std::io::BufWriter::new(std::fs::File::create(dest)?), flate2::Compression::default());
+                std::io::BufWriter::new(fs_err::File::create(dest)?), flate2::Compression::default());
             std::io::copy(&mut from, &mut to)?;
             std::io::Write::flush(&mut to.finish()?)
         }
-        _ => std::fs::copy(source, dest).map(|_| ()),
+        _ => fs_err::copy(source, dest).map(|_| ()),
     }
 }
 
@@ -244,7 +244,7 @@ impl StageStore for FileStore<'_> {
     fn header(&mut self) -> crate::Result<Header> {
         let first = &self.run.echoes[0];
         let failed = |e: String| QsmxtError::NiftiIo(format!("{}: {}", first.phase_nifti.display(), e));
-        let bytes = std::fs::read(&first.phase_nifti).map_err(|e| failed(e.to_string()))?;
+        let bytes = fs_err::read(&first.phase_nifti).map_err(|e| failed(e.to_string()))?;
         let first_phase = io::load_nifti(&bytes).map_err(failed)?;
         validate_run_dims(self.run, &first_phase)?;
         // N4 is given the image geometry ITK reads from this file's own header.
@@ -310,7 +310,7 @@ impl StageStore for FileStore<'_> {
             let published = self.output.magnitude_path(&self.run.key);
             for path in std::iter::once(published.clone()).chain(crate::bids::entities::sidecar_path(&published)) {
                 if path.exists() {
-                    std::fs::remove_file(&path)?;
+                    fs_err::remove_file(&path)?;
                 }
             }
         }
@@ -409,7 +409,7 @@ impl StageStore for FileStore<'_> {
         // acquired grid, it is the same output.
         if self.step.as_deref() != Some("output_space") {
             if let Some(sidecar) = crate::bids::entities::sidecar_path(&path).filter(|p| p.is_file()) {
-                std::fs::remove_file(sidecar)?;
+                fs_err::remove_file(sidecar)?;
             }
         }
         // Float32, as published, except the intermediates later steps must read as computed.
@@ -423,19 +423,19 @@ impl StageStore for FileStore<'_> {
             Data::OnGrid(v, g) => write(&path, v, g.dims, g.voxel_size, &g.affine)?,
             Data::Text(t) => {
                 if let Some(parent) = path.parent() {
-                    std::fs::create_dir_all(parent)?;
+                    fs_err::create_dir_all(parent)?;
                 }
-                std::fs::write(&path, t)?;
+                fs_err::write(&path, t)?;
             }
             Data::Json(j) => {
                 let json = serde_json::to_string_pretty(j)
                     .map_err(|e| QsmxtError::Config(format!("{}: {e}", path.display())))?;
-                std::fs::write(&path, json)?;
+                fs_err::write(&path, json)?;
             }
             Data::Same(source) => {
                 let source = self.existing(&source)?;
                 if let Some(parent) = path.parent() {
-                    std::fs::create_dir_all(parent)?;
+                    fs_err::create_dir_all(parent)?;
                 }
                 copy_nifti(&source, &path)?;
             }
@@ -453,9 +453,9 @@ impl StageStore for FileStore<'_> {
         let mut obj = read_json_object(&sidecar);
         obj.extend(fields);
         if let Some(parent) = sidecar.parent() {
-            std::fs::create_dir_all(parent)?;
+            fs_err::create_dir_all(parent)?;
         }
-        std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
+        fs_err::write(&sidecar, serde_json::to_string_pretty(&obj)
             .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
         Ok(())
     }
@@ -464,7 +464,7 @@ impl StageStore for FileStore<'_> {
         if *item == Item::SegmentationVolumes {
             return self.state.completed_steps.get("segmentation")?.metadata.as_ref()?.get("volumes").cloned();
         }
-        let text = std::fs::read_to_string(self.path(item)?).ok()?;
+        let text = fs_err::read_to_string(self.path(item)?).ok()?;
         Some(serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text)))
     }
 
@@ -477,7 +477,7 @@ impl StageStore for FileStore<'_> {
     fn discard(&mut self, step: &str, outputs: &[Item]) -> crate::Result<()> {
         for path in outputs.iter().filter_map(|i| self.path(i)) {
             if path.exists() {
-                std::fs::remove_file(&path)?;
+                fs_err::remove_file(&path)?;
             }
         }
         if self.state.completed_steps.contains_key(step) {
@@ -507,7 +507,7 @@ impl StageStore for FileStore<'_> {
             let Some(sidecar) = crate::bids::entities::sidecar_path(&f) else { continue };
             let mut obj = read_json_object(&sidecar);
             obj.insert("SpatialReference".into(), serde_json::Value::String(reference.clone()));
-            std::fs::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
+            fs_err::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
                 .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
         }
         Ok(())
@@ -541,11 +541,11 @@ impl StageStore for FileStore<'_> {
         // maker.
         for &other in crate::bids::bidsprov::STEPS.iter().filter(|&&s| s != c.step && s != "output_space") {
             let stale = self.output.provenance_path(&self.run.key, other);
-            let Ok(text) = std::fs::read_to_string(&stale) else { continue };
+            let Ok(text) = fs_err::read_to_string(&stale) else { continue };
             let theirs: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
             let theirs = theirs["outputs"].as_array().cloned().unwrap_or_default();
             if theirs.iter().filter_map(|p| p.as_str()).any(|p| outputs.iter().any(|o| o.display().to_string() == p)) {
-                std::fs::remove_file(stale)?;
+                fs_err::remove_file(stale)?;
             }
         }
 

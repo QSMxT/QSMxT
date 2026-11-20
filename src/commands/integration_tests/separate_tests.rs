@@ -190,7 +190,7 @@ fn test_separate_chi_sep_medi() {
         &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
     super::separate::execute(SeparateCommand::ChiSepMedi(args(tes.clone(), Some("none".into()), "none"))).unwrap();
     super::separate::execute(SeparateCommand::ChiSepMedi(args(tes, Some(empty), "file"))).unwrap();
-    let read = |p: &str| std::fs::read(dir.path().join(format!("{p}_desc-paramagnetic_Chimap.nii"))).unwrap();
+    let read = |p: &str| fs_err::read(dir.path().join(format!("{p}_desc-paramagnetic_Chimap.nii"))).unwrap();
     assert_eq!(read("none"), read("file"));
 }
 

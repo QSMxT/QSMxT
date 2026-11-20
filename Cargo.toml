@@ -44,6 +44,8 @@ const_format = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 glob = "0.3"
+# std::fs with the path in every error (`--config typo.toml` names the file it could not read).
+fs-err = "3"
 log = "0.4"
 env_logger = "0.11"
 indicatif = "0.17"

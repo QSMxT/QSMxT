@@ -441,7 +441,7 @@ fn write_sti(r: &Recon, s: &Solve, written: &mut Vec<PathBuf>) -> crate::Result<
     let path = r.output.sti_eigenvector_path(key);
     crate::nifti::write::write_volumes_4d(&path, &pev, dims, voxel_size, affine)?;
     if let Some(sidecar) = crate::bids::entities::sidecar_path(&path) {
-        std::fs::write(&sidecar, serde_json::to_string_pretty(&eigenvector_sidecar())
+        fs_err::write(&sidecar, serde_json::to_string_pretty(&eigenvector_sidecar())
             .map_err(|e| QsmxtError::Config(format!("STI eigenvector sidecar: {e}")))?)?;
         written.push(sidecar);
     }
@@ -511,11 +511,11 @@ fn write_group_sidecar(
 
     let sidecar_path = r.output.multiorient_sidecar_path(r.key, desc);
     if let Some(parent) = sidecar_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        fs_err::create_dir_all(parent)?;
     }
     let text = serde_json::to_string_pretty(&sidecar)
         .map_err(|e| QsmxtError::Config(format!("multi-orientation sidecar: {e}")))?;
-    std::fs::write(&sidecar_path, text)?;
+    fs_err::write(&sidecar_path, text)?;
     Ok(sidecar_path)
 }
 
@@ -585,7 +585,7 @@ fn group_statistics(
     let mut table = String::from(stats::HEADER);
     table.push_str(&stats::map_rows(spec.name, spec.unit, &map, &seg, labels, None, reference.as_ref()));
     let out = output.segmentation_stats_path(key);
-    std::fs::write(&out, table)?;
+    fs_err::write(&out, table)?;
     info!(target: LOG_TARGET, "  per-structure statistics -> {}", out.display());
     Ok(Some(out))
 }

@@ -25,6 +25,8 @@ dicom = "0.9"
 nifti = "0.17"
 # Copies a gzipped NIfTI to an uncompressed name (and back) as the name says (pipeline::runner).
 flate2 = "1"
+# std::fs with the path in every error (`--config typo.toml` names the file it could not read).
+fs-err = "3"
 # Temporary directories for the test helpers (`testutils`).
 tempfile = { version = "3", optional = true }
 toml = "0.8"

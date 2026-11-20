@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs;
+use fs_err as fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
@@ -761,9 +761,9 @@ mod tests {
         // Fake HOME with a bundled dcm2niix at ~/.qsmxt/bin/dcm2niix.
         let home = tempfile::tempdir().expect("temp home");
         let bin = home.path().join(".qsmxt").join("bin");
-        std::fs::create_dir_all(&bin).expect("mkdir bin");
+        fs_err::create_dir_all(&bin).expect("mkdir bin");
         let bundled = bin.join("dcm2niix");
-        std::fs::write(&bundled, b"#!/bin/sh\n").expect("write stub");
+        fs_err::write(&bundled, b"#!/bin/sh\n").expect("write stub");
         std::env::set_var("HOME", home.path());
         std::env::remove_var("USERPROFILE");
 

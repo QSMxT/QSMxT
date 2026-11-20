@@ -944,7 +944,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("c.toml");
         let smv = !qsm_core::inversion::MediParams::default().smv;
-        std::fs::write(&path, format!(
+        fs_err::write(&path, format!(
             "[pipeline]\ndo_swi = true\n\n[swi]\nstrength = 3.0\n\n[inversion]\nalgorithm = \"tkd\"\n\n\
              [inversion.medi]\nsmv = {smv}\n\n[bg_removal]\nalgorithm = \"pdf\"\n\n[bg_removal.vsharp]\nmax_radius = 9.0\n")).unwrap();
         let mut app = default_app();

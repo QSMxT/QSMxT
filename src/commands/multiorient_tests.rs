@@ -195,7 +195,7 @@ fn cosmos_reads_directions_from_a_file() {
     let mask_path = dir.path().join("mask.nii");
     mo::write_mask(&mask_path);
     let dirs_file = dir.path().join("dirs.txt");
-    std::fs::write(
+    fs_err::write(
         &dirs_file,
         "# B0 directions, one per orientation\n0 0 1\n0, 0.5, 0.8660254\n0.5 0 0.8660254\n",
     )
@@ -237,12 +237,12 @@ fn sti_writes_the_tensor_and_its_derived_maps() {
         assert!(p.exists(), "missing {}", p.display());
     }
     // One 4D tensor (6 components, their order in the sidecar) and one 4D eigenvector.
-    let bytes = std::fs::read(dir.path().join("sti_desc-sti_Chimap.nii")).unwrap();
+    let bytes = fs_err::read(dir.path().join("sti_desc-sti_Chimap.nii")).unwrap();
     assert_eq!(qsm_core::io::load_nifti_4d(&bytes).unwrap().1 .3, 6);
     let sidecar: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(dir.path().join("sti_desc-sti_Chimap.json")).unwrap()).unwrap();
+        &fs_err::read_to_string(dir.path().join("sti_desc-sti_Chimap.json")).unwrap()).unwrap();
     assert_eq!(sidecar["TensorComponents"], serde_json::json!(["X11", "X12", "X13", "X22", "X23", "X33"]));
-    let bytes = std::fs::read(dir.path().join("sti_desc-sti_evec.nii")).unwrap();
+    let bytes = fs_err::read(dir.path().join("sti_desc-sti_evec.nii")).unwrap();
     assert_eq!(qsm_core::io::load_nifti_4d(&bytes).unwrap().1 .3, 3);
 
     // The maps are qsm-core's STI of every orientation with its direction, and `--lambda`.
@@ -323,7 +323,7 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
     // combine mcpc3ds, on a per-coil run (`rec-uncombined`) like the pipeline's
     let unc = AcquisitionKey { reconstruction: Some("uncombined".into()), ..key.clone() };
     let coil_dir = d.join("coils");
-    std::fs::create_dir_all(&coil_dir).unwrap();
+    fs_err::create_dir_all(&coil_dir).unwrap();
     let (mut phases, mut mags) = (vec![], vec![]);
     for c in 1..=2 {
         for e in 1..=2 {

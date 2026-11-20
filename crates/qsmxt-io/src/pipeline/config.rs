@@ -12,9 +12,9 @@ const LOG_TARGET: &str = "qsmxt::pipeline::config";
 
 /// Load config from a TOML file.
 pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
-    let text = std::fs::read_to_string(path)?;
+    let text = fs_err::read_to_string(path)?;
     let (config, migration) = PipelineConfig::from_toml_noting(&text)
-        .map_err(|e| QsmxtError::Config(format!("TOML parse error: {}", e)))?;
+        .map_err(|e| QsmxtError::Config(format!("{}: TOML parse error: {}", path.display(), e)))?;
     for w in migration.warnings {
         log::warn!(target: LOG_TARGET, "{}: {w}", path.display());
     }
@@ -242,4 +242,19 @@ pub fn for_each_bet_op(masking: &mut MaskingConfig, f: impl Fn(&mut f64, &mut f6
         for op in &mut section.refinements { set(op); }
     }
     for op in &mut masking.refinements { set(op); }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A settings file that cannot be read or parsed is named in the error.
+    #[test]
+    fn load_config_names_the_file() {
+        let e = super::load_config(std::path::Path::new("no-such-dir/typo.toml")).unwrap_err().to_string();
+        assert!(e.contains("typo.toml"), "{e}");
+        let dir = tempfile::tempdir().unwrap();
+        let bad = dir.path().join("bad.toml");
+        std::fs::write(&bad, "[pipeline\n").unwrap();
+        let e = super::load_config(&bad).unwrap_err().to_string();
+        assert!(e.contains("bad.toml"), "{e}");
+    }
 }

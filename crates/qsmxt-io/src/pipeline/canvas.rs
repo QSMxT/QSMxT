@@ -228,9 +228,9 @@ impl Canvas {
     /// Write the canvas as an 8-bit RGB PNG.
     pub fn save(&self, path: &Path) -> crate::Result<()> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            fs_err::create_dir_all(parent)?;
         }
-        let file = std::fs::File::create(path)?;
+        let file = fs_err::File::create(path)?;
         let mut enc = png::Encoder::new(std::io::BufWriter::new(file), self.w as u32, self.h as u32);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
@@ -395,7 +395,7 @@ mod tests {
         c.save(&path).unwrap();
         assert!(path.exists(), "save should create missing directories");
 
-        let decoded = png::Decoder::new(std::fs::File::open(&path).unwrap())
+        let decoded = png::Decoder::new(fs_err::File::open(&path).unwrap())
             .read_info().unwrap();
         let info = decoded.info();
         assert_eq!((info.width, info.height), (c.width() as u32, c.height() as u32));

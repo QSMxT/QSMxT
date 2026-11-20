@@ -150,7 +150,7 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> qsmxt_io::Result<()> {
 
     if let Some(parent) = args.output.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
+            fs_err::create_dir_all(parent)?;
         }
     }
     let suffix = input_suffix(&phase_files[0][0]);

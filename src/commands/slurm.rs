@@ -77,11 +77,11 @@ mod tests {
             ..opts("acct", None, Some(8))
         };
         let jobs = generate_all_slurm(&runs, Path::new("/bids"), dir.path(), &config, &o).unwrap();
-        let run = std::fs::read_to_string(&jobs.run_scripts[0]).unwrap();
+        let run = fs_err::read_to_string(&jobs.run_scripts[0]).unwrap();
         assert!(run.contains("--debug"), "{run}");
         assert!(run.contains("--source-dicom '/dicom dir'"), "{run}");
         assert!(run.contains("--dicom-outputs 'Chimap,swi'"), "{run}");
-        let agg = std::fs::read_to_string(&jobs.aggregate_script).unwrap();
+        let agg = fs_err::read_to_string(&jobs.aggregate_script).unwrap();
         assert!(agg.contains("--debug"), "{agg}");
         assert!(!agg.contains("--source-dicom") && !agg.contains("--dicom-outputs"), "{agg}");
 

@@ -137,7 +137,7 @@ impl PipelineView {
 
 /// A BIDS sidecar's `Manufacturer`, when the file reads and gives one.
 pub fn sidecar_manufacturer(json: &std::path::Path) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(json).ok()?).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(json).ok()?).ok()?;
     v.get("Manufacturer")?.as_str().map(str::to_string)
 }
 
@@ -191,7 +191,7 @@ impl App {
             }
         };
         let path = self.pipeline_view.svg_dir.join(format!("qsmxt-pipeline-{}.svg", std::process::id()));
-        if let Err(e) = std::fs::write(&path, planned.graph.to_svg()) {
+        if let Err(e) = fs_err::write(&path, planned.graph.to_svg()) {
             self.error_message = Some(format!("Could not write {}: {e}", path.display()));
             return;
         }
@@ -551,7 +551,7 @@ mod tests {
         app.form.settings.set("masking.two_pass", true);
         press(&mut app, KeyCode::Char('s'));
         let path = dir.path().join(format!("qsmxt-pipeline-{}.svg", std::process::id()));
-        let svg = std::fs::read_to_string(&path).unwrap();
+        let svg = fs_err::read_to_string(&path).unwrap();
         assert_eq!(svg, app.planned().unwrap().graph.to_svg());
         let msg = app.status_message.clone().unwrap();
         assert!(msg.contains(&path.display().to_string()) && msg.contains("not in a test"), "{msg}");

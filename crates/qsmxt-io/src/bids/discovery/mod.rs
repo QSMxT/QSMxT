@@ -632,7 +632,7 @@ mod tests {
     fn test_discover_real_without_imag_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         testutils::create_real_imag_bids(dir.path(), false);
-        std::fs::remove_file(dir.path().join("sub-1/anat/sub-1_echo-2_part-imag_MEGRE.nii")).unwrap();
+        fs_err::remove_file(dir.path().join("sub-1/anat/sub-1_echo-2_part-imag_MEGRE.nii")).unwrap();
         let err = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap_err().to_string();
         assert!(err.contains("sub-1_echo-2_part-real_MEGRE.nii has no matching part-imag file"), "{err}");
     }
@@ -791,7 +791,7 @@ mod tests {
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ]);
         // The sidecars still parse, so the acquisition is found; the volume is not a NIfTI.
-        std::fs::write(anat.join("sub-1_echo-1_MESE.nii"), b"not a nifti at all").unwrap();
+        fs_err::write(anat.join("sub-1_echo-1_MESE.nii"), b"not a nifti at all").unwrap();
 
         let runs = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap();
         assert!(runs[0].mese.is_none(), "a MESE whose grid cannot be read must not attach");
@@ -813,7 +813,7 @@ mod tests {
     fn test_scan_bids_tree_annotates_mese() {
         let dir = tempfile::tempdir().unwrap();
         let anat = dir.path().join("sub-1/anat");
-        std::fs::create_dir_all(&anat).unwrap();
+        fs_err::create_dir_all(&anat).unwrap();
         // A MEGRE (phase) run and a same-subject MESE magnitude acquisition.
         for echo in 1..=3 {
             testutils::write_phase(&anat.join(format!("sub-1_echo-{}_part-phase_MEGRE.nii", echo)));

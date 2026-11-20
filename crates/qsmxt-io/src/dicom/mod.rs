@@ -266,7 +266,7 @@ fn headerless_encoding(head: &[u8]) -> Option<bool> {
 
 /// Read a data set with no Part-10 header, up to its Pixel Data.
 fn read_headerless(path: &Path, full: bool) -> Option<InMemDicomObject> {
-    let mut f = std::fs::File::open(path).ok()?;
+    let mut f = fs_err::File::open(path).ok()?;
     let mut head = [0u8; 8];
     f.read_exact(&mut head).ok()?;
     let explicit = headerless_encoding(&head)?;
@@ -299,7 +299,7 @@ enum Read1 {
 /// Read one file's header: a Part-10 file up to its Pixel Data, or a data set without the Part-10
 /// header (which dcm2niix converts too).
 fn read_dicom_file(path: &Path) -> Read1 {
-    match std::fs::metadata(path) {
+    match fs_err::metadata(path) {
         Ok(m) if m.len() == 0 => return Read1::Empty,
         Err(_) => return Read1::NotDicom,
         _ => {}
@@ -335,7 +335,7 @@ fn same_pixels(a: &DicomSeries, b: &DicomSeries) -> bool {
 }
 
 fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = fs_err::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {

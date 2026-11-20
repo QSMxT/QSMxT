@@ -178,7 +178,7 @@ fn bids_validator_fixture() {
         assert!(full.join(name).exists(), "{name}");
     }
     let sidecar: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(full.join("sub-1_acq-MEGRE_desc-swi_phase.json")).unwrap()).unwrap();
+        &fs_err::read_to_string(full.join("sub-1_acq-MEGRE_desc-swi_phase.json")).unwrap()).unwrap();
     assert_eq!(sidecar["Units"], "Hz", "{sidecar}");
     for name in ["sub-1_acq-MEGRE_desc-total_fieldmap.nii", "sub-1_acq-MEGRE_desc-total_magnitude.nii"] {
         assert!(full.with_file_name("fmap").join(name).exists(), "{name}");
@@ -213,7 +213,7 @@ fn write_full_case(bids: &Path) {
 /// The `sti` case's dataset: six orientations, one echo each.
 fn write_sti_case(bids: &Path) {
     let anat = bids.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     for (i, b0) in [(0.0, 0.0, 1.0), (0.0, 0.5, 0.866_025_4), (0.5, 0.0, 0.866_025_4),
                     (0.4, 0.4, 0.824_620_9), (-0.4, 0.3, 0.866_025_4), (0.3, -0.45, 0.84)]
         .into_iter().enumerate()
@@ -231,7 +231,7 @@ fn write_sti_case(bids: &Path) {
 /// The `oblique` case's dataset: two echoes on a grid tilted 30° about x.
 fn write_oblique_case(bids: &Path) {
     let anat = bids.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
     let affine = [1.0, 0.0, 0.0, -10.0, 0.0, c, -s, -11.0, 0.0, s, c, -9.0, 0.0, 0.0, 0.0, 1.0];
     let dims = (20, 22, 18);

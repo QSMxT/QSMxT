@@ -4,7 +4,7 @@
 //! difference: these archives are 100-225 MB, so the body is streamed to a `.part` file
 //! and hashed as it arrives rather than buffered in memory.
 
-use std::fs;
+use fs_err as fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 

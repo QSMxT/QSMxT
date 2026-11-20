@@ -35,7 +35,7 @@ struct ParamsJson {
 fn resolve_scan_params(common: &FieldmapCommonArgs) -> qsmxt_io::Result<ScanParams> {
     // Start from the JSON file (if any), then let explicit CLI flags override.
     let json: ParamsJson = if let Some(ref p) = common.params {
-        let text = std::fs::read_to_string(p)
+        let text = fs_err::read_to_string(p)
             .map_err(|e| QsmxtError::Config(format!("failed to read params file {}: {}", p.display(), e)))?;
         serde_json::from_str(&text)
             .map_err(|e| QsmxtError::Config(format!("failed to parse params file {}: {}", p.display(), e)))?
@@ -459,7 +459,7 @@ mod tests {
                 buf.write_all(&(v as f32).to_le_bytes()).unwrap();
             }
         }
-        std::fs::write(path, &buf).unwrap();
+        fs_err::write(path, &buf).unwrap();
     }
 
     /// A two-echo linear-phase field should be recovered to a known ppm value.
@@ -560,7 +560,7 @@ mod tests {
     fn test_resolve_scan_params_from_json() {
         let dir = tempfile::tempdir().unwrap();
         let params_path = dir.path().join("params.json");
-        std::fs::write(&params_path, r#"{"TE":[0.004,0.008,0.012],"B0":7.0}"#).unwrap();
+        fs_err::write(&params_path, r#"{"TE":[0.004,0.008,0.012],"B0":7.0}"#).unwrap();
 
         let common = FieldmapCommonArgs {
             input: dir.path().join("phase.nii"),

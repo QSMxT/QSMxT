@@ -51,7 +51,7 @@ fn test_slurm_writes_requested_pipeline_config() {
         accept: AcceptArgs { accept_recommendations: false, accept_reference_settings: false },
     }).unwrap();
 
-    let written = std::fs::read_to_string(out.join("derivatives/qsmxt/pipeline_config.toml")).unwrap();
+    let written = fs_err::read_to_string(out.join("derivatives/qsmxt/pipeline_config.toml")).unwrap();
     let config: qsmxt_engine::PipelineConfig = toml::from_str(&written).unwrap();
     assert_eq!(config.inversion.algorithm, qsmxt_engine::QsmAlgorithm::Tkd);
     assert_eq!(
@@ -64,7 +64,7 @@ fn test_slurm_writes_requested_pipeline_config() {
 /// The words of a generated job's command, as bash would split them: single-quoted strings
 /// (with `'\''` escapes) and backslash-newline continuations; the `exec <binary>` dropped.
 fn job_command(script: &Path) -> Vec<String> {
-    let text = std::fs::read_to_string(script).unwrap();
+    let text = fs_err::read_to_string(script).unwrap();
     let body: String = text.lines().filter(|l| !l.starts_with('#') && !l.trim().is_empty())
         .collect::<Vec<_>>().join("\n").replace("\\\n", " ");
     let (mut words, mut cur, mut in_word, mut quoted) = (Vec::new(), String::new(), false, false);
@@ -115,7 +115,7 @@ fn run_job(script: &Path) {
 /// dataset's results.
 fn derivative_files(root: &Path) -> std::collections::BTreeSet<PathBuf> {
     fn walk(root: &Path, dir: &Path, out: &mut std::collections::BTreeSet<PathBuf>) {
-        for e in std::fs::read_dir(dir).unwrap().flatten() {
+        for e in fs_err::read_dir(dir).unwrap().flatten() {
             let p = e.path();
             let rel = p.strip_prefix(root).unwrap().to_path_buf();
             if ["workflow", "logs", "slurm", "qsmxt.log"].iter().any(|x| rel == Path::new(x)) {
@@ -192,7 +192,7 @@ fn slurm_jobs_produce_what_a_local_run_does() {
         accept: AcceptArgs { accept_recommendations: false, accept_reference_settings: false },
     }).unwrap();
     let slurm_dir = dist.join("derivatives/qsmxt/slurm");
-    let mut run_scripts: Vec<PathBuf> = std::fs::read_dir(&slurm_dir).unwrap().flatten().map(|e| e.path())
+    let mut run_scripts: Vec<PathBuf> = fs_err::read_dir(&slurm_dir).unwrap().flatten().map(|e| e.path())
         .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("qsmxt_sub-")).collect();
     run_scripts.sort();
     assert_eq!(run_scripts.len(), 2);
@@ -207,7 +207,7 @@ fn slurm_jobs_produce_what_a_local_run_does() {
         assert!(!deriv.join(f).exists(), "a per-run job wrote {f}");
     }
     assert!(!deriv.join("sub-1/ses-1/anat/sub-1_ses-1_desc-cosmos_Chimap.nii").exists());
-    let logs: Vec<String> = std::fs::read_dir(deriv.join("logs")).unwrap().flatten()
+    let logs: Vec<String> = fs_err::read_dir(deriv.join("logs")).unwrap().flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned()).collect();
     assert_eq!(logs.len(), 2, "{logs:?}");
     assert!(logs.contains(&"sub-1_ses-1_acq-dir1_MEGRE.log".to_string()), "{logs:?}");
@@ -226,7 +226,7 @@ fn slurm_jobs_produce_what_a_local_run_does() {
 
     let mut differ = Vec::new();
     for rel in &want {
-        let (a, b) = (std::fs::read(local_deriv.join(rel)).unwrap(), std::fs::read(deriv.join(rel)).unwrap());
+        let (a, b) = (fs_err::read(local_deriv.join(rel)).unwrap(), fs_err::read(deriv.join(rel)).unwrap());
         if a == b { continue; }
         let name = rel.to_string_lossy();
         // The two outputs live in different directories, which provenance names.
@@ -252,16 +252,16 @@ fn slurm_jobs_produce_what_a_local_run_does() {
     assert!(differ.is_empty(), "files that differ between the local run and the SLURM jobs: {differ:?}");
 
     // qsmxt.log carries every worker's log, then the aggregation's own lines.
-    let log = std::fs::read_to_string(deriv.join("qsmxt.log")).unwrap();
+    let log = fs_err::read_to_string(deriv.join("qsmxt.log")).unwrap();
     for l in &logs {
-        let worker = std::fs::read_to_string(deriv.join("logs").join(l)).unwrap();
+        let worker = fs_err::read_to_string(deriv.join("logs").join(l)).unwrap();
         assert!(log.contains(&format!("==> logs/{l} <==")), "{log}");
         assert!(log.contains(&worker), "qsmxt.log is missing {l}");
     }
     // Provenance records the command the user ran, not the job's.
-    let prov: String = std::fs::read_dir(deriv.join("prov")).unwrap().flatten()
+    let prov: String = fs_err::read_dir(deriv.join("prov")).unwrap().flatten()
         .filter(|e| e.path().is_file())
-        .map(|e| std::fs::read_to_string(e.path()).unwrap_or_default()).collect();
+        .map(|e| fs_err::read_to_string(e.path()).unwrap_or_default()).collect();
     assert!(!prov.contains(" aggregate "), "the aggregation command leaked into provenance");
 }
 

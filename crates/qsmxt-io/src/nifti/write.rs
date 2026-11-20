@@ -18,7 +18,7 @@ pub fn write_volume(
 ) -> crate::Result<()> {
     // A bare filename has an empty parent, which `create_dir_all` rejects.
     match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent)?,
+        Some(parent) if !parent.as_os_str().is_empty() => fs_err::create_dir_all(parent)?,
         _ => {}
     }
     qsm_core::io::save_nifti_to_file(path, data, dims, voxel_size, affine)
@@ -42,7 +42,7 @@ pub fn write_volume_f64(
     const VOX_OFFSET: usize = 108;
     const DT_FLOAT64: i16 = 64;
     match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent)?,
+        Some(parent) if !parent.as_os_str().is_empty() => fs_err::create_dir_all(parent)?,
         _ => {}
     }
     let fail = |e: String| QsmxtError::NiftiIo(format!("{}: {e}", path.display()));
@@ -62,7 +62,7 @@ pub fn write_volume_f64(
         gz.write_all(&bytes)?;
         bytes = gz.finish()?;
     }
-    std::fs::write(path, &bytes)?;
+    fs_err::write(path, &bytes)?;
     Ok(())
 }
 
@@ -80,7 +80,7 @@ pub fn write_volumes_4d(
     affine: &[f64; 16],
 ) -> crate::Result<()> {
     match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent)?,
+        Some(parent) if !parent.as_os_str().is_empty() => fs_err::create_dir_all(parent)?,
         _ => {}
     }
     qsm_core::io::save_nifti_4d_to_file(path, volumes, dims, voxel_size, affine)
@@ -104,7 +104,7 @@ mod tests {
         let path = dir.path().join("t.nii");
         let (a, b, c) = (vec![1.0; 24], vec![2.0; 24], vec![3.0; 24]);
         write_volumes_4d(&path, &[&a, &b, &c], (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).unwrap();
-        let bytes = std::fs::read(&path).unwrap();
+        let bytes = fs_err::read(&path).unwrap();
         let (data, dims, _, _) = qsm_core::io::load_nifti_4d(&bytes).unwrap();
         assert_eq!(dims, (2, 3, 4, 3));
         assert_eq!(data[0], 1.0);
@@ -115,7 +115,7 @@ mod tests {
 
     /// Byte 123 of an uncompressed NIfTI-1 header is `xyzt_units`.
     fn xyzt_units(path: &Path) -> u8 {
-        std::fs::read(path).unwrap()[123]
+        fs_err::read(path).unwrap()[123]
     }
 
     #[test]
@@ -124,7 +124,7 @@ mod tests {
         let path = dir.path().join("nested").join("t.nii.gz");
         let (a, b) = (vec![1.0; 24], vec![2.0; 24]);
         write_volumes_4d(&path, &[&a, &b], (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).unwrap();
-        let bytes = std::fs::read(&path).unwrap();
+        let bytes = fs_err::read(&path).unwrap();
         assert!(bytes.starts_with(&[0x1f, 0x8b]), "a .nii.gz path must be gzipped");
         let (data, dims, _, _) = qsm_core::io::load_nifti_4d(&bytes).unwrap();
         assert_eq!(dims, (2, 3, 4, 2));

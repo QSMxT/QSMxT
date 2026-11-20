@@ -48,7 +48,7 @@ fn download_to(
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
 
-    let mut file = std::fs::File::create(dest).map_err(|e| {
+    let mut file = fs_err::File::create(dest).map_err(|e| {
         QsmxtError::Update(format!("Failed to create {}: {}", dest.display(), e))
     })?;
     let mut reader = response.into_reader();
@@ -218,7 +218,7 @@ fn download_verified(
         QsmxtError::Update(format!("Failed to checksum {}: {}", dest.display(), e))
     })?;
     if actual != expected {
-        let _ = std::fs::remove_file(dest);
+        let _ = fs_err::remove_file(dest);
         return Err(QsmxtError::Update(format!(
             "Checksum mismatch for {}: {} says {}, the download is {}. \
              The archive was discarded and nothing was installed",
@@ -352,12 +352,12 @@ fn install_binary(extracted: &std::path::Path) -> qsmxt_io::Result<std::path::Pa
     // while the old binary is still running — the running process keeps the old
     // inode and the path is repointed at the new file.
     let staged = dir.join(format!(".{}.new", bin_name));
-    let _ = std::fs::remove_file(&staged); // discard any leftover from a prior run
+    let _ = fs_err::remove_file(&staged); // discard any leftover from a prior run
     #[cfg(target_os = "windows")]
     {
         // Remove the old binary a previous self-update left behind (it was
         // locked while that qsmxt process was still running).
-        let _ = std::fs::remove_file(dir.join(format!(".{}.old", bin_name)));
+        let _ = fs_err::remove_file(dir.join(format!(".{}.old", bin_name)));
     }
 
     stage_binary(extracted, &staged, &dir)?;
@@ -365,7 +365,7 @@ fn install_binary(extracted: &std::path::Path) -> qsmxt_io::Result<std::path::Pa
     // Atomically swap the staged binary into place. A plain rename only needs
     // write permission on the directory, so it succeeds even when `dest` is
     // owned by root from a prior sudo install; otherwise fall back to `sudo mv`.
-    if std::fs::rename(&staged, &dest).is_err() {
+    if fs_err::rename(&staged, &dest).is_err() {
         #[cfg(not(target_os = "windows"))]
         {
             let status = Command::new("sudo")
@@ -391,19 +391,19 @@ fn install_binary(extracted: &std::path::Path) -> qsmxt_io::Result<std::path::Pa
             // staged binary into its place. The .old file stays locked until
             // this process exits; it is cleaned up on the next update.
             let old = dir.join(format!(".{}.old", bin_name));
-            let _ = std::fs::remove_file(&old);
-            if let Err(e) = std::fs::rename(&dest, &old) {
-                let _ = std::fs::remove_file(&staged);
+            let _ = fs_err::remove_file(&old);
+            if let Err(e) = fs_err::rename(&dest, &old) {
+                let _ = fs_err::remove_file(&staged);
                 return Err(QsmxtError::Update(format!(
                     "Failed to move current binary aside ({}): {}",
                     dest.display(),
                     e
                 )));
             }
-            if let Err(e) = std::fs::rename(&staged, &dest) {
+            if let Err(e) = fs_err::rename(&staged, &dest) {
                 // Try to restore the old binary so the install isn't left broken.
-                let _ = std::fs::rename(&old, &dest);
-                let _ = std::fs::remove_file(&staged);
+                let _ = fs_err::rename(&old, &dest);
+                let _ = fs_err::remove_file(&staged);
                 return Err(QsmxtError::Update(format!(
                     "Failed to install binary to {}: {}",
                     dest.display(),
@@ -417,10 +417,10 @@ fn install_binary(extracted: &std::path::Path) -> qsmxt_io::Result<std::path::Pa
     #[cfg(not(target_os = "windows"))]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&dest) {
+        if let Ok(meta) = fs_err::metadata(&dest) {
             let mut perms = meta.permissions();
             perms.set_mode(perms.mode() | 0o111);
-            let _ = std::fs::set_permissions(&dest, perms);
+            let _ = fs_err::set_permissions(&dest, perms);
         }
     }
 
@@ -432,9 +432,9 @@ fn stage_binary(
     extracted: &std::path::Path, staged: &std::path::Path, dir: &std::path::Path,
 ) -> qsmxt_io::Result<()> {
     // Stage next to `dest`, falling back to sudo when the directory isn't
-    // writable by the current user. std::fs::copy preserves the file mode, so
+    // writable by the current user. fs_err::copy preserves the file mode, so
     // the staged binary keeps its executable bit.
-    if std::fs::copy(extracted, staged).is_err() {
+    if fs_err::copy(extracted, staged).is_err() {
         #[cfg(not(target_os = "windows"))]
         {
             println!("Installing to {} (requires sudo)...", dir.display());
@@ -483,13 +483,13 @@ fn install_bundled_dcm2niix(extract_dir: &std::path::Path) {
         return;
     };
 
-    if let Err(e) = std::fs::create_dir_all(&bin_dir) {
+    if let Err(e) = fs_err::create_dir_all(&bin_dir) {
         eprintln!("Warning: failed to create {}: {}", bin_dir.display(), e);
         return;
     }
 
     let dest = bin_dir.join(dcm_name);
-    if let Err(e) = std::fs::copy(&src, &dest) {
+    if let Err(e) = fs_err::copy(&src, &dest) {
         eprintln!("Warning: failed to install bundled dcm2niix to {}: {}", dest.display(), e);
         return;
     }
@@ -497,10 +497,10 @@ fn install_bundled_dcm2niix(extract_dir: &std::path::Path) {
     #[cfg(not(target_os = "windows"))]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(&dest) {
+        if let Ok(meta) = fs_err::metadata(&dest) {
             let mut perms = meta.permissions();
             perms.set_mode(perms.mode() | 0o111);
-            let _ = std::fs::set_permissions(&dest, perms);
+            let _ = fs_err::set_permissions(&dest, perms);
         }
     }
 
@@ -613,22 +613,22 @@ const BUILD_CACHE_LIMIT_BYTES: u64 = 10 << 30;
 /// [`BUILD_CACHE_LIMIT_BYTES`] is emptied and rebuilt once.
 fn prune_build_cache(dir: &std::path::Path) {
     fn size(p: &std::path::Path) -> u64 {
-        match std::fs::symlink_metadata(p) {
-            Ok(m) if m.is_dir() => std::fs::read_dir(p).into_iter().flatten().flatten().map(|e| size(&e.path())).sum(),
+        match fs_err::symlink_metadata(p) {
+            Ok(m) if m.is_dir() => fs_err::read_dir(p).into_iter().flatten().flatten().map(|e| size(&e.path())).sum(),
             Ok(m) => m.len(),
             Err(_) => 0,
         }
     }
     if size(dir) > BUILD_CACHE_LIMIT_BYTES {
-        let _ = std::fs::remove_dir_all(dir);
+        let _ = fs_err::remove_dir_all(dir);
         return;
     }
     let ours = |name: &str| ["qsmxt-", "qsmxt_engine-", "libqsmxt_engine-"].iter().any(|p| name.starts_with(p));
     for sub in ["deps", ".fingerprint", "build", "incremental"] {
-        for e in std::fs::read_dir(dir.join("release").join(sub)).into_iter().flatten().flatten() {
+        for e in fs_err::read_dir(dir.join("release").join(sub)).into_iter().flatten().flatten() {
             if e.file_name().to_str().is_some_and(ours) {
                 let p = e.path();
-                let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+                let _ = if p.is_dir() { fs_err::remove_dir_all(&p) } else { fs_err::remove_file(&p) };
             }
         }
     }
@@ -916,7 +916,7 @@ mod tests {
         let mut seen: Vec<(u64, u64)> = Vec::new();
         download_to(&server.base, &dest, &mut |done, total| seen.push((done, total))).unwrap();
 
-        assert_eq!(std::fs::read(&dest).unwrap(), body);
+        assert_eq!(fs_err::read(&dest).unwrap(), body);
         assert_eq!(seen.first(), Some(&(0, body.len() as u64)), "starts at zero of the total");
         assert_eq!(
             seen.last(),
@@ -1028,7 +1028,7 @@ mod tests {
         assert!(msg.contains(&sha256_hex(&genuine)), "the message names the expected digest: {msg}");
         assert!(!dest.exists(), "a mismatching archive must be deleted, not left to extract");
         assert_eq!(
-            std::fs::read_dir(dir.path()).unwrap().count(),
+            fs_err::read_dir(dir.path()).unwrap().count(),
             0,
             "nothing may be extracted or staged after a mismatch"
         );
@@ -1042,7 +1042,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("qsmxt.tar.gz");
         download_verified(&server.base, ASSET, &dest, &mut |_, _| {}).unwrap();
-        assert_eq!(std::fs::read(&dest).unwrap(), genuine);
+        assert_eq!(fs_err::read(&dest).unwrap(), genuine);
     }
 
     #[test]
@@ -1170,13 +1170,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deps = dir.path().join("release").join("deps");
         let prints = dir.path().join("release").join(".fingerprint");
-        std::fs::create_dir_all(&deps).unwrap();
-        std::fs::create_dir_all(prints.join("qsmxt-0123abcd")).unwrap();
+        fs_err::create_dir_all(&deps).unwrap();
+        fs_err::create_dir_all(prints.join("qsmxt-0123abcd")).unwrap();
         for f in ["qsmxt-0123abcd", "libqsmxt_engine-0123abcd.rlib", "libtract_core-0123abcd.rlib", "libqsm_core-0123abcd.rlib"] {
-            std::fs::write(deps.join(f), b"x").unwrap();
+            fs_err::write(deps.join(f), b"x").unwrap();
         }
         prune_build_cache(dir.path());
-        let left: Vec<String> = std::fs::read_dir(&deps).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
+        let left: Vec<String> = fs_err::read_dir(&deps).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
         assert!(left.contains(&"libtract_core-0123abcd.rlib".to_string()) && left.contains(&"libqsm_core-0123abcd.rlib".to_string()), "{left:?}");
         assert!(!left.iter().any(|f| f.starts_with("qsmxt-") || f.starts_with("libqsmxt_engine-")), "{left:?}");
         assert!(!prints.join("qsmxt-0123abcd").exists());

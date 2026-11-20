@@ -136,7 +136,7 @@ fn settings_path() -> Option<PathBuf> {
 
 fn load() -> Settings {
     let Some(path) = settings_path() else { return Settings::default() };
-    std::fs::read_to_string(path)
+    fs_err::read_to_string(path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
@@ -146,12 +146,12 @@ fn load() -> Settings {
 fn store(settings: &Settings) {
     let Some(path) = settings_path() else { return };
     if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
+        if fs_err::create_dir_all(parent).is_err() {
             return;
         }
     }
     if let Ok(json) = serde_json::to_string(settings) {
-        let _ = std::fs::write(path, json);
+        let _ = fs_err::write(path, json);
     }
 }
 
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn an_unreadable_settings_file_falls_back_to_tips_on() {
         let _s = TestSettings::new();
-        std::fs::write(std::env::var_os("QSMXT_TIPS_FILE").unwrap(), "not json").unwrap();
+        fs_err::write(std::env::var_os("QSMXT_TIPS_FILE").unwrap(), "not json").unwrap();
         assert!(enabled());
     }
 

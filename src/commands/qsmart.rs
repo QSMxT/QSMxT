@@ -106,7 +106,7 @@ pub fn execute(args: QsmartArgs) -> qsmxt_io::Result<()> {
     };
 
     if let Some(dir) = &args.intermediates {
-        std::fs::create_dir_all(dir)?;
+        fs_err::create_dir_all(dir)?;
     }
     let mut writer = args.intermediates.as_deref().map(|dir| IntermediateWriter {
         dir, reference: &field, written: Vec::new(), error: None,

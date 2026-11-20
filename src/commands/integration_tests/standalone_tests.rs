@@ -40,7 +40,7 @@ fn test_qsmart_writes_its_intermediates() {
     let Command::Qsmart(args) = cli.command else { panic!() };
     super::qsmart::execute(args).unwrap();
     assert!(dir.path().join("chi.nii").exists());
-    let mut written: Vec<String> = std::fs::read_dir(dir.path().join("inter")).unwrap()
+    let mut written: Vec<String> = fs_err::read_dir(dir.path().join("inter")).unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
     written.sort();
     assert_eq!(written, ["chimap_stage1.nii", "chimap_stage2.nii", "localfield_stage1.nii",
@@ -109,7 +109,7 @@ fn test_homogeneity_n4() {
     super::homogeneity::execute(args("2", &[])).unwrap();
     assert!(output.exists());
     // --n4-geometry make-nii takes make_nii's header for the file's voxel size.
-    std::fs::remove_file(&output).unwrap();
+    fs_err::remove_file(&output).unwrap();
     super::homogeneity::execute(args("2", &["--n4-geometry", "make-nii"])).unwrap();
     assert!(output.exists());
     let e = super::homogeneity::execute(args("5", &[])).unwrap_err().to_string();
@@ -314,7 +314,7 @@ fn test_init_to_file() {
     let output = dir.path().join("config.toml");
     super::init::execute(InitArgs { output: Some(output.clone()) }).unwrap();
     assert!(output.exists());
-    let content = std::fs::read_to_string(&output).unwrap();
+    let content = fs_err::read_to_string(&output).unwrap();
     assert!(content.contains("[inversion]"));
 }
 

@@ -12,20 +12,20 @@ fn a_nifti_copy_is_compressed_as_its_name_says() {
     let dir = tempfile::tempdir().unwrap();
     let gz = dir.path().join("a.nii.gz");
     let bytes = b"not really a NIfTI, the copy does not read it".to_vec();
-    let mut e = flate2::write::GzEncoder::new(std::fs::File::create(&gz).unwrap(), flate2::Compression::default());
+    let mut e = flate2::write::GzEncoder::new(fs_err::File::create(&gz).unwrap(), flate2::Compression::default());
     e.write_all(&bytes).unwrap();
     e.finish().unwrap();
-    let is_gz = |p: &std::path::Path| std::fs::read(p).unwrap().starts_with(&[0x1f, 0x8b]);
+    let is_gz = |p: &std::path::Path| fs_err::read(p).unwrap().starts_with(&[0x1f, 0x8b]);
 
     let plain = dir.path().join("plain.nii");
     super::copy_nifti(&gz, &plain).unwrap();
-    assert_eq!(std::fs::read(&plain).unwrap(), bytes);
+    assert_eq!(fs_err::read(&plain).unwrap(), bytes);
     let zipped = dir.path().join("zipped.nii.gz");
     super::copy_nifti(&plain, &zipped).unwrap();
     assert!(is_gz(&zipped));
     let same = dir.path().join("same.nii.gz");
     super::copy_nifti(&gz, &same).unwrap();
-    assert_eq!(std::fs::read(&same).unwrap(), std::fs::read(&gz).unwrap());
+    assert_eq!(fs_err::read(&same).unwrap(), fs_err::read(&gz).unwrap());
 }
 
 /// The two passes must not share a single output path. If they did, the second pass would
@@ -76,7 +76,7 @@ fn the_header_carries_the_first_phase_images_orientation() {
     let (c, s) = (0.3f64.cos(), 0.3f64.sin());
     let affine = [1.2 * c, 0.0, -2.0 * s, -90.5, 0.0, 1.1, 0.0, -110.25, 1.2 * s, 0.0, 2.0 * c, -60.0, 0.0, 0.0, 0.0, 1.0];
     let bytes = qsm_core::io::save_nifti(&[0.0; 120], (6, 5, 4), (1.2, 1.1, 2.0), &affine).unwrap();
-    std::fs::write(&phase, &bytes).unwrap();
+    fs_err::write(&phase, &bytes).unwrap();
     let run = run_with_echoes(vec![(phase.clone(), None)]);
     let config = qsmxt_engine::PipelineConfig::default();
     let mut store = super::FileStore {
@@ -200,7 +200,7 @@ fn a_custom_mask_turns_two_pass_off() {
     let dir = tempfile::tempdir().unwrap();
     let bids = dir.path();
     let anat = bids.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     let phase = anat.join("sub-1_echo-1_part-phase_MEGRE.nii");
     write_vol(&phase, (2, 2, 2));
     let run = run_with_echoes(vec![(phase, None)]);
@@ -211,7 +211,7 @@ fn a_custom_mask_turns_two_pass_off() {
 
     // Asking for a BYO mask that is actually there turns it off.
     let deriv_anat = bids.join("derivatives/bet/sub-1/anat");
-    std::fs::create_dir_all(&deriv_anat).unwrap();
+    fs_err::create_dir_all(&deriv_anat).unwrap();
     write_vol(&deriv_anat.join("sub-1_MEGRE_mask.nii"), (2, 2, 2));
     config.masking.custom_mask_tool = Some("bet".to_string());
     assert!(!two_pass(&config, &run));
@@ -237,7 +237,7 @@ fn a_supplied_mask_written_for_a_run_is_found_for_it() {
     let dir = tempfile::tempdir().unwrap();
     let bids = dir.path();
     let anat = bids.join("sub-1/ses-a/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     let mut runs = Vec::new();
     for r in ["1", "2"] {
         let phase = anat.join(format!("sub-1_ses-a_run-{r}_echo-1_part-phase_MEGRE.nii"));
@@ -249,7 +249,7 @@ fn a_supplied_mask_written_for_a_run_is_found_for_it() {
     }
     let write = |prefix: &str| {
         let path = bids.join(qsmxt_engine::supplied::supplied_mask_path("qsmbly", prefix).unwrap());
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
         write_vol(&path, (2, 2, 2));
         path
     };
@@ -270,12 +270,12 @@ fn a_custom_mask_lookup_ignores_the_reliable_mask() {
     let dir = tempfile::tempdir().unwrap();
     let bids = dir.path();
     let anat = bids.join("sub-1/anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     let phase = anat.join("sub-1_echo-1_part-phase_MEGRE.nii");
     write_vol(&phase, (2, 2, 2));
 
     let deriv_anat = bids.join("derivatives/qsmxt/sub-1/anat");
-    std::fs::create_dir_all(&deriv_anat).unwrap();
+    fs_err::create_dir_all(&deriv_anat).unwrap();
     let brain = deriv_anat.join("sub-1_MEGRE_mask.nii");
     let reliable = deriv_anat.join("sub-1_MEGRE_desc-reliable_mask.nii");
     write_vol(&brain, (2, 2, 2));
@@ -288,7 +288,7 @@ fn a_custom_mask_lookup_ignores_the_reliable_mask() {
 
     // Only *our* reliable mask is excluded: `desc-brain`/`desc-bet` is how most tools name a
     // brain mask, and those must still be found — including when they are the only candidate.
-    std::fs::remove_file(&brain).unwrap();
+    fs_err::remove_file(&brain).unwrap();
     let desc_brain = deriv_anat.join("sub-1_MEGRE_desc-brain_mask.nii");
     write_vol(&desc_brain, (2, 2, 2));
     assert_eq!(super::find_custom_mask(&run, "qsmxt"), Some(desc_brain));
@@ -357,13 +357,13 @@ fn test_find_custom_mask() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     let anat = root.join("sub-1").join("anat");
-    std::fs::create_dir_all(&anat).unwrap();
+    fs_err::create_dir_all(&anat).unwrap();
     let phase = anat.join("sub-1_part-phase_MEGRE.nii");
-    std::fs::write(&phase, b"x").unwrap();
+    fs_err::write(&phase, b"x").unwrap();
     let bet_anat = root.join("derivatives").join("bet").join("sub-1").join("anat");
-    std::fs::create_dir_all(&bet_anat).unwrap();
+    fs_err::create_dir_all(&bet_anat).unwrap();
     let mask = bet_anat.join("sub-1_desc-bet_mask.nii");
-    std::fs::write(&mask, b"x").unwrap();
+    fs_err::write(&mask, b"x").unwrap();
 
     let run = QsmRun {
         key: AcquisitionKey {
@@ -508,7 +508,7 @@ fn a_gapped_2d_acquisition_is_refused_unless_ignored() {
     let phase = nifti_with(affine, (4, 4, 4));
     let mut cfg = qsmxt_engine::PipelineConfig::default();
     let meta = super::resolve_run_geometry(&run, &phase, &cfg).unwrap();
-    let write = |t: f64| std::fs::write(&json, format!(
+    let write = |t: f64| fs_err::write(&json, format!(
         r#"{{"EchoTime": 0.004, "MagneticFieldStrength": 3, "SliceThickness": {t}, "MRAcquisitionType": "2D"}}"#)).unwrap();
 
     write(3.0); // contiguous: passed on to qsm-core

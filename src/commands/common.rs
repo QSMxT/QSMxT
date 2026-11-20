@@ -10,7 +10,7 @@ pub type Nifti4d = (Vec<f64>, (usize, usize, usize, usize));
 /// Read a NIfTI (3D or 4D, `.nii`/`.nii.gz`) as its full data plus `(nx, ny, nz, n_vol)`.
 /// Unlike [`load_nifti`], this keeps every volume of a 4D file (echo-major layout).
 pub fn read_nifti_any(path: &Path) -> qsmxt_io::Result<Nifti4d> {
-    let bytes = std::fs::read(path)
+    let bytes = fs_err::read(path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
     let (data, dims4, _voxel, _affine) = io::load_nifti_4d(&bytes)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
@@ -136,7 +136,7 @@ impl MultiEcho {
 /// `read_nifti_file`/`load_nifti` only return the first volume of a 4D file, so this
 /// uses `load_nifti_4d` and de-interleaves the flat `t`-major buffer.
 pub fn load_nifti_4d(path: &Path) -> qsmxt_io::Result<MultiEcho> {
-    let bytes = std::fs::read(path)
+    let bytes = fs_err::read(path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
     let (data, (nx, ny, nz, nt), voxel_size, affine) = io::load_nifti_4d(&bytes)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;

@@ -7,7 +7,7 @@ use crate::cli::ValidateArgs;
 fn deriv_tools_with(bids_dir: &Path, run: &QsmRun, suffix_glob: &str, skip_desc: bool) -> Vec<String> {
     let deriv = bids_dir.join("derivatives");
     let mut tools = Vec::new();
-    let entries = match std::fs::read_dir(&deriv) {
+    let entries = match fs_err::read_dir(&deriv) {
         Ok(e) => e,
         Err(_) => return tools,
     };

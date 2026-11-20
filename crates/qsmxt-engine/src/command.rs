@@ -49,7 +49,9 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
     }
     let visible: Vec<&str> = crate::schema::settings_view(config, &crate::schema::ViewFacts::default())
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
-    let (values, base_values) = (serde_json::to_value(config).unwrap_or_default(), serde_json::to_value(base).unwrap_or_default());
+    // A config is plain data with string keys: serialising it cannot fail.
+    let json = |c: &PipelineConfig| serde_json::to_value(c).expect("a config serialises");
+    let (values, base_values) = (json(config), json(base));
     let m = &config.multi_orientation;
     // In the table's order: the registry's (`schema::cli`), each opposite switch said at its
     // switch's place.

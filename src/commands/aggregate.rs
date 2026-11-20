@@ -24,7 +24,7 @@ pub fn execute(args: AggregateArgs) -> qsmxt_io::Result<()> {
     run::init_logging(run::LogSink::Buffer(Vec::new()), debug);
     // Before anything is created: the default output directory is inside it.
     discovery::require_bids_dir(&dataset.bids_dir)?;
-    std::fs::create_dir_all(&derivatives_dir)?;
+    fs_err::create_dir_all(&derivatives_dir)?;
 
     let config = run::build_config(dataset.config.as_deref(), &pipeline)?;
 
@@ -36,10 +36,10 @@ pub fn execute(args: AggregateArgs) -> qsmxt_io::Result<()> {
 
     // qsmxt.log: what each worker logged, in run order, then this step's own lines — the same
     // record a local run leaves, grouped by run rather than interleaved.
-    let mut log = std::fs::File::create(derivatives_dir.join("qsmxt.log"))?;
+    let mut log = fs_err::File::create(derivatives_dir.join("qsmxt.log"))?;
     for path in worker_logs(&derivatives_dir, &runs) {
         use std::io::Write;
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let text = fs_err::read_to_string(&path).unwrap_or_default();
         let name = path.strip_prefix(&derivatives_dir).unwrap_or(&path);
         writeln!(log, "==> {} <==", name.display())?;
         log.write_all(text.as_bytes())?;
@@ -93,7 +93,7 @@ pub fn execute(args: AggregateArgs) -> qsmxt_io::Result<()> {
 /// several runs) belonging to `runs`, in run order.
 fn worker_logs(derivatives_dir: &std::path::Path, runs: &[discovery::QsmRun]) -> Vec<std::path::PathBuf> {
     let dir = derivatives_dir.join("logs");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let Ok(entries) = fs_err::read_dir(&dir) else { return Vec::new() };
     let mut names: Vec<String> = entries.flatten()
         .filter_map(|e| e.file_name().to_str().map(str::to_string))
         .filter(|n| n.ends_with(".log"))

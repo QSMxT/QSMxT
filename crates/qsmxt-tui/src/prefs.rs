@@ -24,7 +24,7 @@ fn path() -> Option<PathBuf> {
 
 fn load() -> Prefs {
     path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|p| fs_err::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
@@ -33,12 +33,12 @@ fn load() -> Prefs {
 fn store(prefs: &Prefs) {
     let Some(path) = path() else { return };
     if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
+        if fs_err::create_dir_all(parent).is_err() {
             return;
         }
     }
     if let Ok(json) = serde_json::to_string(prefs) {
-        let _ = std::fs::write(path, json);
+        let _ = fs_err::write(path, json);
     }
 }
 

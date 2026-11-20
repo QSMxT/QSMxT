@@ -187,7 +187,7 @@ fn the_cache_key_records_the_fit_domain() {
     let f = fixture();
     let config = sep_config(SeparationAlgorithm::R2starQsm);
     separate(&f, &config);
-    let prov: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+    let prov: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(
         f.output.provenance_path(&f.run.key, "chi_separation")).unwrap()).unwrap();
     assert_eq!(prov["parameters"]["domain"], "support");
     let support = f.output.qsm_support_path(&f.run.key).display().to_string();

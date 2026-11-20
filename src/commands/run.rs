@@ -17,7 +17,7 @@ pub(crate) enum LogSink {
     /// Held until the log file is known: a `--no-dataset-steps` worker names its log after the
     /// runs it discovers, and `qsmxt aggregate` puts the workers' logs first.
     Buffer(Vec<String>),
-    File(std::fs::File),
+    File(fs_err::File),
 }
 
 /// One sink for the process, swapped by each command that runs the pipeline. A global rather
@@ -36,7 +36,7 @@ fn log_line(line: &str) {
 }
 
 /// Send the log to `file` from here on, writing whatever was buffered first.
-pub(crate) fn attach_log_file(mut file: std::fs::File) -> std::io::Result<()> {
+pub(crate) fn attach_log_file(mut file: fs_err::File) -> std::io::Result<()> {
     let mut sink = LOG_SINK.lock().unwrap_or_else(|e| e.into_inner());
     if let LogSink::Buffer(lines) = &*sink {
         for line in lines {
@@ -196,11 +196,11 @@ pub fn execute(args: RunArgs) -> qsmxt_io::Result<()> {
     if dry {
         init_logging(LogSink::Discard, debug);
     } else if no_dataset_steps {
-        std::fs::create_dir_all(&derivatives_dir)?;
+        fs_err::create_dir_all(&derivatives_dir)?;
         init_logging(LogSink::Buffer(Vec::new()), debug);
     } else {
-        std::fs::create_dir_all(&derivatives_dir)?;
-        let log_file = std::fs::File::create(derivatives_dir.join("qsmxt.log"))?;
+        fs_err::create_dir_all(&derivatives_dir)?;
+        let log_file = fs_err::File::create(derivatives_dir.join("qsmxt.log"))?;
         init_logging(LogSink::File(log_file), debug);
     }
 
@@ -371,9 +371,9 @@ fn run_pipelines(
     if args.no_dataset_steps {
         let path = worker_log_path(derivatives_dir, runs);
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            fs_err::create_dir_all(parent)?;
         }
-        attach_log_file(std::fs::File::create(&path)?)?;
+        attach_log_file(fs_err::File::create(&path)?)?;
     }
 
     // Log version info
@@ -705,7 +705,7 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("c.toml");
-        std::fs::write(&path, "[bg_removal.vsharp]\nmin_radius = 0.0\n").unwrap();
+        fs_err::write(&path, "[bg_removal.vsharp]\nmin_radius = 0.0\n").unwrap();
         let e = super::build_config(Some(&path), &pipeline_args(&[])).unwrap_err().to_string();
         assert!(e.contains("bg_removal.vsharp.min_radius"), "{e}");
 

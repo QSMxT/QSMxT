@@ -37,7 +37,7 @@ impl DerivativeOutputs {
     /// the space its last run recorded. For the readers that run after the pipeline — provenance,
     /// the reference summary, the multi-orientation members.
     pub fn published(&self, key: &AcquisitionKey) -> Self {
-        let space = std::fs::read_to_string(self.state_path(key)).ok()
+        let space = fs_err::read_to_string(self.state_path(key)).ok()
             .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
             .and_then(|v| v.get("space").and_then(|s| s.as_str()).map(str::to_string));
         self.in_space(space.as_deref())
@@ -115,7 +115,7 @@ impl DerivativeOutputs {
     /// This run's published NIfTIs, across [`Self::published_dirs`], sorted.
     pub fn run_published_niftis(&self, key: &AcquisitionKey) -> Vec<PathBuf> {
         let mut files: Vec<PathBuf> = self.published_dirs(key).iter()
-            .filter_map(|d| std::fs::read_dir(d).ok())
+            .filter_map(|d| fs_err::read_dir(d).ok())
             .flat_map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())))
             .filter(|p| p.extension().is_some_and(|e| e == "nii"))
             .filter(|p| self.is_run_output(key, p))
@@ -464,15 +464,15 @@ impl DerivativeOutputs {
 
 /// `graph` as Mermaid at `path` (`*.mmd`) and as SVG beside it (`*.svg`).
 pub fn write_graph(path: &Path, graph: &qsmxt_engine::pipeline_graph::PipelineGraph) -> std::io::Result<()> {
-    std::fs::write(path, graph.to_mermaid())?;
-    std::fs::write(path.with_extension("svg"), graph.to_svg())
+    fs_err::write(path, graph.to_mermaid())?;
+    fs_err::write(path.with_extension("svg"), graph.to_svg())
 }
 
 /// Remove the graph [`write_graph`] wrote at `path`, if it is there.
 pub fn remove_graph(path: &Path) -> std::io::Result<()> {
     for p in [path.to_path_buf(), path.with_extension("svg")] {
         if p.exists() {
-            std::fs::remove_file(p)?;
+            fs_err::remove_file(p)?;
         }
     }
     Ok(())

@@ -10,7 +10,7 @@ use qsmxt_io::error::QsmxtError;
 /// spreadsheet export, or by hand — but strict about the shape, because a row that is not
 /// three numbers means the file is not what the user thinks it is.
 fn read_b0_dirs_file(path: &std::path::Path) -> qsmxt_io::Result<Vec<(f64, f64, f64)>> {
-    let text = std::fs::read_to_string(path)
+    let text = fs_err::read_to_string(path)
         .map_err(|e| QsmxtError::Config(format!("{}: {}", path.display(), e)))?;
     let mut dirs = Vec::new();
     for (lineno, line) in text.lines().enumerate() {
@@ -228,7 +228,7 @@ pub(super) fn run_sti(args: crate::cli::InvertStiArgs) -> qsmxt_io::Result<()> {
         let vols: Vec<&[f64]> = volumes.iter().map(|v| v.as_slice()).collect();
         qsmxt_io::nifti::write::write_volumes_4d(&path, &vols, r.dims, r.voxel_size, &r.affine)?;
         if let Some(js) = qsmxt_io::bids::entities::sidecar_path(&path) {
-            std::fs::write(js, serde_json::to_string_pretty(&sidecar).unwrap_or_default())?;
+            fs_err::write(js, serde_json::to_string_pretty(&sidecar).unwrap_or_default())?;
         }
         Ok(())
     };

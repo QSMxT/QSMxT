@@ -43,9 +43,9 @@ pub fn execute(args: SegmentArgs) -> qsmxt_io::Result<()> {
             out.push_str(&format!("{id}\t{name}\n"));
         }
         if let Some(parent) = lookup.parent() {
-            std::fs::create_dir_all(parent)?;
+            fs_err::create_dir_all(parent)?;
         }
-        std::fs::write(lookup, out)?;
+        fs_err::write(lookup, out)?;
         info!("Wrote {}", lookup.display());
     }
     Ok(())

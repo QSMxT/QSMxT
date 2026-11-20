@@ -64,11 +64,11 @@ pub(crate) fn write_step_provenance(
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
     if let Some(parent) = prov_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        fs_err::create_dir_all(parent)?;
     }
     let json = serde_json::to_string_pretty(&prov)
         .map_err(|e| QsmxtError::Config(format!("Failed to serialize provenance: {}", e)))?;
-    std::fs::write(prov_path, json)?;
+    fs_err::write(prov_path, json)?;
     Ok(())
 }
 
@@ -308,13 +308,13 @@ fn write_run_files(
     let key = &run.key;
     let methods_path = output.run_methods_path(key);
     if let Some(dir) = methods_path.parent() {
-        std::fs::create_dir_all(dir)?;
+        fs_err::create_dir_all(dir)?;
     }
     let summary = qsmxt_engine::dataset::summarise_run(config, plan, facts, record, "qsmxt");
-    std::fs::write(&methods_path, summary.methods.to_markdown())?;
+    fs_err::write(&methods_path, summary.methods.to_markdown())?;
     let file = RunRecordFile { record: record.clone(), scan: facts.clone() };
     let json = serde_json::to_string_pretty(&file).map_err(|e| QsmxtError::Config(e.to_string()))?;
-    std::fs::write(output.run_record_path(key), json + "\n")?;
+    fs_err::write(output.run_record_path(key), json + "\n")?;
     // Drawn on the grid the run took: the return to the acquired grid only if it was resampled.
     write_graph(&output.run_graph_path(key, false), &summary.planned)?;
     let after_path = output.run_graph_path(key, true);
@@ -332,7 +332,7 @@ fn write_run_files(
 pub fn record_orientation_group(
     run: &QsmRun, config: &PipelineConfig, output: &DerivativeOutputs, group: Option<&str>,
 ) -> crate::Result<()> {
-    let Ok(text) = std::fs::read_to_string(output.run_record_path(&run.key)) else { return Ok(()) };
+    let Ok(text) = fs_err::read_to_string(output.run_record_path(&run.key)) else { return Ok(()) };
     let mut file: RunRecordFile = serde_json::from_str(&text).map_err(|e| QsmxtError::Config(e.to_string()))?;
     if !file.record.set_orientation_group(group) {
         return Ok(());
@@ -347,7 +347,7 @@ pub fn record_orientation_group(
 pub(crate) fn record_dicom_export(
     run: &QsmRun, config: &PipelineConfig, output: &DerivativeOutputs, exported: bool,
 ) -> crate::Result<()> {
-    let Ok(text) = std::fs::read_to_string(output.run_record_path(&run.key)) else { return Ok(()) };
+    let Ok(text) = fs_err::read_to_string(output.run_record_path(&run.key)) else { return Ok(()) };
     let mut file: RunRecordFile = serde_json::from_str(&text).map_err(|e| QsmxtError::Config(e.to_string()))?;
     if !file.record.set_dicom_exported(exported) {
         return Ok(());
@@ -467,7 +467,7 @@ fn restore_working_grid(
         return Ok(());
     }
     let stash = output.working_grid_dir(&run.key);
-    let saved: Vec<PathBuf> = std::fs::read_dir(&stash)
+    let saved: Vec<PathBuf> = fs_err::read_dir(&stash)
         .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())).collect())
         .unwrap_or_default();
     if saved.is_empty() {
@@ -481,8 +481,8 @@ fn restore_working_grid(
         for f in &saved {
             if let Some(name) = f.file_name() {
                 let dir = output.published_dir_for(&run.key, &name.to_string_lossy());
-                std::fs::create_dir_all(&dir)?;
-                std::fs::copy(f, dir.join(name))?;
+                fs_err::create_dir_all(&dir)?;
+                fs_err::copy(f, dir.join(name))?;
             }
         }
         state.completed_steps.remove("output_space");
@@ -504,7 +504,7 @@ fn input_identity(run: &QsmRun) -> Vec<serde_json::Value> {
         files.extend(mese.magnitude_niftis.iter().map(|p| p.as_path()));
     }
     files.iter().map(|p| {
-        let meta = std::fs::metadata(p).ok();
+        let meta = fs_err::metadata(p).ok();
         let modified = meta.as_ref().and_then(|m| m.modified().ok())
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_nanos().to_string());
@@ -533,7 +533,7 @@ pub(crate) fn find_custom_derivative(
         return None;
     }
     let tool_dirs: Vec<PathBuf> = if tool == "*" {
-        let mut ds: Vec<PathBuf> = std::fs::read_dir(&deriv).ok()?
+        let mut ds: Vec<PathBuf> = fs_err::read_dir(&deriv).ok()?
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| p.is_dir())
             .collect();
@@ -594,7 +594,7 @@ fn robust_fit_report_path(field_path: &Path) -> PathBuf {
 
 /// A JSON file's top-level object, or an empty one if it is absent or unreadable.
 fn read_json_object(path: &Path) -> serde_json::Map<String, serde_json::Value> {
-    std::fs::read_to_string(path).ok()
+    fs_err::read_to_string(path).ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default()

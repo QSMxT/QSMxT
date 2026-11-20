@@ -19,8 +19,10 @@ pub fn write_dataset_files(
     crate::bids::dataset_description::write(derivatives_dir, bids_dir)?;
     crate::bids::dataset_description::write_bidsignore(derivatives_dir)?;
     crate::bids::dataset_description::write_readme(derivatives_dir)?;
-    std::fs::write(derivatives_dir.join("pipeline_config.toml"), config.to_toml().unwrap_or_default())?;
-    std::fs::write(derivatives_dir.join("methods.md"), qsmxt_engine::methods::generate_methods(config))?;
+    // A configuration that cannot be written is an error, not an empty pipeline_config.toml.
+    let toml = config.to_toml().map_err(|e| crate::error::QsmxtError::Config(format!("pipeline_config.toml: {e}")))?;
+    fs_err::write(derivatives_dir.join("pipeline_config.toml"), toml)?;
+    fs_err::write(derivatives_dir.join("methods.md"), qsmxt_engine::methods::generate_methods(config))?;
     if let Some(graph) = dataset_graph(config, runs) {
         crate::bids::derivatives::write_graph(&DerivativeOutputs::new(derivatives_dir).dataset_graph_path(), &graph)?;
     }
@@ -42,16 +44,16 @@ pub fn write_dataset_summary(derivatives_dir: &std::path::Path, config: &Pipelin
             .collect();
     let inputs: Vec<_> = done.iter().map(|(_, p, f, r)| (p, f, r)).collect();
     let Some(summary) = qsmxt_engine::dataset::summarise(config, &inputs, "qsmxt") else { return Ok(()) };
-    std::fs::write(derivatives_dir.join("methods.md"), summary.methods.to_markdown())?;
+    fs_err::write(derivatives_dir.join("methods.md"), summary.methods.to_markdown())?;
     write_graph(&output.dataset_graph_path(), &summary.graph)?;
     let changes = output.changes_dir();
     if changes.exists() {
-        std::fs::remove_dir_all(&changes)?;
+        fs_err::remove_dir_all(&changes)?;
     }
     for &i in &summary.changed {
         let name = &done[i].0;
-        std::fs::create_dir_all(&changes)?;
-        std::fs::write(output.change_path(name, false), summary.runs[i].methods.to_markdown())?;
+        fs_err::create_dir_all(&changes)?;
+        fs_err::write(output.change_path(name, false), summary.runs[i].methods.to_markdown())?;
         write_graph(&output.change_path(name, true), &summary.runs[i].after)?;
     }
     info!("Methods and pipeline graph from {} run(s)", done.len());
@@ -83,7 +85,7 @@ pub fn current_run_records(
             log::debug!("{name}: its run record is not current: the run {why}");
             continue;
         }
-        match std::fs::read_to_string(&path).map_err(|e| e.to_string())
+        match fs_err::read_to_string(&path).map_err(|e| e.to_string())
             .and_then(|t| serde_json::from_str::<crate::pipeline::runner::RunRecordFile>(&t).map_err(|e| e.to_string())) {
             Ok(mut file) => {
                 // A record from before findings carried their kind: the kind follows the strength.
@@ -128,7 +130,7 @@ pub fn write_reference_summary(
                 continue;
             }
             let Some(sidecar) = crate::bids::entities::sidecar_path(&spec.path) else { continue };
-            let Ok(text) = std::fs::read_to_string(&sidecar) else { continue };
+            let Ok(text) = fs_err::read_to_string(&sidecar) else { continue };
             let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
             let Some(reference) = v.get("QsmReference").and_then(|r| r.as_str()) else { continue };
             let num = |k: &str| v.get(k).and_then(|x| x.as_f64())
@@ -155,7 +157,7 @@ pub fn write_reference_summary(
     }
     let path = derivatives_dir.join("desc-reference_summary.tsv");
     let header = REFERENCE_SUMMARY_COLUMNS.join("\t");
-    match std::fs::write(&path, format!("{header}\n{body}")) {
+    match fs_err::write(&path, format!("{header}\n{body}")) {
         Ok(()) => info!("QSM reference per run -> {}", path.display()),
         Err(e) => warn!("Could not write the reference summary: {}", e),
     }
@@ -177,7 +179,7 @@ pub fn clean_run(output: &DerivativeOutputs, run: &discovery::QsmRun) {
     }
     let stash = output.working_grid_dir(&run.key);
     if stash.exists() {
-        if let Err(e) = std::fs::remove_dir_all(&stash) {
+        if let Err(e) = fs_err::remove_dir_all(&stash) {
             warn!("{}: could not remove {}: {}", run.key, stash.display(), e);
         }
     }
@@ -192,7 +194,7 @@ pub fn clean_run(output: &DerivativeOutputs, run: &discovery::QsmRun) {
 ///
 /// Best-effort throughout: the table is the deliverable and is already written.
 pub fn write_group_figures(derivatives_dir: &std::path::Path, table_path: &std::path::Path) {
-    let Ok(text) = std::fs::read_to_string(table_path) else { return };
+    let Ok(text) = fs_err::read_to_string(table_path) else { return };
     let (rows, n_runs) = crate::pipeline::figure::aggregate_runs(
         &crate::pipeline::stats::parse_tsv(&text));
     if rows.is_empty() || n_runs < 2 {
