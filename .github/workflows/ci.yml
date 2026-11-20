@@ -81,11 +81,12 @@ jobs:
         if: always()
         run: python3 .github/scripts/test_timings.py target
 
-      # Files and functions over the size budgets, against the ceilings in
-      # .github/size-budget.json. Report only, for now.
+      # Fails on a file or function over the size budgets, against the ceilings in
+      # .github/size-budget.json (empty: nothing is over budget). A ceiling is raised or added
+      # only in its own commit, with the reason in the commit message.
       - name: Size budgets
         if: always()
-        run: python3 .github/scripts/size_budget.py
+        run: python3 .github/scripts/size_budget.py --enforce
 
       # Fails if a qsm-core *Params field isn't represented in its qsmxt-engine
       # *Config wrapper (drift guard). See crates/qsmxt-engine/tests/param_coverage.rs.

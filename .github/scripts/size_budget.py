@@ -12,7 +12,7 @@ ceiling. A ceiling can only go down: a listed file or function that grows past i
 over budget, is reported as a breach. Lines are counted as in the file, comments and blank lines
 included.
 
-Report only for now: exits 0 unless `--enforce` is given.
+Exits 0 unless `--enforce` is given; CI gives it.
 
     python3 .github/scripts/size_budget.py              # report
     python3 .github/scripts/size_budget.py --enforce    # exit 1 on a breach
