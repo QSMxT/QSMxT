@@ -1,10 +1,11 @@
-//! `qsmxt run`'s settings flags, built from the engine's flag table
-//! ([`qsmxt_engine::schema::cli::PIPELINE_FLAGS`]). qsmxt-io applies them ([`qsmxt_io::settings`]).
+//! `qsmxt run`'s settings flags, and `qsmxt qsmart`'s QSMART ones, built from the engine's flag
+//! table ([`qsmxt_engine::schema::cli::PIPELINE_FLAGS`]). qsmxt-io applies them
+//! ([`qsmxt_io::settings`]).
 
 use clap::builder::{PossibleValue, PossibleValuesParser};
 use clap::{Arg, ArgAction, Command};
 use qsmxt_engine::schema::cli::{Flag, FlagAction, FlagParse, PIPELINE_FLAGS};
-use qsmxt_engine::schema::cli_apply::Given;
+use qsmxt_engine::schema::cli_apply::{setting_of, Given};
 pub use qsmxt_io::settings::{build_config, RunSettings};
 #[cfg(test)]
 pub use qsmxt_io::settings::{apply, apply_normalised};
@@ -147,7 +148,13 @@ impl clap::FromArgMatches for SettingsArgs {
 /// The settings flags given on the command line, in the table's order, with their values as
 /// typed.
 pub fn given(matches: &clap::ArgMatches) -> Vec<Given> {
-    PIPELINE_FLAGS.iter().filter(|f| matches.value_source(f.id) == Some(clap::parser::ValueSource::CommandLine)).map(|flag| {
+    given_of(matches, PIPELINE_FLAGS.iter())
+}
+
+/// Those of `flags` (all of which the command has) given on the command line, with their values
+/// as typed.
+fn given_of(matches: &clap::ArgMatches, flags: impl Iterator<Item = &'static Flag>) -> Vec<Given> {
+    flags.filter(|f| matches.value_source(f.id) == Some(clap::parser::ValueSource::CommandLine)).map(|flag| {
         let values = matches.get_raw(flag.id).map(|v| v.map(|s| s.to_string_lossy().into_owned()).collect()).unwrap_or_default();
         Given { flag, values }
     }).collect()
@@ -156,6 +163,36 @@ pub fn given(matches: &clap::ArgMatches) -> Vec<Given> {
 /// `cmd` with every settings flag added, in the table's order.
 pub fn augment(cmd: Command) -> Command {
     cmd.args(PIPELINE_FLAGS.iter().map(arg))
+}
+
+/// The flags of QSMART's own settings (`inversion.qsmart.*`), in the table's order: `qsmxt
+/// qsmart`'s settings flags, so a new QSMART setting is one of them as it is a `qsmxt run` flag.
+fn qsmart_flags() -> impl Iterator<Item = &'static Flag> {
+    PIPELINE_FLAGS.iter().filter(|f| setting_of(f).is_some_and(|s| s.path.starts_with("inversion.qsmart.")))
+}
+
+/// `qsmxt qsmart`'s settings flags, parsed: those given, as typed, for qsmxt-io to apply
+/// ([`qsmxt_io::settings::apply`]) as it applies `qsmxt run`'s.
+#[derive(Debug, Default)]
+pub struct QsmartSettingsArgs(pub Vec<Given>);
+
+impl clap::Args for QsmartSettingsArgs {
+    fn augment_args(cmd: Command) -> Command {
+        cmd.args(qsmart_flags().map(arg))
+    }
+    fn augment_args_for_update(cmd: Command) -> Command {
+        Self::augment_args(cmd)
+    }
+}
+
+impl clap::FromArgMatches for QsmartSettingsArgs {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        Ok(QsmartSettingsArgs(given_of(matches, qsmart_flags())))
+    }
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        self.0 = given_of(matches, qsmart_flags());
+        Ok(())
+    }
 }
 
 #[cfg(test)]
