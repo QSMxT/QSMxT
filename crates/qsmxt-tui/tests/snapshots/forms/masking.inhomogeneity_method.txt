@@ -1,4 +1,4 @@
-## inhomogeneity_method = n4
+## masking.inhomogeneity_method = n4
 config:
   /masking/inhomogeneity_method: "makehomogeneous" -> "n4"
 command:

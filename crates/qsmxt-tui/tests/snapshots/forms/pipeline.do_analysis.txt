@@ -1,4 +1,4 @@
-## toggle do_analysis
+## toggle pipeline.do_analysis
 config:
   /pipeline/do_analysis: false -> true
 command:

@@ -1,11 +1,11 @@
-## toggle do_r2map
+## toggle pipeline.do_r2map
 config:
   /pipeline/do_r2map: false -> true
 command:
   + --do-r2map
 methods: 664231f3af357bbc (14 lines)
 
-## toggle do_r2map, toggle export_dicom
+## toggle pipeline.do_r2map, toggle export_dicom
 config:
   /pipeline/do_r2map: false -> true
   /pipeline/export_dicom: false -> true

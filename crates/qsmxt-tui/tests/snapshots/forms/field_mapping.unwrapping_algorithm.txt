@@ -1,18 +1,18 @@
-## unwrapping_algorithm = laplacian
+## field_mapping.unwrapping_algorithm = laplacian
 config:
   /field_mapping/unwrapping_algorithm: "romeo" -> "laplacian"
 command:
   + --unwrapping-algorithm laplacian
 methods: 8a7cd83e5a7cf301 (31 lines)
 
-## unwrapping_algorithm = prelude
+## field_mapping.unwrapping_algorithm = prelude
 config:
   /field_mapping/unwrapping_algorithm: "romeo" -> "prelude"
 command:
   + --unwrapping-algorithm prelude
 methods: c44b0f0e360a6993 (30 lines)
 
-## unwrapping_algorithm = laplacian, laplacian_solver = fft
+## field_mapping.unwrapping_algorithm = laplacian, field_mapping.laplacian_solver = fft
 config:
   /field_mapping/unwrapping_algorithm: "romeo" -> "laplacian"
   /field_mapping/laplacian_solver: "dct" -> "fft"

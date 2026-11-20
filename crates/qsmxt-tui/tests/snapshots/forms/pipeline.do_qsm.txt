@@ -1,11 +1,11 @@
-## toggle do_qsm
+## toggle pipeline.do_qsm
 config:
   /pipeline/do_qsm: true -> false
 command:
   + --no-qsm
 methods: 7bf93c1340b50340 (10 lines)
 
-## toggle do_qsm, toggle do_smwi
+## toggle pipeline.do_qsm, toggle pipeline.do_smwi
 config:
   /pipeline/do_qsm: true -> false
   /pipeline/do_smwi: false -> true
@@ -13,7 +13,7 @@ command:
   + --do-smwi
 methods: 56b55ff2d942a14d (20 lines)
 
-## toggle do_qsm, toggle do_analysis
+## toggle pipeline.do_qsm, toggle pipeline.do_analysis
 config:
   /pipeline/do_qsm: true -> false
   /pipeline/do_analysis: false -> true

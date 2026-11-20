@@ -1,4 +1,4 @@
-## toggle two_pass
+## toggle masking.two_pass
 config:
   /masking/two_pass: false -> true
   /masking/two_pass_sections: null -> [{"input":"phase-quality","generator":{"op":"threshold","method":"otsu","value":null},"refinements":[]}]

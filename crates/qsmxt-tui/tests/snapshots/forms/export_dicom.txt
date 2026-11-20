@@ -5,7 +5,7 @@ command:
   + --export-dicom
 methods: 21eb9f236a9edfc2 (13 lines)
 
-## toggle export_dicom, toggle do_t2starmap
+## toggle export_dicom, toggle pipeline.do_t2starmap
 config:
   /pipeline/do_t2starmap: false -> true
   /pipeline/export_dicom: false -> true
