@@ -3,8 +3,8 @@ config:
   /qsm/reference: "mean" -> "region"
   /qsm/reference_region: null -> "ventricles"
 command:
-  + --do-segmentation
   + --qsm-reference ventricles
+  + --do-segmentation
 methods: 5e80f7620f6776e8 (33 lines)
 
 ## qsm.reference = ventricles, segmentation_source = custom dseg
@@ -13,8 +13,8 @@ config:
   /qsm/reference_region: null -> "ventricles"
   /segmentation/custom_dseg_tool: null -> "*"
 command:
-  + --use-custom-dseg
   + --qsm-reference ventricles
+  + --use-custom-dseg
 methods: 22262053447aff03 (28 lines)
 
 ## qsm.reference = ventricles, toggle export_dicom
@@ -23,8 +23,8 @@ config:
   /qsm/reference: "mean" -> "region"
   /qsm/reference_region: null -> "ventricles"
 command:
+  + --qsm-reference ventricles
   + --do-segmentation
   + --export-dicom
-  + --qsm-reference ventricles
 methods: c91895122abb5bc0 (33 lines)
 

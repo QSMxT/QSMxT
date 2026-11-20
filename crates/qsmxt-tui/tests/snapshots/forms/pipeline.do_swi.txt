@@ -21,7 +21,7 @@ config:
   /swi/filtered_phase: false -> true
 command:
   + --do-swi
-  + --export-dicom
   + --swi-filtered-phase
+  + --export-dicom
 methods: c2899b77c36dbb4e (14 lines)
 

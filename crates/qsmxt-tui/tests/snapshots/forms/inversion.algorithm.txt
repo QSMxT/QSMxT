@@ -325,8 +325,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "xqsm"
 command:
-  + --do-r2primemap
   + --qsm-algorithm xqsm
+  + --do-r2primemap
 methods: 1cd61f308afeab0d (27 lines)
 
 ## inversion.algorithm = qsmnet, toggle pipeline.do_r2primemap
@@ -334,8 +334,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet"
 command:
-  + --do-r2primemap
   + --qsm-algorithm qsmnet
+  + --do-r2primemap
 methods: 23d94714ec6b9941 (28 lines)
 
 ## inversion.algorithm = qsmnet-plus, toggle pipeline.do_r2primemap
@@ -343,8 +343,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
 command:
-  + --do-r2primemap
   + --qsm-algorithm qsmnet-plus
+  + --do-r2primemap
 methods: dd22a4636384429f (28 lines)
 
 ## inversion.algorithm = autoqsm, toggle pipeline.do_r2primemap
@@ -352,8 +352,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "autoqsm"
 command:
-  + --do-r2primemap
   + --qsm-algorithm autoqsm
+  + --do-r2primemap
 methods: 1873c20fab28aaa4 (26 lines)
 
 ## inversion.algorithm = qsmgan, toggle pipeline.do_r2primemap
@@ -361,8 +361,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "qsmgan"
 command:
-  + --do-r2primemap
   + --qsm-algorithm qsmgan
+  + --do-r2primemap
 methods: 0d8421d9d75d9dae (28 lines)
 
 ## inversion.algorithm = ir2qsm, toggle pipeline.do_r2primemap
@@ -370,8 +370,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
 command:
-  + --do-r2primemap
   + --qsm-algorithm ir2qsm
+  + --do-r2primemap
 methods: 6b8f3e39777a53fa (23 lines)
 
 ## inversion.algorithm = lpcnn, toggle pipeline.do_r2primemap
@@ -379,8 +379,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "lpcnn"
 command:
-  + --do-r2primemap
   + --qsm-algorithm lpcnn
+  + --do-r2primemap
 methods: 9825c83ed5f60a77 (27 lines)
 
 ## inversion.algorithm = modl-qsm, toggle pipeline.do_r2primemap
@@ -388,8 +388,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "modl-qsm"
 command:
-  + --do-r2primemap
   + --qsm-algorithm modl-qsm
+  + --do-r2primemap
 methods: 058b3e5244583aad (23 lines)
 
 ## inversion.algorithm = nextqsm, toggle pipeline.do_r2primemap
@@ -397,8 +397,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "nextqsm"
 command:
-  + --do-r2primemap
   + --qsm-algorithm nextqsm
+  + --do-r2primemap
 methods: 8497129e222e6b8f (26 lines)
 
 ## inversion.algorithm = iqsm, toggle pipeline.do_r2primemap
@@ -406,8 +406,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm"
 command:
-  + --do-r2primemap
   + --qsm-algorithm iqsm
+  + --do-r2primemap
 methods: 93521247f2a88e7f (25 lines)
 
 ## inversion.algorithm = iqsm-plus, toggle pipeline.do_r2primemap
@@ -415,7 +415,7 @@ config:
   /pipeline/do_r2primemap: false -> true
   /inversion/algorithm: "ilsqr" -> "iqsm-plus"
 command:
-  + --do-r2primemap
   + --qsm-algorithm iqsm-plus
+  + --do-r2primemap
 methods: 5d3408ea00066951 (25 lines)
 

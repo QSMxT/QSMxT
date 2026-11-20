@@ -138,8 +138,8 @@ config:
   /pipeline/do_r2primemap: false -> true
   /bg_removal/algorithm: "vsharp" -> "iqfm"
 command:
-  + --do-r2primemap
   + --bf-algorithm iqfm
+  + --do-r2primemap
 methods: 6a00df17ee80374d (37 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = xqsm, toggle pipeline.do_r2primemap
@@ -148,9 +148,9 @@ config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "xqsm"
 command:
-  + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
+  + --do-r2primemap
 methods: 419151987bf4a963 (27 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet, toggle pipeline.do_r2primemap
@@ -159,9 +159,9 @@ config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "qsmnet"
 command:
-  + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
+  + --do-r2primemap
 methods: da8254387e3b2602 (29 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet-plus, toggle pipeline.do_r2primemap
@@ -170,9 +170,9 @@ config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
 command:
-  + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
+  + --do-r2primemap
 methods: 58b5da5acb820561 (29 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmgan, toggle pipeline.do_r2primemap
@@ -181,9 +181,9 @@ config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "qsmgan"
 command:
-  + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
+  + --do-r2primemap
 methods: 396d9c16f8348456 (29 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = ir2qsm, toggle pipeline.do_r2primemap
@@ -192,9 +192,9 @@ config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
 command:
-  + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
+  + --do-r2primemap
 methods: 7172abb7e230a8d2 (23 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = lpcnn, toggle pipeline.do_r2primemap
@@ -203,9 +203,9 @@ config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "lpcnn"
 command:
-  + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
+  + --do-r2primemap
 methods: e43547181301973b (28 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = modl-qsm, toggle pipeline.do_r2primemap
@@ -214,8 +214,8 @@ config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
   /inversion/algorithm: "ilsqr" -> "modl-qsm"
 command:
-  + --do-r2primemap
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
+  + --do-r2primemap
 methods: 3c8678667742cf45 (23 lines)
 
