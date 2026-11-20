@@ -11,7 +11,7 @@ pub(super) fn defs() -> Vec<Def> {
         d("pipeline.obliquity_threshold", Geometry, "Obliquity threshold (°)", "Resample only data more oblique than this, in degrees", Float).min(0.0).units("deg").flag("--obliquity-threshold").parent("pipeline.axial_resampling")
         .when(|x| x.c.pipeline.axial_resampling).full("Obliquity threshold")
         .gui("Resample only data more oblique than this")
-        .cli("Obliquity in degrees above which --axial-resampling resamples (default: 10)")
+        .cli("Obliquity in degrees above which --axial-resampling resamples")
         .attrs(&["allow_negative_numbers"]),
         d("pipeline.output_space", Geometry, "Output space", "", Enum(vec![
             o("acquired", "acquired", "Acquired grid", "Write derivatives back on the acquired grid when the run was resampled to axial (default)"),

@@ -24,7 +24,7 @@ fn unwrapping() -> Vec<Def> {
             o("medi-region-growing", "medi-region-growing", "MEDI region growing", "MEDI's magnitude-guided region-growing unwrapping; needs magnitude images — https://doi.org/10.1002/mrm.24272"),
         ])).basic().flag("--unwrapping-algorithm").full("Phase unwrapping")
         .gui("How the wrapped phase is unwrapped")
-        .cli("Unwrapping algorithm (default: romeo)"),
+        .cli("Unwrapping algorithm"),
         d("field_mapping.prelude.labelling", FieldMap, "Labelling", "", Enum(vec![
             o("auto", "auto", "Auto", "As FSL prelude chooses: slice by slice above 64 voxels in-plane, else over the whole volume (default)"),
             o("slices", "slices", "Slices", "Label regions slice by slice (FSL prelude --labelslices)"),
@@ -32,12 +32,12 @@ fn unwrapping() -> Vec<Def> {
         ])).flag("--prelude-labelling").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.prelude).full("PRELUDE labelling")
         .gui("How PRELUDE labels its initial regions")
-        .cli("PRELUDE: how the initial regions are labelled (default: auto)")
+        .cli("PRELUDE: how the initial regions are labelled")
         .value_help("auto", "FSL prelude's default: slice by slice above 64 voxels in-plane, else over the whole volume").value_help("slices", "Label regions slice by slice (FSL prelude --labelslices)").value_help("volume", "Label regions over the whole volume (FSL prelude -f)"),
         d("field_mapping.prelude.num_phase_partitions", FieldMap, "Phase partitions", "Number of phase bins the initial regions are formed from (default 8)", Int).min(1.0).flag("--prelude-partitions").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.prelude).full("PRELUDE phase partitions")
         .gui("Number of phase bins the initial regions are formed from")
-        .cli("PRELUDE: number of phase partitions the initial regions are formed from (default: 8)")
+        .cli("PRELUDE: number of phase partitions the initial regions are formed from")
         .parse(P::PositiveU64).value_name("N"),
         d("field_mapping.laplacian_solver", FieldMap, "Solver", "", Enum(vec![
             o("dct", "dct", "DCT", "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)"),
@@ -72,7 +72,7 @@ fn phase_offsets() -> Vec<Def> {
         // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
         d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).basic().flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.combines && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit)
-        .cli("Enable phase offset removal for multi-echo data (default: true)")
+        .cli("Enable phase offset removal for multi-echo data")
         .bool_value(),
         d("field_mapping.phase_offset_sigma_mm", FieldMap, "Sigma (mm)", "Gaussian smoothing sigma in mm (x y z)", FloatVec3).units("mm").flag("--phase-offset-sigma-mm").parent("field_mapping.phase_offset_removal")
         .when(|x| x.combines && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase offset sigma")
@@ -94,7 +94,7 @@ fn romeo() -> Vec<Def> {
         d("field_mapping.romeo.template", FieldMap, "Template echo", "Echo used for spatial unwrapping, counted from 0 (--romeo-template counts from 1)", Int).flag("--romeo-template").parent("field_mapping.romeo.individual")
         .when(|x| x.romeo && !x.c.field_mapping.romeo.individual)
         .gui("Echo used for spatial unwrapping, counted from 0")
-        .cli("ROMEO: template echo index (1-indexed, only for template mode)"),
+        .cli("ROMEO: template echo index (1-indexed, only for template mode)").cli_default("1"),
         d("field_mapping.romeo.correct_global", FieldMap, "Correct global", "Correct inter-echo 2π offsets after unwrapping", Bool).flag("--romeo-correct-global").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Correct global offsets")
         .cli("ROMEO: correct global 2π offsets, of each echo and between echoes (default: off)")
@@ -132,7 +132,6 @@ fn romeo() -> Vec<Def> {
         d("field_mapping.romeo.max_seeds", FieldMap, "Max seeds", "Maximum number of seed regions (default 1)", Int).flag("--romeo-max-seeds").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Maximum seeds")
         .gui("Maximum number of seed regions")
-        .cli("ROMEO: maximum number of seed regions (default: 1)")
         .parse(P::U8),
         d("field_mapping.romeo.merge_regions", FieldMap, "Merge regions", "Merge neighboring regions after unwrapping", Bool).flag("--romeo-merge-regions").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo)
@@ -166,7 +165,7 @@ fn echo_combination() -> Vec<Def> {
         ])).basic().flag("--b0-estimation")
         .gui("How the unwrapped echoes are combined into one field map")
         .when(|x| x.combines)
-        .cli("B0 field estimation method (default: weighted-avg)")
+        .cli("B0 field estimation method")
         .value_help("robust-fit", "Motion-robust (IRLS) linear fit: down-weights echoes that depart from a straight line in TE, voxel by voxel. Needs 4 echoes (3 with --linear-fit-estimate-offset false)").value_help("qsmart-echofit", "QSMART's echo fit: a magnitude-weighted fit of the unwrapped phase vs TE through the origin, which also marks the voxels QSMART leaves out").value_help("complex-fit", "MEDI's field map (Fit_ppm_complex): a magnitude-weighted fit of the complex echoes, then unwrapping of the fitted phase per echo spacing. Needs the magnitude and evenly spaced echoes; no phase offset removal is run first, and bipolar correction is refused"),
         d("field_mapping.qsmart_fit_threshold_mode", FieldMap, "Fit threshold", "", Enum(vec![
             o("percentile", "percentile", "Percentile", "A percentile of the blurred fit residual over the volume, as the authors' October 2020 demo runs it"),
@@ -179,7 +178,7 @@ fn echo_combination() -> Vec<Def> {
         d("field_mapping.qsmart_fit_percentile", FieldMap, "Fit percentile", "Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 99)", Float).above(0.0).max(100.0).flag("--qsmart-fit-percentile").parent("field_mapping.qsmart_fit_threshold_mode")
         .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Percentile).full("QSMART fit percentile")
         .gui("Percentile of the blurred fit residual above which a voxel is left out of QSMART's reconstruction")
-        .cli("`--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction (default 99)"),
+        .cli("`--b0-estimation qsmart-echofit`: the percentile of the blurred fit residual, in (0, 100], above which a voxel is left out of QSMART's reconstruction"),
         // QSM.rs utils/qsmart.rs QsmartFitThreshold::validate refuses a threshold that is not > 0.
         d("field_mapping.qsmart_fit_threshold", FieldMap, "Fit residual", "Blurred fit residual above which a voxel is left out of QSMART's reconstruction (default: 40)", Float).above(0.0).flag("--qsmart-fit-threshold").parent("field_mapping.qsmart_fit_threshold_mode")
         .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::QsmartEchofit && x.c.field_mapping.qsmart_fit_threshold_mode == QsmartFitThresholdMode::Absolute).full("QSMART fit residual")
@@ -245,7 +244,6 @@ fn echo_fits() -> Vec<Def> {
         // 0 keeps the fit's starting estimate (a linear fit to the first three echoes' phase).
         d("field_mapping.complex_fit.max_iter", FieldMap, "Max iter", "Gauss-Newton iterations at most (default 30)", Int).flag("--complex-fit-max-iter").parent("field_mapping.b0_estimation")
         .when(|x| x.combines && x.c.field_mapping.b0_estimation == B0Estimation::ComplexFit).full("Maximum iterations")
-        .gui("Gauss-Newton iterations at most")
-        .cli("Complex fit: Gauss-Newton iterations at most (default 30)"),
+        .gui("Gauss-Newton iterations at most"),
     ]
 }

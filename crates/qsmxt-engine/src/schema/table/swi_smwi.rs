@@ -27,8 +27,7 @@ pub(super) fn defs() -> Vec<Def> {
         .cli("SWI phase-mask scaling")
         .value_alias("negative-tanh", &["negative_tanh"]),
         d("swi.strength", SwiSmwi, "Strength", "Phase scaling strength (higher = stronger phase contrast)", Float).flag("--swi-strength").parent("pipeline.do_swi")
-        .when(|x| x.c.pipeline.do_swi).context("SWI")
-        .cli("SWI phase scaling strength"),
+        .when(|x| x.c.pipeline.do_swi).context("SWI"),
         d("swi.hp_sigma", SwiSmwi, "HP sigma (x y z)", "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices", FloatVec3).units("voxels").flag("--swi-hp-sigma").parent("pipeline.do_swi")
         .when(|x| x.c.pipeline.do_swi).full("High-pass sigma")
         .gui("High-pass filter sigma per axis (x y z): background phase removal. Set z to 0 for thin axial slices").context("SWI")
@@ -36,8 +35,7 @@ pub(super) fn defs() -> Vec<Def> {
         // QSM.rs swi.rs mip_geometry refuses a window of 0 (and one wider than the volume).
         d("swi.mip_window", SwiSmwi, "mIP window", "Minimum intensity projection window size in slices", Int).min(1.0).units("slices").flag("--swi-mip-window").parent("pipeline.do_swi")
         .when(|x| x.c.pipeline.do_swi)
-        .gui("Minimum-intensity-projection window").context("SWI")
-        .cli("SWI MIP window size in slices"),
+        .gui("Minimum-intensity-projection window").context("SWI"),
         d("swi.filtered_phase", SwiSmwi, "Filtered phase", "Also write the high-pass filtered phase the SWI is weighted by (desc-swi_phase): Hz for several echoes, radians for one", Bool).basic().flag("--swi-filtered-phase").parent("pipeline.do_swi")
         .when(|x| x.c.pipeline.do_swi).full("SWI filtered phase").context("SWI")
         .cli("Also write CLEAR-SWI's high-pass filtered phase, the phase the SWI is weighted by (`_desc-swi_phase.nii`): Hz for several echoes, radians for one, 0 outside CLEAR-SWI's head mask. Implies --do-swi"),
@@ -54,7 +52,6 @@ pub(super) fn defs() -> Vec<Def> {
         // QSM.rs swi.rs mip_geometry refuses a window of 0 (and one wider than the volume).
         d("smwi.mip_window", SwiSmwi, "mIP window", "Minimum-intensity-projection window in slices", Int).min(1.0).units("slices").flag("--smwi-mip-window").parent("pipeline.do_smwi")
         .when(|x| x.c.pipeline.do_smwi)
-        .gui("Minimum-intensity-projection window").context("SMWI")
-        .cli("SMWI mIP window size in slices"),
+        .gui("Minimum-intensity-projection window").context("SMWI"),
     ]
 }

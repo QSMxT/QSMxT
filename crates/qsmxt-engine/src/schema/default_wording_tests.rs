@@ -78,17 +78,27 @@ fn reads_what_a_text_names_as_the_default() {
     assert_eq!(agrees("auto", &Value::Null), None);
 }
 
-/// Every default a setting's help names (TUI, front-end, command-line, its value row's, and the
-/// option marked `(default)`) is the setting's default.
+/// Every default a setting's help names (TUI, front-end, command-line as written and as the flag
+/// shows it, its value row's, and the option marked `(default)`) is the setting's default.
 #[test]
 fn help_never_names_another_default() {
     let mut wrong = Vec::new();
     for (s, d) in settings().iter().zip(defs()) {
-        let texts = [Some(d.help), d.gui_help, d.cli.help, d.value.map(|v| v.1), d.gui_value.map(|v| v.1)];
+        // A flag that counts otherwise than the config says its own default (`cli_default`).
+        let cli = d.cli.help.filter(|_| d.cli.default.is_none());
+        let texts = [Some(d.help), d.gui_help, cli, d.value.map(|v| v.1), d.gui_value.map(|v| v.1)];
         for text in texts.into_iter().flatten() {
             for words in named_defaults(text) {
                 if agrees(&words, &s.default) == Some(false) {
                     wrong.push(format!("{}: says the default is `{words}`, it is {}: {text}", s.path, s.default));
+                }
+            }
+        }
+        let flag = d.flag.and_then(|l| super::cli::PIPELINE_FLAGS.iter().find(|f| f.long == l.trim_start_matches("--")));
+        if let (Some(help), None) = (flag.and_then(|f| f.help), d.cli.default) {
+            for words in named_defaults(help) {
+                if agrees(&words, &s.default) == Some(false) {
+                    wrong.push(format!("{}: the flag's help says the default is `{words}`, it is {}: {help}", s.path, s.default));
                 }
             }
         }

@@ -4,8 +4,10 @@
 //!
 //! A registry setting's flag is derived from its entry ([`super::table`]): `.flag("--x")` names it,
 //! and the setting's type says what it takes ([`derive`]): a switch for a yes/no setting, one
-//! number for a number, three for a vector, one of the options for a choice. The entry's help
-//! is the flag's help unless `.cli(..)` words it for the command line. The builder methods below
+//! number for a number, three for a vector, one of the options for a choice. The flag's help is
+//! the entry's front-end help with its units, after the method it belongs to (`RTS: ...`), unless
+//! `.cli(..)` words it for the command line; either way it ends with the setting's default, taken
+//! from the registry ([`super::Setting::default`]), so the wording does not name it. The builder methods below
 //! give the rest where it differs from what the type implies: the value's name, how it is read,
 //! a value list of its own, the opposite switch (`.negated("--no-x", ..)`), and so on.
 //!
@@ -119,6 +121,9 @@ pub(super) struct FlagSpec {
     /// The opposite switch (`--no-x` of `--x`) and its help.
     negated: Option<(&'static str, &'static str)>,
     negated_conflicts: bool,
+    /// The default as the flag's help gives it, where the flag counts otherwise than the config
+    /// (`--romeo-template` counts echoes from 1).
+    pub(super) default: Option<&'static str>,
 }
 
 impl Def {
@@ -155,6 +160,8 @@ impl Def {
     pub(super) fn attrs(mut self, a: &'static [&'static str]) -> Self { self.cli.attrs = a; self }
     /// The switch's opposite (`--no-x` of `--x`, or `--x` of `--no-x`), with its help.
     pub(super) fn negated(mut self, long: &'static str, help: &'static str) -> Self { self.cli.negated = Some((long, help)); self }
+    /// The default the flag's help names, where the flag counts otherwise than the config.
+    pub(super) fn cli_default(mut self, words: &'static str) -> Self { self.cli.default = Some(words); self }
     /// The opposite cannot be given with the switch.
     pub(super) fn negated_conflicts(mut self) -> Self { self.cli.negated_conflicts = true; self }
 }
@@ -225,7 +232,7 @@ fn derive(d: &'static Def) -> Flag {
         num_args,
         action,
         parse,
-        help: Some(s.help.unwrap_or(d.gui_help.unwrap_or(d.help))),
+        help: Some(flag_help(d, switch)),
         long_help: None,
         values: Box::leak(values.into_boxed_slice()),
         defaults: if switch { &["false"] } else { &[] },
@@ -233,6 +240,60 @@ fn derive(d: &'static Def) -> Flag {
         conflicts: s.conflicts,
         requires: s.requires,
         attrs: if s.attrs.is_empty() && signed { &["allow_negative_numbers"] } else { s.attrs },
+    }
+}
+
+/// A setting's flag help: its `.cli(..)` wording, else the front-end help with its units, after
+/// the method it belongs to (`RTS: ...`), then the default, from the setting's own (`(default: 0 0 0)`) unless
+/// the text already says what it is. A switch is off unless given, so it names none.
+fn flag_help(d: &'static Def, switch: bool) -> &'static str {
+    let setting = super::settings().iter().find(|s| s.path == d.path).expect("every entry is a setting");
+    let text = match d.cli.help {
+        Some(h) => h.to_string(),
+        None => {
+            // The front-end help leaves the units to the schema; the command line has no other
+            // place to say them.
+            let help = d.gui_help.unwrap_or(d.help);
+            let help = match setting.units {
+                Some(u) if !help.contains(u) => format!("{help}, in {u}"),
+                _ => help.to_string(),
+            };
+            match setting.context {
+                // "RTS: ADMM penalty parameter", but "LSQR convergence tolerance" under LSQR.
+                Some(context) if !help.starts_with(context) => format!("{context}: {help}"),
+                _ => help,
+            }
+        }
+    };
+    let rendered = match d.cli.default {
+        Some(words) => Some(words.to_string()),
+        None if switch => None,
+        None => render_default(&setting.default),
+    };
+    match rendered {
+        Some(r) if !text.to_lowercase().contains("default") => leak(format!("{text} (default: {r})")),
+        _ => leak(text),
+    }
+}
+
+/// A default as the command line takes it: `0 0 0`, `0.0003`, `1e-5`, `vsharp`, `true`. `None`
+/// for a value with no words of its own (unset, empty), which a setting's help describes.
+pub(crate) fn render_default(v: &serde_json::Value) -> Option<String> {
+    use serde_json::Value as V;
+    let number = |x: f64| {
+        if x.fract() == 0.0 && x.abs() < 1e15 {
+            format!("{}", x as i64)
+        } else {
+            let plain = format!("{x}");
+            if plain.len() <= 6 { plain } else { format!("{x:e}") }
+        }
+    };
+    match v {
+        V::Bool(b) => Some(b.to_string()),
+        V::Number(n) => n.as_f64().map(number),
+        V::String(s) if !s.is_empty() => Some(s.clone()),
+        V::Array(a) if !a.is_empty() => a.iter().map(|x| x.as_f64().map(number)).collect::<Option<Vec<_>>>().map(|w| w.join(" ")),
+        _ => None,
     }
 }
 

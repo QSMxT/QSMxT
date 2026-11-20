@@ -260,7 +260,7 @@ fn ctx<'a>(c: &'a PipelineConfig, facts: &ViewFacts) -> Ctx<'a> {
 /// Whether the setting `d` applies.
 fn applies(d: &super::Def, x: &Ctx, facts: &ViewFacts) -> bool {
     // Compute QSM is the switch that turns its sections on, so it is shown either way.
-    d.path == "pipeline.do_qsm" || section_applies(d.section, x, facts) && d.when.is_none_or(|f| f(x))
+    d.path == "pipeline.do_qsm" || section_applies(d.section, x, facts) && d.when.is_none_or(|f| f(x)) && d.method_chosen(x)
 }
 
 /// Which settings apply to `config`, and so are shown: [`settings_view`]'s `visible`, in schema
