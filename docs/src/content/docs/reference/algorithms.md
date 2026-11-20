@@ -93,9 +93,13 @@ QSM_GUI's, which `--pipeline sti-suite-ilsqr` sets up with `--bf-polish-mask`
 (after V-SHARP, the mask's largest component with its holes filled, as the GUI's
 `PolishMask`) and an unreferenced χ.
 
-`--pipeline uk-biobank` is UK Biobank's QSM pipeline (Wang et al., 2022) on QSMxT's
-brain mask: UK Biobank's own mask comes from its T1-weighted images, which QSMxT does
-not use. It trims that mask by phase reliability before and after background removal
+`--pipeline uk-biobank` is UK Biobank's QSM pipeline (Wang et al., 2022) with an HD-BET
+brain mask of the magnitude. UK Biobank's own mask is its T1 structural brain mask
+registered to the SWI, which an SWI run does not have; HD-BET is the closest mask from
+the SWI alone, so the pipeline uses it (a deep-learning model: builds without deep
+learning do not offer the pipeline). It runs HD-BET in 192×192×96 sliding windows, as the
+mask comparison did, not on the whole volume as the `hd-bet` mask preset does: on UK Biobank
+data the whole-volume mask was 0.5–1 % smaller, mostly at the brain's inferior edge. It trims that mask by phase reliability before and after background removal
 (`--bf-ukb-mask-trim`: the magnitude of the unit phasor averaged over a 2 mm ball, from
 the first and the last echo, thresholded at 0.6 and 0.5 before V-SHARP and at 0.7 and
 0.6 after it, with small pieces removed and holes filled slice by slice), unwraps each

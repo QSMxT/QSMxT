@@ -37,3 +37,6 @@ introspection = ["qsm-core/introspection"]
 
 [dev-dependencies]
 regex = "1"
+# The tests run as the qsmxt binary builds the engine, with deep learning: a pipeline that runs a
+# model (UK Biobank's HD-BET mask, χ-sepnet) is refused without it (`pipelines::unavailable`).
+qsmxt-engine = { path = ".", features = ["onnx"] }

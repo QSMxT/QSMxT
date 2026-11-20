@@ -56,10 +56,17 @@ fn describe_intro(config: &PipelineConfig, tool: &str, doc: &mut Draft) {
         .filter(|id| crate::pipelines::chosen(config, id))
         .and_then(qsm_core::pipeline::reference_pipelines::reference_pipeline) {
         doc.say(&[], format!("Processing followed the {} pipeline.", p.toolbox));
-        // UK Biobank's brain mask comes from its T1-weighted images, which QSMxT does not use.
+        // UK Biobank's brain mask comes from its T1-weighted images, which QSMxT does not use: the
+        // pipeline masks with HD-BET instead (QSM.rs `ukb.mask-hd-bet`, decision 202).
         if p.id == "uk-biobank" {
-            doc.say(&[], "The brain mask was made from the gradient-echo images as described below, \
-                in place of the UK Biobank pipeline's mask from its T1-weighted images.".to_string());
+            let hd_bet = config.masking.sections.iter().any(|s| matches!(s.generator, crate::masking::MaskOp::HdBet { .. }));
+            doc.say(&[], if hd_bet {
+                "In place of the UK Biobank pipeline's brain mask from its T1-weighted images, the HD-BET mask \
+                 described below was used.".to_string()
+            } else {
+                "The brain mask was made from the gradient-echo images as described below, \
+                 in place of the UK Biobank pipeline's mask from its T1-weighted images.".to_string()
+            });
         }
     }
 

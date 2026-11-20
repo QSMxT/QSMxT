@@ -100,12 +100,25 @@ pub fn ids() -> Vec<&'static str> {
 /// end says it.
 pub const HEIDI_MULTI_ORIENTATION: &str = "HEIDI doesn't run on multi-orientation data";
 
-/// Why pipeline `id` cannot be chosen for `config`, if it cannot: a pipeline that turns HEIDI on,
-/// while orientations are grouped. HEIDI fills the cone of one orientation's field, and a grouped
-/// reconstruction inverts several together (COSMOS, STI), so there is no single field for it to
-/// follow; the run refuses it too. An unknown id is not unavailable: [`choose`] names the choices.
+/// Why a pipeline that runs a deep-learning model (UK Biobank's HD-BET mask, χ-sepnet) is not
+/// offered by a build without deep learning, as every front end says it.
+pub const NEEDS_DEEP_LEARNING: &str = "it runs a deep-learning model, which this build of QSMxT does not include";
+
+/// Why pipeline `id` cannot be chosen for `config`, if it cannot.
+///
+/// - A pipeline that runs a deep-learning model ([`ReferencePipeline::models`]) in a build
+///   without them ([`NEEDS_DEEP_LEARNING`]): refused before it is chosen, rather than failing
+///   inside a run, and never quietly run with another method.
+/// - A pipeline that turns HEIDI on, while orientations are grouped. HEIDI fills the cone of one
+///   orientation's field, and a grouped reconstruction inverts several together (COSMOS, STI), so
+///   there is no single field for it to follow; the run refuses it too.
+///
+/// An unknown id is not unavailable: [`choose`] names the choices.
 pub fn unavailable(config: &PipelineConfig, id: &str) -> Option<&'static str> {
     let p = REFERENCE_PIPELINES.iter().find(|p| p.id == id)?;
+    if !cfg!(feature = "onnx") && !p.models().is_empty() {
+        return Some(NEEDS_DEEP_LEARNING);
+    }
     let heidi = p.choose.iter().any(|(path, value)| {
         rec::qsmxt_path(path) == Some("inversion.heidi.enabled") && rec::core_json(value) == Value::Bool(true)
     });
@@ -412,6 +425,29 @@ mod tests {
     use super::*;
     use crate::recommendations::Recommendation;
 
+    /// A pipeline that runs a deep-learning model (UK Biobank's HD-BET mask, χ-sepnet) is
+    /// refused, with the reason, by a build without deep learning, and offered by one with it.
+    #[test]
+    fn a_deep_learning_pipeline_needs_a_deep_learning_build() {
+        let c = PipelineConfig::default();
+        for id in ["uk-biobank", "chi-sepnet"] {
+            let want = (!cfg!(feature = "onnx")).then_some(NEEDS_DEEP_LEARNING);
+            assert_eq!(unavailable(&c, id), want, "{id}");
+        }
+        assert_eq!(unavailable(&c, "medi-toolbox"), None);
+    }
+
+    /// UK Biobank's pipeline masks with HD-BET, and the methods text says it replaces UK
+    /// Biobank's own mask.
+    #[test]
+    fn uk_biobank_masks_with_hd_bet() {
+        let mut c = PipelineConfig::default();
+        choose(&mut c, "uk-biobank", &ViewFacts::default()).unwrap();
+        assert!(c.masking.sections.iter().all(|s| matches!(s.generator, crate::masking::MaskOp::HdBet { .. })), "{:?}", c.masking.sections);
+        let text = crate::methods::generate_methods(&c);
+        assert!(text.contains("In place of the UK Biobank pipeline's brain mask from its T1-weighted images, the HD-BET mask"), "{text}");
+    }
+
     fn facts() -> ViewFacts {
         ViewFacts { num_echoes: Some(4), field_strength: Some(3.0), ..Default::default() }
     }
@@ -615,8 +651,13 @@ mod tests {
         assert!(fm.laplacian_keep_outside, "UK Biobank hands V-SHARP the whole volume");
         assert_eq!(c.bg_removal.algorithm, BfAlgorithm::Vsharp);
         assert_eq!(c.qsm.reference, QsmReference::None);
-        // The mask is QSMxT's own: no masking setting is the pipeline's.
-        assert_eq!(c.masking, PipelineConfig::default().masking);
+        // UK Biobank's own mask (its registered T1 brain mask) is not part of an SWI run: the
+        // pipeline masks with HD-BET in its place (QSM.rs ukb.mask-hd-bet), and nothing else of
+        // the masking is the pipeline's.
+        assert!(c.masking.sections.iter().all(|s| matches!(s.generator, crate::masking::MaskOp::HdBet { .. })), "{:?}", c.masking.sections);
+        let mut masking = c.masking.clone();
+        masking.sections = PipelineConfig::default().masking.sections;
+        assert_eq!(masking, PipelineConfig::default().masking);
         let cmd = crate::command::generate_command(&c);
         assert!(cmd.contains("--pipeline uk-biobank") && !cmd.contains("--bf-ukb-mask-trim"), "{cmd}");
         assert_eq!(status(&c, &facts()).pipeline.map(|p| p.id), Some("uk-biobank"));

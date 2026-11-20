@@ -130,6 +130,11 @@ fn violating(rule: &Rule) -> PipelineConfig {
     if rule.setting == "masking.n4_geometry" {
         set(&mut c, "masking.inhomogeneity_correction", &json!("n4")).unwrap();
     }
+    // A rule on the setting that triggers it (HARPERELLA's suggestion of iHARPERELLA) departs
+    // from it at its trigger's value.
+    if rule.when.iter().any(|w| matches!(w, Condition::Setting { setting, .. } if *setting == rule.setting)) {
+        return c;
+    }
     let bad = candidates(rule.setting).into_iter().find(|v| !passes(&rule.expect, v))
         .unwrap_or_else(|| panic!("{}: nothing departs from it", rule.id));
     set(&mut c, rule.setting, &bad).unwrap_or_else(|e| panic!("{}: {} = {bad}: {e}", rule.id, rule.setting));
@@ -165,17 +170,22 @@ fn every_rule_setting_is_a_qsmxt_setting() {
     }
 }
 
-/// iQFM reaches the rules as HARPERELLA, which must stay a choice no rule names.
+/// iQFM reaches the rules as HARPERELLA, a placeholder (it is no background removal of QSM.rs's):
+/// no rule that a choice of background removal triggers applies to it, HARPERELLA's own
+/// (`harperella.bg-iharperella`) included.
 #[test]
-fn the_iqfm_placeholder_is_named_by_no_rule() {
-    let names = |t: &Test| match t {
-        Test::OneOf { values } | Test::NoneOf { values } => values.contains(&core::Value::Choice("harperella")),
-        Test::Range { .. } => false,
-    };
-    for r in core::RULES {
-        let in_when = r.when.iter().any(|c| matches!(c, Condition::Setting { is, .. } if names(is)));
-        assert!(!in_when && !names(&r.expect), "{} names HARPERELLA", r.id);
+fn no_background_choice_rule_applies_under_iqfm() {
+    let mut c = PipelineConfig::default();
+    c.bg_removal.algorithm = BfAlgorithm::Iqfm;
+    for facts in [Facts::default(), known()] {
+        for r in reference_values(&c, &facts) {
+            let rule = core::RULES.iter().find(|x| x.id == r.rule);
+            assert!(rule.is_none_or(|rule| !rule.when.iter().any(|w| matches!(w,
+                Condition::Setting { setting: "bg_removal.algorithm", .. }))), "{} applies under iQFM", r.rule);
+        }
     }
+    c.bg_removal.algorithm = BfAlgorithm::Harperella;
+    assert!(reference_values(&c, &Facts::default()).iter().any(|r| r.rule == "harperella.bg-iharperella"));
 }
 
 /// QSMxT's defaults depart from no recommendation. Its default inversion, iLSQR, differs from the

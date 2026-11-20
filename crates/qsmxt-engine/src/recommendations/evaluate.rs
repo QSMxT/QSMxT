@@ -18,6 +18,12 @@ fn reconstructs(core_path: &str) -> bool {
     ["field_mapping.", "bg_removal.", "inversion.", "reference", "qsm_per_echo"].iter().any(|p| core_path.starts_with(p))
 }
 
+/// Whether `rule` holds only for some choice of background removal (`harperella.bg-iharperella`,
+/// PDF's settings): a condition of it names that choice.
+fn on_the_background_choice(rule: &core::Rule) -> bool {
+    rule.when.iter().any(|c| matches!(c, Condition::Setting { setting: "bg_removal.algorithm", .. }))
+}
+
 /// Every rule that applies to `config` on a scan with `facts`, in QSM.rs's order: its trigger is
 /// chosen and its setting is in play, whether or not the setting departs from it. The always-on
 /// reference values a front end shows next to a setting.
@@ -33,9 +39,16 @@ pub fn reference_values(config: &PipelineConfig, facts: &Facts) -> Vec<Recommend
     };
     let scan = facts.core();
     let json = serde_json::to_value(c).unwrap_or(Value::Null);
+    // iQFM is no background removal of QSM.rs's (it works from phase): the rules see a placeholder
+    // in its place (`bridge::to_qsm_pipeline_config`), so none that the choice of background
+    // removal triggers is about the run.
+    let iqfm = c.bg_removal.algorithm == crate::enums::BfAlgorithm::Iqfm;
     let mut out: Vec<Recommendation> = core::RULES.iter().zip(applying()).filter_map(|(rule, probe)| {
         let Condition::Setting { setting: trigger, .. } = rule.trigger() else { return None };
         if !c.pipeline.do_qsm && (reconstructs(trigger) || reconstructs(rule.setting)) {
+            return None;
+        }
+        if iqfm && on_the_background_choice(rule) {
             return None;
         }
         let applies = core::check(probe, &input, &scan)?;

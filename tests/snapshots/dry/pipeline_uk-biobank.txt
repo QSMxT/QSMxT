@@ -1,13 +1,13 @@
 Pipeline:
   Phase offset removal: enabled
   Inhomogeneity:     makehomogeneous
-  Masking:           phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1
+  Masking:           magnitude,hd-bet:192x192x96:step=0.5,signal-erode:0.80:5:1:12.0:1000
   Unwrapping:        laplacian
   BG removal:        vsharp
   QSM algorithm:     Ilsqr
   QSM reference:     None
 
-  sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 0 MB)
+  sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 3.9 GB)
     Phase offset removal: on → off (the pipeline's on this scan)
     Weight type: Phase SNR → Assumed decay (the pipeline's on this scan)
 
@@ -25,7 +25,8 @@ Pipeline graph (a run writes it to <tmp>/out/derivatives/qsmxt/pipeline.mmd and 
      ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude
      → Combined magnitude (part-mag_T2starw)
  5 Brain mask
-     phase quality: Otsu threshold, dilation, hole-filling, erosion
+     magnitude: HD-BET, signal-gated erosion (removal of low-signal boundary voxels; QSM-CI)
+     model: HD-BET
      ← 2 Phase scaling: Phase
      ← 3 Inhomogeneity correction: Inhomogeneity-corrected magnitude
      → Brain mask (mask)
@@ -55,14 +56,14 @@ Methods (a run writes them to <tmp>/out/derivatives/qsmxt/methods.md):
 
 # Methods
 
-QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the UK Biobank QSM pipeline. The brain mask was made from the gradient-echo images as described below, in place of the UK Biobank pipeline's mask from its T1-weighted images. Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using Otsu thresholding (Otsu, 1979) of the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude), followed by dilation, hole-filling, and erosion. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003) with an FFT Poisson solve. The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* and identical in every voxel (Wang et al., 2022). Before and after background field removal, the mask was trimmed of voxels with unreliable phase as in the UK Biobank pipeline (Wang et al., 2022): phase-reliability maps of the first and last echoes (the magnitude of the unit phasor averaged over a 2 mm ball) were thresholded at 0.6 and 0.5 before background removal and at 0.7 and 0.6 after it, then in each slice components smaller than 300 (after: 200) voxels were removed and holes smaller than 50 (after: 30) voxels filled, and enclosed holes were filled. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015) with zero-padding = 64 mm per side and precision = single. No susceptibility referencing was applied.
+QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the UK Biobank QSM pipeline. In place of the UK Biobank pipeline's brain mask from its T1-weighted images, the HD-BET mask described below was used. Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using HD-BET deep-learning brain extraction (Isensee et al., 2019; 192x192x96-voxel sliding-window patches) of the inhomogeneity-corrected RSS-combined magnitude image, followed by signal-gated erosion (removal of low-signal boundary voxels; QSM-CI). Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003) with an FFT Poisson solve. The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* and identical in every voxel (Wang et al., 2022). Before and after background field removal, the mask was trimmed of voxels with unreliable phase as in the UK Biobank pipeline (Wang et al., 2022): phase-reliability maps of the first and last echoes (the magnitude of the unit phasor averaged over a 2 mm ball) were thresholded at 0.6 and 0.5 before background removal and at 0.7 and 0.6 after it, then in each slice components smaller than 300 (after: 200) voxels were removed and holes smaller than 50 (after: 30) voxels filled, and enclosed holes were filled. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015) with zero-padding = 64 mm per side and precision = single. No susceptibility referencing was applied.
 
 ## References
 
 - Stewart, A. (2026). QSMxT. https://github.com/QSMxT/QSMxT
 - Eckstein, K., Trattnig, S., Robinson, S.D. (2019). "A Simple Homogeneity Correction for Neuroimaging at 7T." *Proc. ISMRM 27th Annual Meeting*.
-- Dymerska, B., et al. (2021). "Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO)." *Magnetic Resonance in Medicine*, 85(4):2294-2308. https://doi.org/10.1002/mrm.28563
-- Otsu, N. (1979). "A Threshold Selection Method from Gray-Level Histograms." *IEEE Transactions on Systems, Man, and Cybernetics*, 9(1):62-66. https://doi.org/10.1109/TSMC.1979.4310076
+- Isensee, F., Schell, M., Pflueger, I., et al. (2019). "Automated brain extraction of multisequence MRI using artificial neural networks." *Human Brain Mapping*, 40(17):4952-4964. https://doi.org/10.1002/hbm.24750
+- QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI
 - Schofield, M.A., Zhu, Y. (2003). "Fast phase unwrapping algorithm for interferometric applications." *Optics Letters*, 28(14):1194-1196. https://doi.org/10.1364/OL.28.001194
 - Wang, C., et al. (2022). "Phenotypic and genetic associations of quantitative magnetic susceptibility in UK Biobank brain imaging." *Nature Neuroscience*, 25(6):818-831. https://doi.org/10.1038/s41593-022-01074-w
 - Wu, B., et al. (2012). "Whole brain susceptibility mapping using compressed sensing." *Magnetic Resonance in Medicine*, 67(1):137-147. https://doi.org/10.1002/mrm.23000
@@ -92,4 +93,6 @@ Reference values of the chosen methods (for the first run's scan):
   Maximum iterations (iLSQR): 100 — ukb mask trim on uses 100
   Padding (iLSQR): 64 mm — ukb mask trim on uses 64 mm
   Precision (iLSQR): Single — iLSQR uses Single
+  Brain mask: HD-BET — ukb mask trim on uses HD-BET
+  HD-BET inference: sliding window — ukb mask trim on uses sliding window
   QSM reference: None — ukb mask trim on uses None

@@ -117,6 +117,7 @@
     /field_mapping/unwrapping_algorithm: "romeo" -> "laplacian"
     /field_mapping/laplacian_solver: "dct" -> "fft"
     /field_mapping/laplacian_keep_outside: false -> true
+    /masking/sections: [{"input":"phase-quality","generator":{"op":"threshold","method":"otsu","value":null},"refinements":[{"op":"dilate","iterations":1},{"op":"fill-holes","max_size":0},{"op":"erode","iterations":1}]}] -> [{"input":"magnitude","generator":{"op":"hd-bet","patch":[192,192,96],"tta":false,"tile_step":0.5},"refinements":[{"op":"signal-erode","threshold":0.8,"depth_cap":5,"global_erosions":1,"bias_sigma":12.0,"min_component":1000}]}]
     /bg_removal/ukb_mask_trim: false -> true
     /inversion/ilsqr/pad_mm: 12.0 -> 64.0
     /inversion/ilsqr/precision: "double" -> "single"

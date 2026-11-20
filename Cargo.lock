@@ -2282,7 +2282,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -2291,7 +2291,7 @@ dependencies = [
 [[package]]
 name = "qsm-core"
 version = "0.0.0"
-source = "git+https://github.com/astewartau/QSM.rs.git?rev=780eeebd0ebbd355adc47b91102dacf5d5907d13#780eeebd0ebbd355adc47b91102dacf5d5907d13"
+source = "git+https://github.com/astewartau/QSM.rs.git?rev=dff62e20144fb9c79a31b88ae7b1617010b49282#dff62e20144fb9c79a31b88ae7b1617010b49282"
 dependencies = [
  "bytemuck",
  "delaunator",
@@ -2347,6 +2347,7 @@ dependencies = [
  "log",
  "nifti",
  "qsm-core",
+ "qsmxt-engine",
  "regex",
  "serde",
  "serde_json",
