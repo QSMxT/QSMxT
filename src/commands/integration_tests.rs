@@ -1,4 +1,5 @@
 use crate::cli::*;
+use crate::cli_settings::SettingsOf;
 use qsmxt_io::testutils;
 use std::path::{Path, PathBuf};
 
@@ -59,7 +60,7 @@ fn common_invert(input: PathBuf, mask: PathBuf, output: PathBuf) -> InvertCommon
     InvertCommonArgs {
         input, mask, output,
         b0_direction: vec![0.0, 0.0, 1.0],
-        tiling_params: Default::default(),
+        tiling: Default::default(),
     }
 }
 

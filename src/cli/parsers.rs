@@ -10,12 +10,6 @@ pub enum OrAuto {
     Auto,
     Value(f64),
 }
-impl OrAuto {
-    /// The setting: `None` for auto.
-    pub fn value(self) -> Option<f64> {
-        match self { OrAuto::Auto => None, OrAuto::Value(v) => Some(v) }
-    }
-}
 
 /// `auto`, or a number.
 pub fn parse_or_auto(s: &str) -> Result<OrAuto, String> {
@@ -48,12 +42,6 @@ pub fn parse_lbv_precision(s: &str) -> Result<qsmxt_engine::LbvPrecision, String
         .ok_or_else(|| format!("expected double or single, got '{s}'"))
 }
 
-/// A WH-QSM data weight: `flat`, `flat-in-mask`, `max-normalised` or `in-vivo`.
-pub fn parse_whqsm_weight(s: &str) -> Result<qsmxt_engine::WhqsmWeight, String> {
-    qsmxt_engine::WhqsmWeight::ALL.into_iter().find(|w| w.as_str() == s.trim())
-        .ok_or_else(|| format!("expected flat, flat-in-mask, max-normalised or in-vivo, got '{s}'"))
-}
-
 /// BET's left-right orientation: `fsl` or `as-stored`.
 pub fn parse_bet_orientation(s: &str) -> Result<qsmxt_engine::BetOrientation, String> {
     qsmxt_engine::BetOrientation::ALL.into_iter().find(|o| o.as_str() == s.trim())
@@ -70,12 +58,6 @@ pub fn parse_n4_geometry(s: &str) -> Result<qsmxt_engine::N4Geometry, String> {
 pub fn parse_harperella_rim(s: &str) -> Result<qsmxt_engine::HarperellaRim, String> {
     qsmxt_engine::HarperellaRim::ALL.into_iter().find(|r| r.as_str() == s.trim())
         .ok_or_else(|| format!("expected whole or sti, got '{s}'"))
-}
-
-/// NDI's magnitude-weight normaliser: `global-max` or `mask-p999`.
-pub fn parse_ndi_weight_norm(s: &str) -> Result<qsmxt_engine::NdiWeightNorm, String> {
-    qsmxt_engine::NdiWeightNorm::ALL.into_iter().find(|n| n.as_str() == s.trim())
-        .ok_or_else(|| format!("expected global-max or mask-p999, got '{s}'"))
 }
 
 /// An iSMV implementation: `wen2014` or `qsmjl`.

@@ -165,35 +165,158 @@ pub fn augment(cmd: Command) -> Command {
     cmd.args(PIPELINE_FLAGS.iter().map(arg))
 }
 
-/// The flags of QSMART's own settings (`inversion.qsmart.*`), in the table's order: `qsmxt
-/// qsmart`'s settings flags, so a new QSMART setting is one of them as it is a `qsmxt run` flag.
-fn qsmart_flags() -> impl Iterator<Item = &'static Flag> {
-    PIPELINE_FLAGS.iter().filter(|f| setting_of(f).is_some_and(|s| s.path.starts_with("inversion.qsmart.")))
+// ─── A standalone command's settings flags ───
+
+/// The settings a standalone command takes flags for, by config path: a path ending in `.`
+/// stands for every setting under it (`inversion.rts.`), `!path` leaves one out, and any other
+/// is that one setting. Each
+/// flag is the `qsmxt run` flag of its setting, from the flag table, applied as `qsmxt run`
+/// applies it, so a new setting of the method is a flag of the command without more code.
+pub trait FlagSet {
+    /// The settings, as above.
+    const SETTINGS: &'static [&'static str];
+    /// Whether each flag also takes its name without its method (`--delta` for `--rts-delta`,
+    /// `--no-msmv-prefilter` for `--no-medi-msmv-prefilter`), hidden: the names the command's
+    /// flags had before they were the `qsmxt run` ones.
+    const SHORT_ALIASES: bool = true;
+    /// Other hidden names, `(flag, old name)`, where an old name was not the flag's without its
+    /// method.
+    const ALIASES: &'static [(&'static str, &'static str)] = &[];
 }
 
-/// `qsmxt qsmart`'s settings flags, parsed: those given, as typed, for qsmxt-io to apply
-/// ([`qsmxt_io::settings::apply`]) as it applies `qsmxt run`'s.
-#[derive(Debug, Default)]
-pub struct QsmartSettingsArgs(pub Vec<Given>);
+/// Declares [`FlagSet`]s: `Name = ["inversion.rts."]`, with `, short = false` or
+/// `, aliases = [("nltv-max-iter-newton", "newton-iter")]` after the settings where wanted.
+#[macro_export]
+macro_rules! flag_set {
+    ($($(#[$doc:meta])* $name:ident = [$($p:literal),* $(,)?] $(, short = $short:literal)? $(, aliases = [$(($f:literal, $a:literal)),* $(,)?])?;)*) => {$(
+        $(#[$doc])*
+        #[derive(Debug, Default, Clone, Copy)]
+        pub struct $name;
+        impl $crate::cli_settings::FlagSet for $name {
+            const SETTINGS: &'static [&'static str] = &[$($p),*];
+            $(const SHORT_ALIASES: bool = $short;)?
+            $(const ALIASES: &'static [(&'static str, &'static str)] = &[$(($f, $a)),*];)?
+        }
+    )*};
+}
 
-impl clap::Args for QsmartSettingsArgs {
+/// Whether `path` is one of `set`'s settings (`!path` leaves one out).
+fn in_set(set: &[&str], path: &str) -> bool {
+    !set.contains(&format!("!{path}").as_str())
+        && set.iter().any(|p| if p.ends_with('.') { path.starts_with(p) } else { path == *p })
+}
+
+/// The flags of `S`'s settings, in the table's order, each opposite switch with its switch.
+fn flags_of<S: FlagSet>() -> Vec<&'static Flag> {
+    use qsmxt_engine::schema::cli_apply::opposite_of;
+    PIPELINE_FLAGS.iter().filter(|f| {
+        let setting = setting_of(f).or_else(|| opposite_of(f).map(|(_, s)| s));
+        setting.is_some_and(|s| in_set(S::SETTINGS, s.path))
+    }).collect()
+}
+
+/// A flag's name without its method (the method its setting's path names): `delta` for
+/// `rts-delta`, `no-msmv-prefilter` for `no-medi-msmv-prefilter`.
+fn without_method(f: &Flag) -> Option<String> {
+    use qsmxt_engine::schema::cli_apply::opposite_of;
+    let setting = setting_of(f).or_else(|| opposite_of(f).map(|(_, s)| s))?;
+    let method = setting.path.split('.').nth(1)?.replace('_', "-");
+    let (no, rest) = f.long.strip_prefix("no-").map_or(("", f.long), |r| ("no-", r));
+    rest.strip_prefix(&format!("{method}-")).map(|r| format!("{no}{r}"))
+}
+
+/// `S`'s flags as clap arguments: a flag's conflicts and requirements only among them, and its
+/// old names as hidden aliases ([`FlagSet::SHORT_ALIASES`], [`FlagSet::ALIASES`]) where no
+/// other argument of the command (`taken`) has that name.
+fn args_of<S: FlagSet>(cmd: &Command) -> Vec<Arg> {
+    let flags = flags_of::<S>();
+    let ids: Vec<&str> = flags.iter().map(|f| f.id).collect();
+    let taken: Vec<String> = cmd.get_arguments().flat_map(|a| a.get_long().into_iter().chain(a.get_all_aliases().unwrap_or_default())).map(str::to_string).collect();
+    let shorts: Vec<Option<String>> = flags.iter().map(|f| if S::SHORT_ALIASES { without_method(f) } else { None }).collect();
+    flags.iter().zip(&shorts).map(|(f, short)| {
+        let within = Flag {
+            conflicts: Box::leak(f.conflicts.iter().copied().filter(|c| ids.contains(c)).collect::<Vec<_>>().into_boxed_slice()),
+            requires: Box::leak(f.requires.iter().copied().filter(|c| ids.contains(c)).collect::<Vec<_>>().into_boxed_slice()),
+            ..**f
+        };
+        let mut a = arg(&within);
+        let names = short.iter().cloned().chain(S::ALIASES.iter().filter(|(l, _)| *l == f.long).map(|(_, a)| a.to_string()));
+        for name in names {
+            // A name two of the flags would take, or another argument has, is no one's.
+            let shared = shorts.iter().filter(|s| s.as_deref() == Some(&name)).count() > 1;
+            if !shared && !taken.contains(&name) && !flags.iter().any(|g| g.long == name) {
+                a = a.alias(leak(name));
+            }
+        }
+        a
+    }).collect()
+}
+
+fn leak(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+
+/// A standalone command's settings flags, parsed: those of `S` given, as typed, for qsmxt-io to
+/// apply ([`qsmxt_io::settings::apply`]) as it applies `qsmxt run`'s.
+#[derive(Debug)]
+pub struct SettingsOf<S>(pub Vec<Given>, std::marker::PhantomData<S>);
+
+impl<S> Default for SettingsOf<S> {
+    fn default() -> Self {
+        SettingsOf(Vec::new(), std::marker::PhantomData)
+    }
+}
+
+impl<S> Clone for SettingsOf<S> {
+    fn clone(&self) -> Self {
+        SettingsOf(self.0.clone(), std::marker::PhantomData)
+    }
+}
+
+impl<S: FlagSet> SettingsOf<S> {
+    /// The flags as they are typed after the command (the tests' standalone runs).
+    #[cfg(test)]
+    pub fn from_flags(argv: &[&str]) -> Self {
+        use clap::FromArgMatches;
+        let cmd = <Self as clap::Args>::augment_args(Command::new("t"));
+        let m = cmd.try_get_matches_from(std::iter::once("t").chain(argv.iter().copied())).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+        Self::from_arg_matches(&m).unwrap()
+    }
+
+    /// The values given to `--long`, if it was given (the tests').
+    #[cfg(test)]
+    pub fn values(&self, long: &str) -> Option<Vec<&str>> {
+        self.0.iter().find(|g| g.flag.long == long).map(|g| g.values.iter().map(String::as_str).collect())
+    }
+}
+
+impl<S: FlagSet> clap::Args for SettingsOf<S> {
     fn augment_args(cmd: Command) -> Command {
-        cmd.args(qsmart_flags().map(arg))
+        let args = args_of::<S>(&cmd);
+        cmd.args(args)
     }
     fn augment_args_for_update(cmd: Command) -> Command {
         Self::augment_args(cmd)
     }
 }
 
-impl clap::FromArgMatches for QsmartSettingsArgs {
+impl<S: FlagSet> clap::FromArgMatches for SettingsOf<S> {
     fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
-        Ok(QsmartSettingsArgs(given_of(matches, qsmart_flags())))
+        Ok(SettingsOf(given_of(matches, flags_of::<S>().into_iter()), std::marker::PhantomData))
     }
     fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
-        self.0 = given_of(matches, qsmart_flags());
+        self.0 = given_of(matches, flags_of::<S>().into_iter());
         Ok(())
     }
 }
+
+crate::flag_set! {
+    /// `qsmxt qsmart`'s: QSMART's own settings, under their `qsmxt run` names.
+    QsmartFlags = ["inversion.qsmart."], short = false;
+}
+
+/// `qsmxt qsmart`'s settings flags.
+pub type QsmartSettingsArgs = SettingsOf<QsmartFlags>;
 
 #[cfg(test)]
 mod tests {

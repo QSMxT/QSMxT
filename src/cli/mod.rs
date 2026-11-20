@@ -265,11 +265,11 @@ mod tests {
         let cli = parse(&["invert", "ndi", "f.nii", "-m", "m.nii", "-o", "o.nii", "--magnitude", "mag.nii",
             "--field-strength", "3", "--echo-times", "0.02", "--weight-norm", "mask-p999"]);
         let Command::Invert { command: InvertCommand::Ndi(a) } = cli.command else { panic!("expected invert ndi") };
-        assert_eq!(a.weight_norm, Some(qsmxt_engine::NdiWeightNorm::MaskP999));
+        assert_eq!(a.settings.values("ndi-weight-norm"), Some(vec!["mask-p999"]));
         let cli = parse(&["invert", "whqsm", "f.nii", "-m", "m.nii", "-o", "o.nii", "--field-strength", "3", "--echo-times", "0.02",
             "--weight", "flat-in-mask"]);
         let Command::Invert { command: InvertCommand::Whqsm(a) } = cli.command else { panic!("expected invert whqsm") };
-        assert_eq!(a.weight, Some(qsmxt_engine::WhqsmWeight::FlatInMask));
+        assert_eq!(a.settings.values("whqsm-weight"), Some(vec!["flat-in-mask"]));
         assert!(Cli::try_parse_from(["qsmxt", "bgremove", "harperella", "f.nii", "-m", "m.nii", "-o", "o.nii",
             "--rim", "edge"]).is_err());
     }
@@ -313,7 +313,7 @@ mod tests {
         let Command::Invert { command: InvertCommand::Rts(a) } = cli.command
             else { panic!("expected invert rts") };
         assert_eq!(a.common.b0_direction, vec![-0.05, -0.09, 0.99]);
-        assert_eq!(a.tol, Some(1e-3));
+        assert_eq!(a.settings.values("rts-tol"), Some(vec!["1e-3"]));
     }
 
     #[test]

@@ -1,0 +1,84 @@
+# The flags the standalone commands took before they took `qsmxt run`'s (QSMxT main 51f9f867,
+# tests/snapshots/args.txt). Each still parses: under its `qsmxt run` name, with this one as a
+# hidden alias (src/standalone_flag_tests.rs).
+qsmxt mask otsu: output op
+qsmxt mask value: output op threshold
+qsmxt mask percentile: output op percentile
+qsmxt mask sti-gui: output op
+qsmxt mask bet: output op fractional-intensity voxel-scale orientation
+qsmxt mask hd-bet: output op window low-memory patch tta tile-step
+qsmxt mask rs2-net: output op tta tile-step
+qsmxt mask mindgrab: output op tta
+qsmxt mask preset: output op quality phase bet-orientation
+qsmxt mask robust: output op
+qsmxt mask erode: output op iterations
+qsmxt mask dilate: output op iterations
+qsmxt mask close: output op radius
+qsmxt mask majority: output op
+qsmxt mask largest-component: output op
+qsmxt mask imfill: output op
+qsmxt mask fill-holes: output op max-size
+qsmxt mask smooth: output op sigma
+qsmxt mask and: output op magnitude
+qsmxt mask or: output op magnitude
+qsmxt combine mcpc3ds: phase magnitude output tes num-echoes sigma hip-unwrapping prelude-labelling prelude-partitions
+qsmxt unwrap romeo: mask output magnitude no-romeo-phase-coherence no-romeo-phase-gradient-coherence no-romeo-phase-linearity romeo-phase-linearity no-romeo-mag-coherence romeo-mag-weight no-romeo-mag-weight romeo-mag-weight2 romeo-bestpath romeo-template romeo-individual no-romeo-individual romeo-correct-global no-romeo-correct-global romeo-temporal-uncertain-unwrapping romeo-max-seeds romeo-merge-regions romeo-correct-regions romeo-wrap-addition
+qsmxt unwrap laplacian: mask output
+qsmxt unwrap prelude: mask output prelude-labelling prelude-partitions
+qsmxt unwrap medi-region-growing: magnitude output
+qsmxt fieldmap romeo: mask output magnitude tes b0 params b0-estimation qsmart-fit-threshold-mode qsmart-fit-percentile qsmart-fit-threshold reliability-output field-mask-output b0-weight-type b0-weight-assumed-t2star linear-fit-estimate-offset robust-fit-loss robust-fit-tuning robust-fit-iterations robust-fit-downweight-level robust-fit-flag-ratio complex-fit-reltol complex-fit-max-iter complex-fit-output complex-fit-noise-output phase-offset-removal phase-offset-sigma-mm bipolar-correction no-romeo-phase-coherence no-romeo-phase-gradient-coherence no-romeo-phase-linearity romeo-phase-linearity no-romeo-mag-coherence romeo-mag-weight no-romeo-mag-weight romeo-mag-weight2 romeo-bestpath romeo-template romeo-individual no-romeo-individual romeo-correct-global no-romeo-correct-global romeo-temporal-uncertain-unwrapping romeo-max-seeds romeo-merge-regions romeo-correct-regions romeo-wrap-addition
+qsmxt fieldmap laplacian: mask output magnitude tes b0 params b0-estimation qsmart-fit-threshold-mode qsmart-fit-percentile qsmart-fit-threshold reliability-output field-mask-output b0-weight-type b0-weight-assumed-t2star linear-fit-estimate-offset robust-fit-loss robust-fit-tuning robust-fit-iterations robust-fit-downweight-level robust-fit-flag-ratio complex-fit-reltol complex-fit-max-iter complex-fit-output complex-fit-noise-output laplacian-solver laplacian-fft-pad laplacian-unmasked phase-offset-removal phase-offset-sigma-mm bipolar-correction
+qsmxt fieldmap prelude: mask output magnitude tes b0 params b0-estimation qsmart-fit-threshold-mode qsmart-fit-percentile qsmart-fit-threshold reliability-output field-mask-output b0-weight-type b0-weight-assumed-t2star linear-fit-estimate-offset robust-fit-loss robust-fit-tuning robust-fit-iterations robust-fit-downweight-level robust-fit-flag-ratio complex-fit-reltol complex-fit-max-iter complex-fit-output complex-fit-noise-output phase-offset-removal phase-offset-sigma-mm bipolar-correction prelude-labelling prelude-partitions
+qsmxt fieldmap medi-region-growing: mask output magnitude tes b0 params b0-estimation qsmart-fit-threshold-mode qsmart-fit-percentile qsmart-fit-threshold reliability-output field-mask-output b0-weight-type b0-weight-assumed-t2star linear-fit-estimate-offset robust-fit-loss robust-fit-tuning robust-fit-iterations robust-fit-downweight-level robust-fit-flag-ratio complex-fit-reltol complex-fit-max-iter complex-fit-output complex-fit-noise-output phase-offset-removal phase-offset-sigma-mm bipolar-correction
+qsmxt bgremove vsharp: mask output b0-direction output-mask deconvolve threshold max-radius min-radius radius-step grid grid-spacing ball
+qsmxt bgremove pdf: mask output b0-direction output-mask field-strength echo-times magnitude tol n-cg space n-pad
+qsmxt bgremove lbv: mask output b0-direction output-mask field-strength echo-times tol depth peel n1 n2 n3 precision
+qsmxt bgremove ismv: mask output b0-direction output-mask variant tol max-iter radius
+qsmxt bgremove sharp: mask output b0-direction output-mask threshold radius variant
+qsmxt bgremove resharp: mask output b0-direction output-mask radius tik-reg tol max-iter
+qsmxt bgremove harperella: mask output output-mask radius max-iter tol te field-strength pad rim
+qsmxt bgremove iharperella: mask output output-mask max-iter tol te field-strength pad rim
+qsmxt bgremove bfrnet: mask output b0-direction output-mask
+qsmxt bgremove iqfm: mask output magnitude field-strength echo-times b0-direction tile-size tile-halo echo-weighting
+qsmxt invert rts: mask output b0-direction tile-size tile-halo delta mu tol rho max-iter lsmr-iter tau gamma pad
+qsmxt invert tv: mask output b0-direction tile-size tile-halo lambda rho tol max-iter pad
+qsmxt invert tkd: mask output b0-direction tile-size tile-halo threshold pad
+qsmxt invert tsvd: mask output b0-direction tile-size tile-halo threshold pad
+qsmxt invert tgv: mask output b0-direction tile-size tile-halo field-strength echo-times iterations erosions alpha1 alpha0 step-size te reference-divergence reference-edge-erosion reference-output-box
+qsmxt invert tikhonov: mask output b0-direction tile-size tile-halo lambda pad
+qsmxt invert nltv: mask output b0-direction tile-size tile-halo field-strength echo-times magnitude lambda rho mu tol max-iter tol-newton newton-iter te pad
+qsmxt invert medi: mask output b0-direction tile-size tile-halo field-strength echo-times magnitude lambda merit csf lambda-csf csf-r2s-threshold csf-erode zeropad smv smv-radius smv-shrink-mask msmv msmv-maxk msmv-vessel-radius no-msmv-prefilter data-weighting percentage cg-tol cg-max-iter max-iter tol te
+qsmxt invert tfi: mask output b0-direction tile-size tile-halo field-strength echo-times magnitude lambda precond merit linear data-weighting percentage cg-tol cg-max-iter max-iter tol te kernel precision
+qsmxt invert ilsqr: mask output b0-direction tile-size tile-halo tol max-iter pad-mm precision
+qsmxt invert star: mask output b0-direction tile-size tile-halo field-strength echo-times pad te
+qsmxt invert lsqr: mask output b0-direction tile-size tile-halo magnitude b0 lsqr-residual-weighting no-lsqr-global-offset lsqr-tol lsqr-max-iter
+qsmxt invert heidi: mask output b0-direction tile-size tile-halo field-strength echo-times magnitude seed lsqr-residual-weighting no-lsqr-global-offset lsqr-tol lsqr-max-iter heidi-cone-threshold heidi-gradient-threshold no-heidi-laplacian-correction heidi-laplacian-threshold heidi-gradient-mask-floor heidi-continuation-steps heidi-inner-iterations heidi-mu-min heidi-tol no-heidi-denoise heidi-denoise-iterations heidi-denoise-time-step heidi-denoise-conductance heidi-denoise-reference-itk no-heidi-denoise-reference-itk heidi-te
+qsmxt invert ndi: mask output b0-direction tile-size tile-halo tau alpha max-iter auto-stop te weight-norm field-strength echo-times magnitude
+qsmxt invert fansi: mask output b0-direction tile-size tile-halo field-strength echo-times magnitude alpha1 mu1 mu2 alpha0 mu0 max-iter tol-update tol-delta te
+qsmxt invert fansi-tgv: mask output b0-direction tile-size tile-halo field-strength echo-times magnitude alpha1 mu1 mu2 alpha0 mu0 max-iter tol-update tol-delta te
+qsmxt invert l1qsm: mask output b0-direction tile-size tile-halo field-strength echo-times magnitude alpha1 mu1 mu2 mu3 lambda max-iter tol-update tol-delta te
+qsmxt invert whqsm: mask output b0-direction tile-size tile-halo field-strength echo-times alpha1 mu1 mu2 beta muh max-iter tol-update tol-delta weight magnitude te
+qsmxt invert hdqsm: mask output b0-direction tile-size tile-halo echo-times magnitude alpha-l2 mu1-l2 mu2 max-iter-l1 max-iter-l2 tol-update
+qsmxt invert amp-pe: mask output b0-direction tile-size tile-halo magnitude b0 wave-order nlevel wave-pec simulated-te max-linearization-ite damp-rate-sig damp-rate-par max-pe-spar-ite max-pe-est-ite cvg-thd tikhonov-beta
+qsmxt invert xqsm: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert qsmnet: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert qsmnet-plus: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert qsmnetme: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert autoqsm: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert qsmgan: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert ir2qsm: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert lpcnn: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert modl-qsm: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert nextqsm: mask output b0-direction tile-size tile-halo field-strength
+qsmxt invert iqsm: mask output magnitude field-strength echo-times b0-direction tile-size tile-halo echo-weighting
+qsmxt invert iqsm-plus: mask output magnitude field-strength echo-times b0-direction tile-size tile-halo
+qsmxt invert cosmos: input b0-direction b0-dirs mask force output lambda magnitude tol max-iter
+qsmxt invert sti: input b0-direction b0-dirs mask force output lambda
+qsmxt separate r2star-qsm: qsm mask output field-strength b0-direction r2star magnitude echo-times r-const-3t
+qsmxt separate decompose: qsm mask output field-strength b0-direction magnitude qsm-per-echo echo-times n-inner chi-bound unwrap-phase fit max-iterations max-function-evaluations function-tolerance step-tolerance optimality-tolerance finite-difference-step typical-x
+qsmxt separate chi-sep-ilsqr: qsm mask output field-strength b0-direction local-field r2prime dr-pos dr-neg pad cg-max-iter-lsqr cg-tol-lsqr cg-max-iter-sa cg-tol-sa d2-thr prc-w-i-min prc-w-i-max prc-w-g-min prc-w-g-max
+qsmxt separate chi-sep-medi: qsm mask output field-strength b0-direction local-field r2prime magnitude echo-times csf-mask csf-r2star lambda lambda-csf dr-pos dr-neg pad tol max-iter cg-tol cg-max-iter
+qsmxt separate wavesep: qsm mask output field-strength b0-direction r2prime dr-pos dr-neg alpha lambda wavelet-order max-iter tol
+qsmxt separate hc-chisep: qsm mask output field-strength b0-direction r2prime magnitude echo-times se-magnitude se-echo-times dr-pos-3t bin-hz
+qsmxt separate susep-net: qsm mask output field-strength b0-direction local-field r2prime patch
+qsmxt separate chi-sepnet: mask output field-strength b0-direction local-field r2prime r2star qsm route patch frame-patch ignore-field-mismatch

@@ -107,22 +107,25 @@ fn heidi_on_seed(
     Ok((chi, field_nifti))
 }
 
-/// An inversion config for `algorithm`, with qsm-core's settings for every other method.
-fn config_for(algorithm: qsm_core::pipeline::InversionAlgorithm) -> qsm_core::pipeline::InversionConfig {
-    qsm_core::pipeline::InversionConfig { algorithm, ..Default::default() }
+/// QSMxT's configuration with `algorithm` as the inversion and the command's settings flags
+/// (its tiling flags and `settings`) applied, as `qsmxt run` applies them.
+pub(super) fn config(
+    c: &InvertCommonArgs, algorithm: qsmxt_engine::QsmAlgorithm, settings: &[qsmxt_engine::schema::cli_apply::Given],
+) -> qsmxt_io::Result<qsmxt_engine::PipelineConfig> {
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    cfg.inversion.algorithm = algorithm;
+    qsmxt_io::settings::apply(&mut cfg, &[c.tiling.0.as_slice(), settings].concat())?;
+    Ok(cfg)
 }
 
 /// Run a deep-learning dipole inversion (the DL models are not exposed as standalone functions).
 /// Weights are downloaded on first use. AutoQSM and NeXtQSM are single-step and expect the TOTAL
 /// field as input; the others take a local (tissue) field.
 fn run_dl_inversion(
-    c: &InvertCommonArgs, field_strength: f64,
-    algorithm: qsm_core::pipeline::InversionAlgorithm, name: &str,
+    c: &InvertCommonArgs, field_strength: f64, algorithm: qsmxt_engine::QsmAlgorithm, name: &str,
 ) -> qsmxt_io::Result<(Vec<f64>, qsm_core::io::NiftiData)> {
-    // Opt-in overlap-tiling: presence of --tile-size enables it; halo defaults to 8.
-    let tile = c.tiling_params.tile_size.map(|core| (core, c.tiling_params.tile_halo.unwrap_or(8)));
-    let config = qsm_core::pipeline::InversionConfig { algorithm, tile, ..Default::default() };
-    invert_with(c, field_strength, &[], Magnitude::None, config, name)
+    let cfg = config(c, algorithm, &[])?;
+    invert_with(c, field_strength, &[], Magnitude::None, qsmxt_engine::to_pipeline_stages(&cfg).2, name)
 }
 
 /// The networks that work from every echo's wrapped phase.
@@ -212,7 +215,9 @@ pub(super) fn run_phase_net(
     info!("{name} ({}x{}x{}, {} echo(es))", nx, ny, nz, inputs.phases.len());
     let phases: Vec<&[f64]> = inputs.phases.iter().map(Vec::as_slice).collect();
     let magnitudes: Vec<&[f64]> = inputs.magnitudes.iter().map(Vec::as_slice).collect();
-    let tile = args.tiling_params.tile_size.map(|core| (core, args.tiling_params.tile_halo.unwrap_or(8)));
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    qsmxt_io::settings::apply(&mut cfg, &args.tiling.0)?;
+    let tile = cfg.dl_tile();
     let none = qsm_core::pipeline::QsmReference::None;
     let out = match net {
         PhaseNet::Iqsm => qsm_core::pipeline::run_iqsm(&phases, &magnitudes, &inputs.mask, &inputs.metadata, none, tile, echo_weighting),
@@ -225,76 +230,8 @@ pub(super) fn run_phase_net(
     Ok(())
 }
 
-/// Build `LsqrQsmParams` from the shared `--lsqr-*` group.
-///
-/// Defaults come from [`LsqrConfig`] — the same struct `qsmxt run` starts from — so the two
-/// surfaces cannot drift apart. `b0` and `mask_output` are the dispatcher's (as in `qsmxt run`).
-fn lsqr_params(args: &crate::cli::LsqrParamArgs) -> qsm_core::inversion::LsqrQsmParams {
-    let d = qsmxt_engine::LsqrConfig::default();
-    qsm_core::inversion::LsqrQsmParams {
-        // `None` here is meaningful — it selects qsm-core's field-strength-scaled default — so an
-        // unset flag keeps the `None` rather than collapsing to a concrete 3T number.
-        residual_weighting: args.lsqr_residual_weighting.or(d.residual_weighting),
-        fit_global_offset: d.fit_global_offset && !args.no_lsqr_global_offset,
-        tol: args.lsqr_tol.unwrap_or(d.tol),
-        max_iter: args.lsqr_max_iter.unwrap_or(d.max_iter),
-        ..Default::default()
-    }
-}
-
-/// QSM.jl's padding from `--pad X Y Z` (clap takes exactly three), or the default.
-fn pad3(given: Option<&[i64]>, default: [i64; 3]) -> [i64; 3] {
-    match given {
-        Some(&[x, y, z]) => [x, y, z],
-        _ => default,
-    }
-}
-
-/// STAR-QSM's settings from `qsmxt invert star`'s flags. The field strength and echo times are
-/// the scan's; qsm-core's dispatcher fills them in.
-fn star_params(args: &crate::cli::InvertStarArgs) -> qsm_core::inversion::StarParams {
-    let d = qsm_core::inversion::StarParams::default();
-    qsm_core::inversion::StarParams {
-        pad: args.pad.as_deref().map_or(d.pad, |p| [p[0], p[1], p[2]]),
-        te: args.te.map_or(d.te, Into::into),
-        ..d
-    }
-}
-
-/// Build `HeidiParams` from the `--heidi-*` group.
-///
-/// [`HeidiConfig`] is the pipeline's flattening of qsm-core's optional denoise struct into a
-/// switch plus three values; taking the defaults from it keeps `invert heidi` and
-/// `run --qsm-algorithm heidi` on one set of numbers.
-fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::HeidiParams {
-    let d = qsmxt_engine::HeidiConfig::default();
-    qsm_core::inversion::HeidiParams {
-        cone_threshold: args.heidi_cone_threshold.unwrap_or(d.cone_threshold),
-        gradient_threshold: args.heidi_gradient_threshold.unwrap_or(d.gradient_threshold),
-        apply_laplacian_correction: d.apply_laplacian_correction
-            && !args.no_heidi_laplacian_correction,
-        laplacian_threshold: args.heidi_laplacian_threshold.unwrap_or(d.laplacian_threshold),
-        gradient_mask_floor: args.heidi_gradient_mask_floor.unwrap_or(d.gradient_mask_floor),
-        continuation_steps: args.heidi_continuation_steps.unwrap_or(d.continuation_steps),
-        inner_iterations: args.heidi_inner_iterations.unwrap_or(d.inner_iterations),
-        mu_min: args.heidi_mu_min.unwrap_or(d.mu_min),
-        tol: args.heidi_tol.unwrap_or(d.tol),
-        denoise: (d.denoise && !args.no_heidi_denoise).then(|| {
-            qsm_core::utils::AnisotropicDiffusionParams {
-                iterations: args.heidi_denoise_iterations.unwrap_or(d.denoise_iterations),
-                time_step: args.heidi_denoise_time_step.unwrap_or(d.denoise_time_step),
-                conductance: args.heidi_denoise_conductance.unwrap_or(d.denoise_conductance),
-                reference_itk: d.denoise_reference_itk || args.heidi_denoise_reference_itk,
-            }
-        }),
-        te: args.heidi_te.unwrap_or(d.te).into(),
-        // Field strength and echo times are the scan's; the dispatcher fills them in.
-        ..Default::default()
-    }
-}
-
 pub fn execute(cmd: InvertCommand) -> qsmxt_io::Result<()> {
-    use qsm_core::pipeline::InversionAlgorithm as A;
+    use qsmxt_engine::QsmAlgorithm as A;
     // COSMOS and STI take N inputs (and STI writes many outputs), so they do not fit the
     // single-input/single-output shape the rest of this match shares.
     let cmd = match cmd {
@@ -344,78 +281,4 @@ pub fn execute(cmd: InvertCommand) -> qsmxt_io::Result<()> {
     save_nifti(&common.output, &chi_data, &field_nifti)?;
     info!("Susceptibility map saved to {}", common.output.display());
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{heidi_params, lsqr_params, star_params};
-    use crate::cli::{HeidiParamArgs, LsqrParamArgs};
-
-    /// With no flags set, the `invert` surface must reproduce qsm-core's own defaults — the same
-    /// parameters `qsmxt run --qsm-algorithm lsqr` would build. A hand-written `unwrap_or` chain
-    /// is exactly where a default silently drifts from the library's.
-    #[test]
-    fn unset_flags_give_the_qsm_core_defaults() {
-        let d = qsm_core::inversion::LsqrQsmParams::default();
-        let p = lsqr_params(&LsqrParamArgs::default());
-        assert_eq!(p.residual_weighting, d.residual_weighting);
-        assert_eq!(p.fit_global_offset, d.fit_global_offset);
-        assert_eq!(p.tol, d.tol);
-        assert_eq!(p.max_iter, d.max_iter);
-
-        let h = qsm_core::inversion::HeidiParams::default();
-        let p = heidi_params(&HeidiParamArgs::default());
-        assert_eq!(p.cone_threshold, h.cone_threshold);
-        assert_eq!(p.gradient_threshold, h.gradient_threshold);
-        assert_eq!(p.apply_laplacian_correction, h.apply_laplacian_correction);
-        assert_eq!(p.laplacian_threshold, h.laplacian_threshold);
-        assert_eq!(p.gradient_mask_floor, h.gradient_mask_floor);
-        assert_eq!(p.continuation_steps, h.continuation_steps);
-        assert_eq!(p.inner_iterations, h.inner_iterations);
-        assert_eq!(p.mu_min, h.mu_min);
-        assert_eq!(p.tol, h.tol);
-        assert_eq!(p.te, h.te);
-        let (a, b) = (p.denoise.unwrap(), h.denoise.unwrap());
-        assert_eq!((a.iterations, a.time_step, a.conductance), (b.iterations, b.time_step, b.conductance));
-    }
-
-    /// `qsmxt invert star` with no flags gives qsm-core's STAR-QSM defaults; `--pad` and `--te`
-    /// reach its parameters.
-    #[test]
-    fn star_flags_map_to_its_params() {
-        use clap::Parser;
-        let parse = |extra: &[&str]| {
-            let mut argv = vec!["qsmxt", "invert", "star", "f.nii", "-m", "m.nii", "-o", "o.nii",
-                                "--field-strength", "3", "--echo-times", "0.01", "0.02"];
-            argv.extend(extra);
-            match crate::cli::Cli::try_parse_from(argv).unwrap().command {
-                crate::cli::Command::Invert { command: crate::cli::InvertCommand::Star(a) } => a,
-                _ => panic!("expected invert star"),
-            }
-        };
-        let (p, d) = (star_params(&parse(&[])), qsm_core::inversion::StarParams::default());
-        assert_eq!((p.pad, p.te), (d.pad, d.te));
-        let p = star_params(&parse(&["--pad", "2", "4", "6", "--te", "spacing"]));
-        assert_eq!((p.pad, p.te), ([2, 4, 6], qsm_core::EchoTime::Spacing));
-    }
-
-    /// `--lsqr-residual-weighting` is `Option<f64>` in qsm-core because `None` means
-    /// "scale with field strength" — collapsing it to a concrete number would silently pin the
-    /// weight to 3T behaviour on every other scanner.
-    #[test]
-    fn an_unset_residual_weighting_stays_none() {
-        assert_eq!(lsqr_params(&LsqrParamArgs::default()).residual_weighting, None);
-        let explicit = LsqrParamArgs { lsqr_residual_weighting: Some(0.0), ..Default::default() };
-        assert_eq!(lsqr_params(&explicit).residual_weighting, Some(0.0));
-    }
-
-    /// The denoise switch is a negative flag over a `Some(..)` default: `--no-heidi-denoise` has
-    /// to clear the whole struct, not just zero its fields.
-    #[test]
-    fn no_denoise_clears_the_diffusion_params() {
-        let off = HeidiParamArgs { no_heidi_denoise: true, ..Default::default() };
-        assert!(heidi_params(&off).denoise.is_none());
-        let tuned = HeidiParamArgs { heidi_denoise_iterations: Some(9), ..Default::default() };
-        assert_eq!(heidi_params(&tuned).denoise.unwrap().iterations, 9);
-    }
 }

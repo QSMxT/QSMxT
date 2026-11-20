@@ -101,7 +101,7 @@ fn test_invert_tkd() {
 
     super::invert::execute(InvertCommand::Tkd(InvertTkdArgs {
         common: common_invert(input, mask, output.clone()),
-        threshold: None, pad: None,
+        settings: Default::default(),
     })).unwrap();
     assert!(output.exists());
 }
@@ -116,21 +116,21 @@ fn test_invert_whqsm_weight_and_echo_time() {
     let output = dir.path().join("chi.nii");
     testutils::write_field(&input);
     testutils::write_mask(&mask);
-    let whqsm = |weight, te, echoes: &[f64]| InvertCommand::Whqsm(crate::cli::InvertWhqsmArgs {
+    let whqsm = |flags: &[&str], echoes: &[f64]| InvertCommand::Whqsm(crate::cli::InvertWhqsmArgs {
         common: common_invert(input.clone(), mask.clone(), output.clone()),
         scan: scan(echoes),
-        alpha1: None, mu1: None, mu2: None, beta: None, muh: None, max_iter: Some(1),
-        tol_update: None, tol_delta: None, weight, magnitude: vec![], te,
+        magnitude: vec![],
+        settings: SettingsOf::from_flags(&[&["--whqsm-max-iter", "1"], flags].concat()),
     });
-    let e = super::invert::execute(whqsm(Some(qsmxt_engine::WhqsmWeight::InVivo), None, &[0.01, 0.02]))
+    let e = super::invert::execute(whqsm(&["--whqsm-weight", "in-vivo"], &[0.01, 0.02]))
         .unwrap_err().to_string();
-    assert!(e.contains("--weight in-vivo needs --magnitude"), "{e}");
-    // flat-in-mask, like flat, takes no magnitude
-    super::invert::execute(whqsm(Some(qsmxt_engine::WhqsmWeight::FlatInMask), None, &[0.01, 0.02])).unwrap();
-    let e = super::invert::execute(whqsm(None, Some(qsmxt_engine::EchoTimeChoice::Spacing), &[0.02, 0.01]))
+    assert!(e.contains("--whqsm-weight in-vivo needs --magnitude"), "{e}");
+    // flat-in-mask, like flat, takes no magnitude; the old name of the flag still works
+    super::invert::execute(whqsm(&["--weight", "flat-in-mask"], &[0.01, 0.02])).unwrap();
+    let e = super::invert::execute(whqsm(&["--whqsm-te", "spacing"], &[0.02, 0.01]))
         .unwrap_err().to_string();
     assert!(e.contains("echo spacing"), "{e}");
-    super::invert::execute(whqsm(None, Some(qsmxt_engine::EchoTimeChoice::Last), &[0.01, 0.02])).unwrap();
+    super::invert::execute(whqsm(&["--te", "last"], &[0.01, 0.02])).unwrap();
     assert!(output.exists());
 }
 
@@ -148,11 +148,8 @@ fn test_invert_tgv_runs_on_a_ppm_field() {
     super::invert::execute(InvertCommand::Tgv(InvertTgvArgs {
         common: common_invert(input, mask, output.clone()),
         scan: scan(&[0.005, 0.01]),
-        iterations: Some(1),
-        erosions: Some(0),
-        alpha1: None, alpha0: None,
-        step_size: None, te: None,
         reference_divergence: true, reference_edge_erosion: true, reference_output_box: true,
+        settings: SettingsOf::from_flags(&["--tgv-iterations", "1", "--tgv-erosions", "0"]),
     })).unwrap();
     assert!(output.exists());
 }
@@ -170,9 +167,8 @@ fn test_invert_rts() {
 
     super::invert::execute(InvertCommand::Rts(InvertRtsArgs {
         common: common_invert(input, mask, output.clone()),
-        delta: None, mu: None,
-        tol: Some(0.5), // loose tolerance for speed
-        rho: None, max_iter: None, lsmr_iter: None, tau: None, gamma: None, pad: Some(vec![-1, 2, 0]),
+        // A loose tolerance for speed.
+        settings: SettingsOf::from_flags(&["--rts-tol", "0.5", "--rts-pad", "-1", "2", "0"]),
     })).unwrap();
     assert!(output.exists());
 }
@@ -188,7 +184,7 @@ fn test_invert_tv() {
 
     super::invert::execute(InvertCommand::Tv(InvertTvArgs {
         common: common_invert(input, mask, output.clone()),
-        lambda: None, rho: None, tol: None, max_iter: None, pad: None,
+        settings: Default::default(),
     })).unwrap();
     assert!(output.exists());
 }
@@ -208,7 +204,7 @@ fn test_invert_lsqr() {
         common: common_invert(input.clone(), mask.clone(), output.clone()),
         magnitude,
         b0: 3.0,
-        lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
+        settings: SettingsOf::from_flags(&["--lsqr-max-iter", "5"]),
     };
     // LSQR is weighted by the magnitude, as the HEIDI package weights it.
     let err = super::invert::execute(InvertCommand::Lsqr(args(vec![]))).unwrap_err().to_string();
@@ -235,12 +231,7 @@ fn test_invert_heidi() {
         scan: scan(&[0.02]),
         magnitude: vec![magnitude],
         seed: None,
-        lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
-        heidi_params: HeidiParamArgs {
-            heidi_continuation_steps: Some(1),
-            heidi_inner_iterations: Some(2),
-            ..Default::default()
-        },
+        settings: SettingsOf::from_flags(&["--lsqr-max-iter", "5", "--heidi-continuation-steps", "1", "--heidi-inner-iterations", "2"]),
     })).unwrap();
     assert!(output.exists());
 }
@@ -262,12 +253,7 @@ fn test_invert_heidi_on_a_seed() {
         scan: scan(&[0.02]),
         magnitude: vec![],
         seed: Some(seed),
-        lsqr_params: LsqrParamArgs::default(),
-        heidi_params: HeidiParamArgs {
-            heidi_continuation_steps: Some(1),
-            heidi_inner_iterations: Some(2),
-            ..Default::default()
-        },
+        settings: SettingsOf::from_flags(&["--heidi-continuation-steps", "1", "--heidi-inner-iterations", "2"]),
     };
     super::invert::execute(InvertCommand::Heidi(args(seed))).unwrap();
     assert!(output.exists());
@@ -296,11 +282,10 @@ fn test_invert_medi_takes_every_echo() {
         common: common_invert(input.clone(), mask.clone(), output.clone()),
         scan: scan(&[0.005, 0.010, 0.015]),
         magnitude,
-        csf: None, lambda_csf: None, csf_r2s_threshold: None, csf_erode: None, zeropad: None,
-        lambda: None, merit: Some(false), smv: Some(false), smv_radius: None, smv_shrink_mask: None,
-        msmv, msmv_maxk: None, msmv_vessel_radius: None, no_msmv_prefilter: false,
-        data_weighting: None, percentage: None, cg_tol: None, cg_max_iter: Some(2),
-        max_iter: Some(1), tol: None, te: None,
+        settings: SettingsOf::from_flags(&[
+            &["--medi-merit", "false", "--medi-smv", "false", "--medi-cg-max-iter", "2", "--medi-max-iter", "1"][..],
+            if msmv { &["--medi-msmv"] } else { &[] },
+        ].concat()),
     });
     super::invert::execute(medi(mags.clone(), false)).unwrap();
     assert!(output.exists());
@@ -323,9 +308,9 @@ fn test_invert_ndi_weights_by_the_magnitude() {
     testutils::write_magnitude(&magnitude);
     super::invert::execute(InvertCommand::Ndi(InvertNdiArgs {
         common: common_invert(input, mask, output.clone()),
-        tau: None, alpha: None, max_iter: Some(2), auto_stop: None, te: None, weight_norm: None,
         scan: scan(&[0.02]),
         magnitude: vec![magnitude],
+        settings: SettingsOf::from_flags(&["--ndi-max-iter", "2"]),
     })).unwrap();
     assert!(output.exists());
 }
@@ -340,12 +325,13 @@ fn test_invert_star() {
     let output = dir.path().join("chi.nii");
     testutils::write_field(&input);
     testutils::write_mask(&mask);
-    let star = |te, echoes: &[f64]| InvertCommand::Star(InvertStarArgs {
+    let star = |te: &[&str], echoes: &[f64]| InvertCommand::Star(InvertStarArgs {
         common: common_invert(input.clone(), mask.clone(), output.clone()),
-        scan: scan(echoes), pad: Some(vec![2, 2, 2]), te,
+        scan: scan(echoes),
+        settings: SettingsOf::from_flags(&[&["--star-pad", "2", "2", "2"], te].concat()),
     });
-    super::invert::execute(star(None, &[0.01, 0.02])).unwrap();
+    super::invert::execute(star(&[], &[0.01, 0.02])).unwrap();
     assert!(output.exists());
-    let err = super::invert::execute(star(Some(qsmxt_engine::EchoTimeChoice::Spacing), &[0.02, 0.01])).unwrap_err();
+    let err = super::invert::execute(star(&["--star-te", "spacing"], &[0.02, 0.01])).unwrap_err();
     assert!(err.to_string().contains("STAR-QSM") && err.to_string().contains("echo spacing"), "{err}");
 }
