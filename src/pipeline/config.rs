@@ -36,51 +36,6 @@ pub fn swi_scaling_arg_to_config(a: cli::SwiScalingArg) -> qsmxt_engine::SwiScal
     }
 }
 
-/// Whether `a` is LSQR+HEIDI (`heidi`), which also switches HEIDI on.
-pub fn heidi_alias(a: cli::QsmAlgorithmArg) -> bool {
-    a == cli::QsmAlgorithmArg::Heidi
-}
-
-/// Map a CLI dipole-inversion algorithm argument to the config enum.
-pub fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
-    match a {
-        cli::QsmAlgorithmArg::Rts => QsmAlgorithm::Rts,
-        cli::QsmAlgorithmArg::Tv => QsmAlgorithm::Tv,
-        cli::QsmAlgorithmArg::Tkd => QsmAlgorithm::Tkd,
-        cli::QsmAlgorithmArg::Tgv => QsmAlgorithm::Tgv,
-        cli::QsmAlgorithmArg::Tikhonov => QsmAlgorithm::Tikhonov,
-        cli::QsmAlgorithmArg::Nltv => QsmAlgorithm::Nltv,
-        cli::QsmAlgorithmArg::Tsvd => QsmAlgorithm::Tsvd,
-        cli::QsmAlgorithmArg::Medi => QsmAlgorithm::Medi,
-        cli::QsmAlgorithmArg::Tfi => QsmAlgorithm::Tfi,
-        cli::QsmAlgorithmArg::Ilsqr => QsmAlgorithm::Ilsqr,
-        cli::QsmAlgorithmArg::Star => QsmAlgorithm::Star,
-        cli::QsmAlgorithmArg::Lsqr => QsmAlgorithm::Lsqr,
-        // LSQR+HEIDI: LSQR, with HEIDI switched on by the caller ([`heidi_alias`]).
-        cli::QsmAlgorithmArg::Heidi => QsmAlgorithm::Lsqr,
-        cli::QsmAlgorithmArg::Qsmart => QsmAlgorithm::Qsmart,
-        cli::QsmAlgorithmArg::Ndi => QsmAlgorithm::Ndi,
-        cli::QsmAlgorithmArg::Fansi => QsmAlgorithm::Fansi,
-        cli::QsmAlgorithmArg::FansiTgv => QsmAlgorithm::FansiTgv,
-        cli::QsmAlgorithmArg::L1qsm => QsmAlgorithm::L1qsm,
-        cli::QsmAlgorithmArg::Whqsm => QsmAlgorithm::Whqsm,
-        cli::QsmAlgorithmArg::Hdqsm => QsmAlgorithm::Hdqsm,
-        cli::QsmAlgorithmArg::AmpPe => QsmAlgorithm::AmpPe,
-        cli::QsmAlgorithmArg::Xqsm => QsmAlgorithm::Xqsm,
-        cli::QsmAlgorithmArg::Qsmnet => QsmAlgorithm::Qsmnet,
-        cli::QsmAlgorithmArg::QsmnetPlus => QsmAlgorithm::QsmnetPlus,
-        cli::QsmAlgorithmArg::Qsmnetme => QsmAlgorithm::Qsmnetme,
-        cli::QsmAlgorithmArg::Autoqsm => QsmAlgorithm::Autoqsm,
-        cli::QsmAlgorithmArg::Qsmgan => QsmAlgorithm::Qsmgan,
-        cli::QsmAlgorithmArg::Ir2qsm => QsmAlgorithm::Ir2qsm,
-        cli::QsmAlgorithmArg::Lpcnn => QsmAlgorithm::Lpcnn,
-        cli::QsmAlgorithmArg::ModlQsm => QsmAlgorithm::ModlQsm,
-        cli::QsmAlgorithmArg::Nextqsm => QsmAlgorithm::Nextqsm,
-        cli::QsmAlgorithmArg::Iqsm => QsmAlgorithm::Iqsm,
-        cli::QsmAlgorithmArg::IqsmPlus => QsmAlgorithm::IqsmPlus,
-    }
-}
-
 impl From<cli::QsmartFitThresholdModeArg> for QsmartFitThresholdMode {
     fn from(m: cli::QsmartFitThresholdModeArg) -> Self {
         match m {
@@ -90,72 +45,10 @@ impl From<cli::QsmartFitThresholdModeArg> for QsmartFitThresholdMode {
     }
 }
 
-/// Apply QSMART parameter overrides onto a config. Shared by the `run` pipeline and the standalone
-/// `qsmxt qsmart` command so both honour the same flags.
-pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamArgs) -> crate::Result<()> {
-    if p.qsmart_inversion.is_some_and(heidi_alias) {
-        return Err(QsmxtError::Config(
-            "--qsmart-inversion heidi: HEIDI is not one of QSMART's inner inversions (its two stages are its own recipe)".into()));
-    }
-    if let Some(v) = p.qsmart_ilsqr_pad_mm { config.inversion.qsmart.ilsqr_pad_mm = v; }
-    if let Some(v) = p.qsmart_ilsqr_max_iter { config.inversion.qsmart.ilsqr_max_iter = v; }
-    if let Some(v) = p.qsmart_vasc_sphere_radius { config.inversion.qsmart.vasc_sphere_radius = v; }
-    if let Some(a) = p.qsmart_inversion { config.inversion.qsmart.inversion = qsm_algorithm_arg_to_config(a); }
-    if let Some(v) = p.qsmart_sdf_sigma1_stage1 { config.inversion.qsmart.sdf_sigma1_stage1 = v; }
-    if let Some(v) = p.qsmart_sdf_sigma2_stage1 { config.inversion.qsmart.sdf_sigma2_stage1 = v; }
-    if let Some(v) = p.qsmart_sdf_sigma1_stage2 { config.inversion.qsmart.sdf_sigma1_stage2 = v; }
-    if let Some(v) = p.qsmart_sdf_sigma2_stage2 { config.inversion.qsmart.sdf_sigma2_stage2 = v; }
-    if let Some(v) = p.qsmart_sdf_lower_lim { config.inversion.qsmart.sdf_lower_lim = v; }
-    if let Some(v) = p.qsmart_sdf_curv_constant { config.inversion.qsmart.sdf_curv_constant = v; }
-    if let Some(v) = p.qsmart_frangi_scale_min { config.inversion.qsmart.frangi_scale_min = v; }
-    if let Some(v) = p.qsmart_frangi_scale_max { config.inversion.qsmart.frangi_scale_max = v; }
-    if let Some(v) = p.qsmart_frangi_scale_ratio { config.inversion.qsmart.frangi_scale_ratio = v; }
-    if let Some(v) = p.qsmart_frangi_c { config.inversion.qsmart.frangi_c = v; }
-    if let Some(m) = p.qsmart_frangi_c_mode {
-        config.inversion.qsmart.frangi_c_mode = match m {
-            cli::QsmartFrangiCModeArg::Absolute => qsmxt_engine::QsmartFrangiCMode::Absolute,
-            cli::QsmartFrangiCModeArg::Relative => qsmxt_engine::QsmartFrangiCMode::Relative,
-        };
-    }
-    if let Some(v) = p.qsmart_frangi_c_factor { config.inversion.qsmart.frangi_c_factor = v; }
-    if let Some(u) = p.qsmart_vessel_units {
-        config.inversion.qsmart.vessel_size_units = match u {
-            cli::VesselSizeUnitsArg::Voxels => VesselSizeUnits::Voxels,
-            cli::VesselSizeUnitsArg::Mm => VesselSizeUnits::Mm,
-        };
-    }
-    if let Some(m) = p.qsmart_vessel_magnitude {
-        config.inversion.qsmart.vessel_magnitude = match m {
-            cli::QsmartVesselMagnitudeArg::MeanN4 => QsmartVesselMagnitude::MeanN4,
-            cli::QsmartVesselMagnitudeArg::Combined => QsmartVesselMagnitude::Combined,
-        };
-    }
-    if let Some(g) = p.qsmart_offset_grid {
-        config.inversion.qsmart.offset_grid = match g {
-            cli::QsmartOffsetGridArg::Fft => qsmxt_engine::QsmartOffsetGrid::Fft,
-            cli::QsmartOffsetGridArg::QsmartReference => qsmxt_engine::QsmartOffsetGrid::QsmartReference,
-        };
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use clap::Parser;
-
-    #[test]
-    fn dl_qsm_args_map_to_config() {
-        use crate::cli::QsmAlgorithmArg as A;
-        for a in [
-            A::Xqsm, A::Qsmnet, A::QsmnetPlus, A::Qsmnetme, A::Autoqsm, A::Qsmgan, A::Ir2qsm,
-            A::Lpcnn, A::ModlQsm, A::Nextqsm, A::Iqsm, A::IqsmPlus,
-        ] {
-            // Each DL arg maps to a distinct config algorithm whose Display is a non-empty id.
-            let alg = qsm_algorithm_arg_to_config(a);
-            assert!(!alg.to_string().is_empty());
-        }
-    }
 
     /// A generated QSMART command (all params) must parse back through the CLI and
     /// round-trip the QSMART config values through the flags.

@@ -43,8 +43,9 @@ pub struct QsmartArgs {
     /// --ilsqr-precision`)
     #[arg(long, value_name = "PRECISION", value_parser = parse_ilsqr_precision)]
     pub ilsqr_precision: Option<qsmxt_engine::IlsqrPrecision>,
+    // The QSMART settings' flags (`--qsmart-*`), from the engine's flag table.
     #[command(flatten)]
-    pub qsmart_params: QsmartParamArgs,
+    pub qsmart_settings: crate::cli_settings::QsmartSettingsArgs,
 }
 
 #[derive(Parser, Debug)]

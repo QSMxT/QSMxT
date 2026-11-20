@@ -3,19 +3,6 @@ use clap::ValueEnum;
 // ─── Shared enums (used by RunArgs) ───
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-pub enum QsmAlgorithmArg {
-    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Star, Lsqr,
-    /// LSQR+HEIDI, HEIDI as published: LSQR with HEIDI after it (`--qsm-algorithm lsqr --heidi`)
-    Heidi,
-    Qsmart,
-    Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm, AmpPe,
-    // Deep-learning dipole inversions (weights downloaded on first use).
-    Xqsm, Qsmnet, QsmnetPlus, Qsmnetme, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,
-    // End-to-end DL reconstructions from wrapped phase (no separate unwrap/BFR).
-    Iqsm, IqsmPlus,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum ChiSepNetRouteArg {
     /// The authors' route (training frame, QSMnetME susceptibility channel)
     Toolbox,
@@ -193,28 +180,8 @@ pub enum QsmartFitThresholdModeArg {
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-pub enum VesselSizeUnitsArg {
-    Voxels, Mm,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-pub enum QsmartFrangiCModeArg {
-    Absolute, Relative,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-pub enum QsmartOffsetGridArg {
-    Fft, QsmartReference,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum DecomposeFitArg {
     ReferenceCode, Paper,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-pub enum QsmartVesselMagnitudeArg {
-    MeanN4, Combined,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

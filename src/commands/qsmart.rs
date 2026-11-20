@@ -65,7 +65,8 @@ impl qsm_core::pipeline::Observer for IntermediateWriter<'_> {
 fn pipeline_config(args: &QsmartArgs) -> crate::Result<config::PipelineConfig> {
     let mut cfg = config::PipelineConfig::default();
     cfg.inversion.algorithm = config::QsmAlgorithm::Qsmart;
-    config::apply_qsmart_overrides(&mut cfg, &args.qsmart_params)?;
+    // The QSMART settings' flags, applied as `qsmxt run` applies them.
+    qsmxt_io::settings::apply(&mut cfg, &args.qsmart_settings.0)?;
     // The inner iLSQR's arithmetic is iLSQR's own setting, as in `qsmxt run`.
     if let Some(p) = args.ilsqr_precision { cfg.inversion.ilsqr.precision = p; }
     Ok(cfg)
@@ -172,5 +173,58 @@ mod tests {
         assert_eq!(inner(args(&["--ilsqr-precision", "single"])), P::Single);
         assert!(crate::cli::Cli::try_parse_from(["qsmxt", "qsmart", "f", "-m", "m", "-o", "o",
             "--field-strength", "3", "--echo-time", "0.02", "--ilsqr-precision", "half"]).is_err());
+    }
+
+    /// Each QSMART flag sets its setting to the value given, as the subcommand's own flags did
+    /// before they came from the flag table; without them, the defaults. No range is checked here
+    /// (a Frangi C of 0 is taken), as before.
+    #[test]
+    fn qsmart_flags_set_their_settings() {
+        let q = |extra: &[&str]| super::pipeline_config(&args(extra)).unwrap().inversion.qsmart;
+        let d = qsmxt_engine::QsmartConfig::default();
+        assert_eq!(serde_json::to_value(q(&[])).unwrap(), serde_json::to_value(&d).unwrap());
+        let c = q(&[
+            "--qsmart-ilsqr-max-iter", "7", "--qsmart-ilsqr-pad-mm", "2.5", "--qsmart-vasc-sphere-radius", "5",
+            "--qsmart-inversion", "tv", "--qsmart-sdf-sigma1-stage1", "11", "--qsmart-sdf-sigma2-stage1", "1.5",
+            "--qsmart-sdf-sigma1-stage2", "9", "--qsmart-sdf-sigma2-stage2", "0.5", "--qsmart-sdf-lower-lim", "0.45",
+            "--qsmart-sdf-curv-constant", "600", "--qsmart-frangi-scale-min", "1.5", "--qsmart-frangi-scale-max", "7",
+            "--qsmart-frangi-scale-ratio", "1", "--qsmart-frangi-c", "0", "--qsmart-frangi-c-mode", "relative",
+            "--qsmart-frangi-c-factor", "0.3", "--qsmart-vessel-units", "mm", "--qsmart-vessel-magnitude", "combined",
+            "--qsmart-offset-grid", "qsmart-reference",
+        ]);
+        assert_eq!((c.ilsqr_max_iter, c.ilsqr_pad_mm, c.vasc_sphere_radius), (7, 2.5, 5));
+        assert_eq!(c.inversion, crate::pipeline::config::QsmAlgorithm::Tv);
+        assert_eq!((c.sdf_sigma1_stage1, c.sdf_sigma2_stage1, c.sdf_sigma1_stage2, c.sdf_sigma2_stage2), (11.0, 1.5, 9.0, 0.5));
+        assert_eq!((c.sdf_lower_lim, c.sdf_curv_constant), (0.45, 600.0));
+        assert_eq!((c.frangi_scale_min, c.frangi_scale_max, c.frangi_scale_ratio), (1.5, 7.0, 1.0));
+        assert_eq!((c.frangi_c, c.frangi_c_mode, c.frangi_c_factor), (0.0, qsmxt_engine::QsmartFrangiCMode::Relative, 0.3));
+        assert_eq!(c.vessel_size_units, qsmxt_engine::VesselSizeUnits::Mm);
+        assert_eq!(c.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::Combined);
+        assert_eq!(c.offset_grid, qsmxt_engine::QsmartOffsetGrid::QsmartReference);
+        let c = q(&["--qsmart-frangi-c-mode", "absolute", "--qsmart-vessel-units", "voxels",
+                    "--qsmart-vessel-magnitude", "mean-n4", "--qsmart-offset-grid", "fft"]);
+        assert_eq!(c.frangi_c_mode, qsmxt_engine::QsmartFrangiCMode::Absolute);
+        assert_eq!(c.vessel_size_units, qsmxt_engine::VesselSizeUnits::Voxels);
+        assert_eq!(c.vessel_magnitude, qsmxt_engine::QsmartVesselMagnitude::MeanN4);
+        assert_eq!(c.offset_grid, qsmxt_engine::QsmartOffsetGrid::Fft);
+    }
+
+    /// Every inner inversion `--qsmart-inversion` lists is the algorithm of that name, and `heidi`
+    /// is refused with the words it always had.
+    #[test]
+    fn qsmart_inversion_values_name_their_algorithm() {
+        use clap::CommandFactory;
+        let cli = crate::cli::Cli::command();
+        let qsmart = cli.find_subcommand("qsmart").expect("qsmxt qsmart");
+        let arg = qsmart.get_arguments().find(|a| a.get_long() == Some("qsmart-inversion")).expect("--qsmart-inversion");
+        let values: Vec<String> = arg.get_possible_values().iter().map(|v| v.get_name().to_string()).collect();
+        assert_eq!(values.len(), 33);
+        for v in values.iter().filter(|v| *v != "heidi") {
+            let c = super::pipeline_config(&args(&["--qsmart-inversion", v])).unwrap();
+            assert_eq!(serde_json::to_value(c.inversion.qsmart.inversion).unwrap(), serde_json::json!(v), "{v}");
+        }
+        let e = super::pipeline_config(&args(&["--qsmart-inversion", "heidi"])).unwrap_err();
+        assert_eq!(e.to_string(), "Pipeline configuration error: --qsmart-inversion heidi: HEIDI is not one of \
+            QSMART's inner inversions (its two stages are its own recipe)");
     }
 }
