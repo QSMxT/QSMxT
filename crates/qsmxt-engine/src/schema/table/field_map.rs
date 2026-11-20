@@ -70,9 +70,9 @@ fn unwrapping() -> Vec<Def> {
 fn phase_offsets() -> Vec<Def> {
     vec![
         // MEDI's complex fit fits its own phase offset: QSM.rs does not remove them first.
-        d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only", Bool).basic().flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
+        d("field_mapping.phase_offset_removal", FieldMap, "Phase offset removal", "Remove the echoes' spatially varying phase offset with MCPC-3D-S (Eckstein et al., 2018) before unwrapping; multi-echo only", Bool).basic().flag("--phase-offset-removal").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.combines && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit)
-        .cli("Enable phase offset removal for multi-echo data")
+        .cli("Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping")
         .bool_value(),
         d("field_mapping.phase_offset_sigma_mm", FieldMap, "Sigma (mm)", "Gaussian smoothing sigma in mm (x y z)", FloatVec3).units("mm").flag("--phase-offset-sigma-mm").parent("field_mapping.phase_offset_removal")
         .when(|x| x.combines && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase offset sigma")

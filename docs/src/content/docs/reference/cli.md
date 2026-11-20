@@ -122,7 +122,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the phase set to zero outside the brain mask (the default), after a `--pipeline` that unwraps the whole volume. |
 | `--laplacian-keep-outside` | `--unwrapping-algorithm laplacian` with a weighted-average echo combination: keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP. |
 | `--no-laplacian-keep-outside` | Keep the Laplacian field inside the brain mask only (the default), after a `--pipeline` that keeps it over the whole volume. |
-| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--romeo-individual` | ROMEO: unwrap each echo on its own (individual mode, for motion or time series) |
@@ -619,7 +619,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--no-laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the phase set to zero outside the brain mask (the default), after a `--pipeline` that unwraps the whole volume. |
 | `--laplacian-keep-outside` | `--unwrapping-algorithm laplacian` with a weighted-average echo combination: keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP. |
 | `--no-laplacian-keep-outside` | Keep the Laplacian field inside the brain mask only (the default), after a `--pipeline` that keeps it over the whole volume. |
-| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--romeo-individual` | ROMEO: unwrap each echo on its own (individual mode, for motion or time series) |
@@ -1050,7 +1050,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-laplacian-unmasked` | `--unwrapping-algorithm laplacian`: unwrap the phase set to zero outside the brain mask (the default), after a `--pipeline` that unwraps the whole volume. |
 | `--laplacian-keep-outside` | `--unwrapping-algorithm laplacian` with a weighted-average echo combination: keep the field over the whole volume, not only inside the brain mask, as UK Biobank's pipeline hands it to V-SHARP. |
 | `--no-laplacian-keep-outside` | Keep the Laplacian field inside the brain mask only (the default), after a `--pipeline` that keeps it over the whole volume. |
-| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--romeo-individual` | ROMEO: unwrap each echo on its own (individual mode, for motion or time series) |
@@ -1891,7 +1891,7 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
 | `--complex-fit-output <FILE>` | `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`) |
 | `--complex-fit-noise-output <FILE>` | `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`) |
-| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
@@ -1949,7 +1949,7 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
 | `--complex-fit-output <FILE>` | `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`) |
 | `--complex-fit-noise-output <FILE>` | `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`) |
-| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
@@ -1994,7 +1994,7 @@ qsmxt fieldmap prelude [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
 | `--complex-fit-output <FILE>` | `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`) |
 | `--complex-fit-noise-output <FILE>` | `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`) |
-| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |
@@ -2035,7 +2035,7 @@ qsmxt fieldmap medi-region-growing [OPTIONS] --mask <MASK> --output <OUTPUT> <IN
 | `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
 | `--complex-fit-output <FILE>` | `--b0-estimation complex-fit`: also save the fit itself here, before spatial unwrapping: the phase accrued per echo spacing (radians, wrapped to [-π, π]; MEDI's `iFreq_raw`) |
 | `--complex-fit-noise-output <FILE>` | `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`) |
-| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
+| `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true) |
 | `--phase-offset-sigma-mm <PHASE_OFFSET_SIGMA_MM>` | Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's) |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method (default: weighted-avg) Values: `weighted-avg`, `linear-fit`, `robust-fit`, `qsmart-echofit`, `complex-fit`. |

@@ -38,7 +38,7 @@ Options:
           `--b0-estimation complex-fit`: also save the fit's noise map here: the standard deviation of the phase per echo spacing, in radians (MEDI's `N_std`)
 
       --phase-offset-removal <PHASE_OFFSET_REMOVAL>
-          Enable phase offset removal for multi-echo data (default: true)
+          Remove the phase offset of multi-echo data with MCPC-3D-S (Eckstein et al., 2018) before unwrapping (default: true)
 
           [possible values: true, false]
 

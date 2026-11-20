@@ -411,7 +411,7 @@ fn qsm_off_keeps_the_preprocessing_rows() {
         matches!(r, PipelineRow::Note { text } if text.contains("SMWI"))), "the forced QSM says why");
 }
 
-/// Bipolar correction is part of HIP phase offset removal, which runs before any unwrapper.
+/// Bipolar correction is part of MCPC-3D-S phase offset removal, which runs before any unwrapper.
 #[test]
 fn bipolar_correction_needs_offset_removal() {
     let mut app = App::new();
