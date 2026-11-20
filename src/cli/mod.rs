@@ -356,4 +356,22 @@ mod tests {
         assert!(c.pipeline.axial_resampling);
         assert_eq!(c.pipeline.obliquity_threshold, 5.0);
     }
+
+    /// `invert lsqr` and `invert amp-pe` need the field strength, like every other command that
+    /// uses it: without `--b0` the error names the flag instead of assuming 3 T.
+    #[test]
+    fn invert_lsqr_and_amp_pe_require_b0() {
+        for alg in ["lsqr", "amp-pe"] {
+            let args = ["qsmxt", "invert", alg, "f.nii", "-m", "m.nii", "-o", "o.nii", "--magnitude", "mag.nii"];
+            let err = Cli::try_parse_from(args).unwrap_err().to_string();
+            assert!(err.contains("--b0"), "{alg}: {err}");
+            let cli = Cli::try_parse_from([&args[..], &["--b0", "7"]].concat()).unwrap();
+            let b0 = match cli.command {
+                Command::Invert { command: InvertCommand::Lsqr(a) } => a.b0,
+                Command::Invert { command: InvertCommand::AmpPe(a) } => a.b0,
+                _ => panic!("expected invert {alg}"),
+            };
+            assert_eq!(b0, 7.0);
+        }
+    }
 }

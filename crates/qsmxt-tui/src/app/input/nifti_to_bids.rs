@@ -455,17 +455,17 @@ impl App {
             }
             NiftiFocus::EchoTimes => {
                 self.nifti_state.editing = true;
-                self.nifti_state.cursor = self.nifti_state.echo_times.len();
+                self.nifti_state.cursor = char_len(&self.nifti_state.echo_times);
                 self.nifti_state.adding_to = None;
             }
             NiftiFocus::FieldStrength => {
                 self.nifti_state.editing = true;
-                self.nifti_state.cursor = self.nifti_state.field_strength.len();
+                self.nifti_state.cursor = char_len(&self.nifti_state.field_strength);
                 self.nifti_state.adding_to = None;
             }
             NiftiFocus::B0Direction => {
                 self.nifti_state.editing = true;
-                self.nifti_state.cursor = self.nifti_state.b0_direction.len();
+                self.nifti_state.cursor = char_len(&self.nifti_state.b0_direction);
                 self.nifti_state.adding_to = None;
             }
             NiftiFocus::MagFile(_) | NiftiFocus::PhaseFile(_) => {}
@@ -508,29 +508,7 @@ impl App {
                 }
                 self.nifti_state.editing = false;
             }
-            KeyCode::Char(c) => {
-                text.insert(*cursor, c);
-                *cursor += 1;
-            }
-            KeyCode::Backspace if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && *cursor > 0 => {
-                let new_pos = word_boundary_left(text, *cursor);
-                text.drain(new_pos..*cursor);
-                *cursor = new_pos;
-            }
-            KeyCode::Backspace if *cursor > 0 => {
-                *cursor -= 1;
-                text.remove(*cursor);
-            }
-            KeyCode::Left => *cursor = cursor.saturating_sub(1),
-            KeyCode::Right => {
-                let len = text.len();
-                if *cursor < len {
-                    *cursor += 1;
-                }
-            }
-            KeyCode::Home => *cursor = 0,
-            KeyCode::End => *cursor = text.len(),
-            _ => {}
+            _ => edit_line(text, cursor, key),
         }
     }
 }

@@ -2030,7 +2030,7 @@
 --tile-size value=TILE_SIZE num_args=1 action=Set
 --tile-halo value=TILE_HALO num_args=1 action=Set
 --magnitude value=MAGNITUDE num_args=1.. action=Append required
---b0 value=B0 num_args=1 action=Set default=3
+--b0 value=B0 num_args=1 action=Set required
 --lsqr-residual-weighting value=LSQR_RESIDUAL_WEIGHTING num_args=1 action=Set
 --no-lsqr-global-offset value=NO_LSQR_GLOBAL_OFFSET num_args=0 action=SetTrue default=false
 --lsqr-tol value=LSQR_TOL num_args=1 action=Set
@@ -2198,7 +2198,7 @@
 --tile-size value=TILE_SIZE num_args=1 action=Set
 --tile-halo value=TILE_HALO num_args=1 action=Set
 --magnitude value=MAGNITUDE num_args=1.. action=Append
---b0 value=B0 num_args=1 action=Set default=3
+--b0 value=B0 num_args=1 action=Set required
 --amp-pe-wave-order aliases=wave-order value=AMP_PE_WAVE_ORDER num_args=1 action=Set
 --amp-pe-nlevel aliases=nlevel value=AMP_PE_NLEVEL num_args=1 action=Set
 --amp-pe-wave-pec aliases=wave-pec value=AMP_PE_WAVE_PEC num_args=1 action=Set

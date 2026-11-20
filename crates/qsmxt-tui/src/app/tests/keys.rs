@@ -88,6 +88,24 @@ fn test_type_characters() {
     assert_eq!(app.cursor_pos, 5);
 }
 
+/// Non-ASCII text: the cursor counts characters, so typing after `ü` or `日本` edits whole
+/// characters instead of panicking inside one.
+#[test]
+fn typing_after_non_ascii_text_in_a_path() {
+    let mut app = App::new();
+    app.active_field = 1;
+    app.form.bids_dir = "/jürgen/日本".to_string();
+    app.handle_key(key(KeyCode::Enter)); // cursor at the end: 10 characters
+    assert_eq!(app.cursor_pos, 10);
+    app.handle_key(key(KeyCode::Char('x')));
+    app.handle_key(key(KeyCode::Left));
+    app.handle_key(key(KeyCode::Left));
+    app.handle_key(key(KeyCode::Backspace));
+    assert_eq!(app.form.bids_dir, "/jürgen/本x");
+    app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL));
+    assert_eq!((app.form.bids_dir.as_str(), app.cursor_pos), ("/本x", 1));
+}
+
 #[test]
 fn test_backspace() {
     let mut app = App::new();
@@ -437,17 +455,6 @@ fn the_qsm_group_holds_what_needs_qsm() {
     assert!(fields(Page::Smwi).contains(&"pipeline.do_smwi") && !fields(Page::Smwi).contains(&"pipeline.do_swi"));
     assert_eq!(app.section_state(Page::Smwi), SectionState::Off);
     assert_eq!(app.section_state(Page::Swi), SectionState::Off);
-}
-
-// ========== word_boundary_left tests ==========
-
-#[test]
-fn test_word_boundary_left() {
-    assert_eq!(word_boundary_left("hello world", 11), 6);
-    assert_eq!(word_boundary_left("hello world", 5), 0);
-    assert_eq!(word_boundary_left("a/b/c", 5), 4);
-    assert_eq!(word_boundary_left("", 0), 0);
-    assert_eq!(word_boundary_left("abc", 0), 0);
 }
 
 // ========== Error message clears on non-F5 key ==========

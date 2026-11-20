@@ -79,11 +79,15 @@ fi
 TAG="${QSMXT_VERSION:-}"
 if [ -z "$TAG" ]; then
     echo "Fetching latest release..."
-    CURL_OPTS="-fsSL"
-    if [ -n "$GITHUB_TOKEN" ]; then
-        CURL_OPTS="$CURL_OPTS -H \"Authorization: token $GITHUB_TOKEN\""
-    fi
-    TAG=$(eval curl $CURL_OPTS "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+    # The token, when set, is passed as one quoted header, never through eval.
+    github_api() {
+        if [ -n "$GITHUB_TOKEN" ]; then
+            curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "$1"
+        else
+            curl -fsSL "$1"
+        fi
+    }
+    TAG=$(github_api "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
 fi
 
 if [ -z "$TAG" ]; then

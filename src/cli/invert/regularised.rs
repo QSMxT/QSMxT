@@ -218,7 +218,7 @@ pub struct InvertAmpPeArgs {
     #[arg(long, num_args = 1..)]
     pub magnitude: Vec<PathBuf>,
     /// B0 field strength in Tesla (scales the simulated phase)
-    #[arg(long, default_value_t = 3.0)]
+    #[arg(long)]
     pub b0: f64,
     // The settings flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]

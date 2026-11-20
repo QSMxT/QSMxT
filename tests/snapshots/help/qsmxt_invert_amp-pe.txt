@@ -1,6 +1,6 @@
 AMP-PE (Approximate Message Passing with Parameter Estimation)
 
-Usage: qsmxt invert amp-pe [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+Usage: qsmxt invert amp-pe [OPTIONS] --mask <MASK> --output <OUTPUT> --b0 <B0> <INPUT>
 
 Arguments:
   <INPUT>
@@ -29,8 +29,6 @@ Options:
 
       --b0 <B0>
           B0 field strength in Tesla (scales the simulated phase)
-
-          [default: 3]
 
       --amp-pe-wave-order <AMP_PE_WAVE_ORDER>
           AMP-PE: Daubechies wavelet order (1=db1, 2=db2) (default: 1)

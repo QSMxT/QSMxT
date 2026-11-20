@@ -78,39 +78,13 @@ impl App {
                 return;
             }
         };
+        if matches!(key.code, KeyCode::Esc | KeyCode::Enter) {
+            self.pipeline_state.editing = false;
+            return;
+        }
         let mut cursor = self.pipeline_state.cursor;
-        let len = self.field_text(field).len();
-        match key.code {
-            KeyCode::Esc | KeyCode::Enter => { self.pipeline_state.editing = false; return; }
-            KeyCode::Char(c) => {
-                if let Some(s) = self.field_text_mut(field) {
-                    s.insert(cursor, c);
-                    cursor += 1;
-                }
-            }
-            KeyCode::Backspace if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && cursor > 0 => {
-                if let Some(s) = self.field_text_mut(field) {
-                    let new_pos = word_boundary_left(s, cursor);
-                    s.drain(new_pos..cursor);
-                    cursor = new_pos;
-                }
-            }
-            KeyCode::Backspace if cursor > 0 => {
-                cursor -= 1;
-                if let Some(s) = self.field_text_mut(field) {
-                    s.remove(cursor);
-                }
-            }
-            KeyCode::Delete if cursor < len => {
-                if let Some(s) = self.field_text_mut(field) {
-                    s.remove(cursor);
-                }
-            }
-            KeyCode::Left => cursor = cursor.saturating_sub(1),
-            KeyCode::Right if cursor < len => cursor += 1,
-            KeyCode::Home => cursor = 0,
-            KeyCode::End => cursor = len,
-            _ => {}
+        if let Some(s) = self.field_text_mut(field) {
+            edit_line(s, &mut cursor, key);
         }
         self.pipeline_state.cursor = cursor;
     }
@@ -137,27 +111,9 @@ impl App {
                 }
                 return;
             }
-            KeyCode::Char(c) if c.is_ascii_digit() || matches!(c, '.' | '-' | 'e' | 'E') => {
-                ps.mask_value_buf.insert(cursor, c);
-                cursor += 1;
-            }
-            KeyCode::Backspace if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && cursor > 0 => {
-                let new_pos = word_boundary_left(&ps.mask_value_buf, cursor);
-                ps.mask_value_buf.drain(new_pos..cursor);
-                cursor = new_pos;
-            }
-            KeyCode::Backspace if cursor > 0 => {
-                cursor -= 1;
-                ps.mask_value_buf.remove(cursor);
-            }
-            KeyCode::Delete if cursor < ps.mask_value_buf.len() => {
-                ps.mask_value_buf.remove(cursor);
-            }
-            KeyCode::Left => cursor = cursor.saturating_sub(1),
-            KeyCode::Right if cursor < ps.mask_value_buf.len() => cursor += 1,
-            KeyCode::Home => cursor = 0,
-            KeyCode::End => cursor = ps.mask_value_buf.len(),
-            _ => {}
+            // A number: only its characters are typed.
+            KeyCode::Char(c) if !(c.is_ascii_digit() || matches!(c, '.' | '-' | 'e' | 'E')) => {}
+            _ => edit_line(&mut ps.mask_value_buf, &mut cursor, key),
         }
         ps.cursor = cursor;
     }
@@ -280,7 +236,7 @@ impl App {
         // A mask row's number is typed.
         if let Some(text) = row.as_ref().and_then(|r| self.mask().mask_value_text(r)) {
             let ps = &mut self.pipeline_state;
-            ps.cursor = text.len();
+            ps.cursor = char_len(&text);
             ps.mask_value_buf = text;
             ps.mask_value_editing = true;
             return;
@@ -288,7 +244,7 @@ impl App {
         match row {
             Some(PipelineRow::Param { field, .. }) => {
                 self.pipeline_state.editing = true;
-                self.pipeline_state.cursor = self.field_text(field).len();
+                self.pipeline_state.cursor = char_len(&self.field_text(field));
             }
             Some(PipelineRow::Toggle { field, .. }) => {
                 let focused_field = self.focused_field_name();
@@ -311,39 +267,7 @@ impl App {
                 self.editing = false;
                 return;
             }
-            KeyCode::Char(c) => {
-                self.text_value_mut().insert(cursor, c);
-                cursor += 1;
-            }
-            KeyCode::Backspace
-                if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && cursor > 0 => {
-                    let new_pos = word_boundary_left(self.text_value(), cursor);
-                    self.text_value_mut().drain(new_pos..cursor);
-                    cursor = new_pos;
-                }
-            KeyCode::Backspace
-                if cursor > 0 => {
-                    cursor -= 1;
-                    self.text_value_mut().remove(cursor);
-                }
-            KeyCode::Delete => {
-                let len = self.text_value().len();
-                if cursor < len {
-                    self.text_value_mut().remove(cursor);
-                }
-            }
-            KeyCode::Left => {
-                cursor = cursor.saturating_sub(1);
-            }
-            KeyCode::Right => {
-                let len = self.text_value().len();
-                if cursor < len {
-                    cursor += 1;
-                }
-            }
-            KeyCode::Home => cursor = 0,
-            KeyCode::End => cursor = self.text_value().len(),
-            _ => {}
+            _ => edit_line(self.text_value_mut(), &mut cursor, key),
         }
 
         self.cursor_pos = cursor;
