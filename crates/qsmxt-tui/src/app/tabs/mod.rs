@@ -5,22 +5,6 @@ use super::*;
 mod methods;
 mod rows;
 
-/// Find the position of the previous word boundary (for Ctrl/Alt+Backspace).
-pub(super) fn word_boundary_left(text: &str, cursor: usize) -> usize {
-    if cursor == 0 { return 0; }
-    let bytes = text.as_bytes();
-    let mut pos = cursor - 1;
-    // Skip whitespace/separators
-    while pos > 0 && matches!(bytes[pos], b' ' | b'/' | b'_' | b'-') {
-        pos -= 1;
-    }
-    // Skip word chars
-    while pos > 0 && !matches!(bytes[pos - 1], b' ' | b'/' | b'_' | b'-') {
-        pos -= 1;
-    }
-    pos
-}
-
 impl App {
     /// Main-tab switching, the same in every tab's key handler: the digits `1`..=`N` (one per
     /// entry of [`TAB_NAMES`]), Tab and Shift-Tab. Returns whether `key` switched tabs.

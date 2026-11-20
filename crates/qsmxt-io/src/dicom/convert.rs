@@ -405,10 +405,11 @@ struct Staged {
 }
 
 /// Fix up a sidecar dcm2niix wrote: EchoTime in seconds, and the `Units` BIDS requires for a
-/// phase image (see [`phase_units`]). Run after its image is in place.
-fn fix_sidecar(path: &Path) {
-    let Ok(content) = fs::read_to_string(path) else { return };
-    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) else { return };
+/// phase image (see [`phase_units`]). Run after its image is in place. A sidecar that cannot be
+/// read or rewritten is an error: left as it is, its EchoTime would stay in milliseconds.
+fn fix_sidecar(path: &Path) -> std::io::Result<()> {
+    let content = fs::read_to_string(path)?;
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) else { return Ok(()) };
     let mut changed = false;
     if let Some(et) = json.get("EchoTime").and_then(|v| v.as_f64()) {
         if et > 1.0 {
@@ -424,10 +425,9 @@ fn fix_sidecar(path: &Path) {
         changed = true;
     }
     if changed {
-        if let Ok(out) = serde_json::to_string_pretty(&json) {
-            let _ = fs::write(path, out);
-        }
+        fs::write(path, serde_json::to_string_pretty(&json)?)?;
     }
+    Ok(())
 }
 
 /// Convert a DICOM session to BIDS with dcm2niix, streaming log and error messages through `tx`,
@@ -661,7 +661,10 @@ fn place_staged(mut staged: Vec<Staged>, failed: &[String], output_dir: &Path, t
     }
     // Sidecars last: a phase sidecar's Units depends on its image.
     for s in staged.iter().filter(|s| s.rel.ends_with(".json") && !clashing.contains(&&s.rel)) {
-        fix_sidecar(&output_dir.join(&s.rel));
+        let path = output_dir.join(&s.rel);
+        if let Err(e) = fix_sidecar(&path) {
+            send(ConvertMessage::Error(format!("Failed to fix up {}: {e}", path.display())));
+        }
     }
 }
 
@@ -908,6 +911,20 @@ mod tests {
         assert!(ge_note(SeriesType::Magnitude).is_none());
     }
 
-
-
+    /// The EchoTime fix-up reports a sidecar it cannot read or rewrite instead of leaving it in
+    /// milliseconds unnoticed.
+    #[test]
+    fn a_sidecar_that_cannot_be_fixed_up_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let json = dir.path().join("sub-1_echo-1_part-mag_MEGRE.json");
+        fs::write(&json, r#"{"EchoTime": 20.0}"#).unwrap();
+        fix_sidecar(&json).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
+        assert_eq!(v["EchoTime"].as_f64(), Some(0.02));
+        assert!(fix_sidecar(&dir.path().join("missing.json")).is_err());
+        // A directory where the sidecar should be: it cannot be read or written.
+        let not_a_file = dir.path().join("dir.json");
+        fs::create_dir(&not_a_file).unwrap();
+        assert!(fix_sidecar(&not_a_file).is_err());
+    }
 }

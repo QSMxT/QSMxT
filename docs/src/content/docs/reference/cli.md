@@ -2607,7 +2607,7 @@ qsmxt invert star [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 Minimally regularised LSQR
 
 ```sh
-qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... <INPUT>
+qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --b0 <B0> <INPUT>
 ```
 
 | Argument | Description |
@@ -2619,7 +2619,7 @@ qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> --magnitude <MAGNITU
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, LSQR's row weight as the HEIDI package's (its scale does not change the solution): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
-| `--b0 <B0>` | B0 field strength in Tesla — sets the default residual weighting. Default: `3`. |
+| `--b0 <B0>` | B0 field strength in Tesla — sets the default residual weighting. Required. |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance (default: 1e-5) |
@@ -2839,7 +2839,7 @@ qsmxt invert hdqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --echo-times <ECHO_
 AMP-PE (Approximate Message Passing with Parameter Estimation)
 
 ```sh
-qsmxt invert amp-pe [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
+qsmxt invert amp-pe [OPTIONS] --mask <MASK> --output <OUTPUT> --b0 <B0> <INPUT>
 ```
 
 | Argument | Description |
@@ -2851,7 +2851,7 @@ qsmxt invert amp-pe [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI (data weight and morphology image): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
-| `--b0 <B0>` | B0 field strength in Tesla (scales the simulated phase) Default: `3`. |
+| `--b0 <B0>` | B0 field strength in Tesla (scales the simulated phase) Required. |
 | `--amp-pe-wave-order <AMP_PE_WAVE_ORDER>` | AMP-PE: Daubechies wavelet order (1=db1, 2=db2) (default: 1) |
 | `--amp-pe-nlevel <AMP_PE_NLEVEL>` | AMP-PE: Wavelet decomposition levels (default: 3) |
 | `--amp-pe-wave-pec <AMP_PE_WAVE_PEC>` | AMP-PE: Morphology-mask energy retention fraction (0.0-1.0) (default: 0.85) |

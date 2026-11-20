@@ -454,7 +454,7 @@ impl FilterTreeState {
             OrientationSlot::New => groups.push(vec![key]),
         }
         self.orientation_group = qsmxt_io::bids::orientation::runs_pattern(&groups);
-        self.orientation_cursor = self.orientation_group.len();
+        self.orientation_cursor = char_len(&self.orientation_group);
     }
 
     /// Every run's key, with its subject and session.
@@ -585,11 +585,11 @@ impl App {
                 match self.filter_state.focus {
                     FilterFocus::Include => {
                         self.filter_state.include_editing = true;
-                        self.filter_state.include_cursor = self.filter_state.include_pattern.len();
+                        self.filter_state.include_cursor = char_len(&self.filter_state.include_pattern);
                     }
                     FilterFocus::Exclude => {
                         self.filter_state.exclude_editing = true;
-                        self.filter_state.exclude_cursor = self.filter_state.exclude_pattern.len();
+                        self.filter_state.exclude_cursor = char_len(&self.filter_state.exclude_pattern);
                     }
                     FilterFocus::TreeNode(_) => {
                         self.filter_state.toggle_focused();
@@ -597,11 +597,11 @@ impl App {
                     }
                     FilterFocus::OrientationGroup => {
                         self.filter_state.orientation_editing = true;
-                        self.filter_state.orientation_cursor = self.filter_state.orientation_group.len();
+                        self.filter_state.orientation_cursor = char_len(&self.filter_state.orientation_group);
                     }
                     FilterFocus::NumEchoes => {
                         self.filter_state.num_echoes_editing = true;
-                        self.filter_state.num_echoes_cursor = self.filter_state.num_echoes.len();
+                        self.filter_state.num_echoes_cursor = char_len(&self.filter_state.num_echoes);
                     }
                 }
             }
@@ -652,29 +652,7 @@ impl App {
                 *editing = false;
                 self.filter_state.apply_include_exclude();
             }
-            KeyCode::Char(c) => {
-                text.insert(*cursor, c);
-                *cursor += 1;
-            }
-            KeyCode::Backspace if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && *cursor > 0 => {
-                let new_pos = word_boundary_left(text, *cursor);
-                text.drain(new_pos..*cursor);
-                *cursor = new_pos;
-            }
-            KeyCode::Backspace if *cursor > 0 => {
-                *cursor -= 1;
-                text.remove(*cursor);
-            }
-            KeyCode::Delete if *cursor < text.len() => {
-                text.remove(*cursor);
-            }
-            KeyCode::Left => *cursor = cursor.saturating_sub(1),
-            KeyCode::Right if *cursor < text.len() => {
-                *cursor += 1;
-            }
-            KeyCode::Home => *cursor = 0,
-            KeyCode::End => *cursor = text.len(),
-            _ => {}
+            _ => edit_line(text, cursor, key),
         }
     }
 
@@ -684,31 +662,7 @@ impl App {
             KeyCode::Esc | KeyCode::Enter => {
                 fs.num_echoes_editing = false;
             }
-            KeyCode::Char(c) => {
-                fs.num_echoes.insert(fs.num_echoes_cursor, c);
-                fs.num_echoes_cursor += 1;
-            }
-            KeyCode::Backspace if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && fs.num_echoes_cursor > 0 => {
-                let new_pos = word_boundary_left(&fs.num_echoes, fs.num_echoes_cursor);
-                fs.num_echoes.drain(new_pos..fs.num_echoes_cursor);
-                fs.num_echoes_cursor = new_pos;
-            }
-            KeyCode::Backspace if fs.num_echoes_cursor > 0 => {
-                fs.num_echoes_cursor -= 1;
-                fs.num_echoes.remove(fs.num_echoes_cursor);
-            }
-            KeyCode::Delete
-                if fs.num_echoes_cursor < fs.num_echoes.len() => {
-                    fs.num_echoes.remove(fs.num_echoes_cursor);
-                }
-            KeyCode::Left => fs.num_echoes_cursor = fs.num_echoes_cursor.saturating_sub(1),
-            KeyCode::Right
-                if fs.num_echoes_cursor < fs.num_echoes.len() => {
-                    fs.num_echoes_cursor += 1;
-                }
-            KeyCode::Home => fs.num_echoes_cursor = 0,
-            KeyCode::End => fs.num_echoes_cursor = fs.num_echoes.len(),
-            _ => {}
+            _ => edit_line(&mut fs.num_echoes, &mut fs.num_echoes_cursor, key),
         }
     }
 }

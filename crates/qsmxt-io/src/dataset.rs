@@ -19,14 +19,22 @@ pub fn write_dataset_files(
     crate::bids::dataset_description::write(derivatives_dir, bids_dir)?;
     crate::bids::dataset_description::write_bidsignore(derivatives_dir)?;
     crate::bids::dataset_description::write_readme(derivatives_dir)?;
-    // A configuration that cannot be written is an error, not an empty pipeline_config.toml.
-    let toml = config.to_toml().map_err(|e| crate::error::QsmxtError::Config(format!("pipeline_config.toml: {e}")))?;
-    fs_err::write(derivatives_dir.join("pipeline_config.toml"), toml)?;
+    write_pipeline_config(derivatives_dir, config)?;
     fs_err::write(derivatives_dir.join("methods.md"), qsmxt_engine::methods::generate_methods(config))?;
     if let Some(graph) = dataset_graph(config, runs) {
         crate::bids::derivatives::write_graph(&DerivativeOutputs::new(derivatives_dir).dataset_graph_path(), &graph)?;
     }
     Ok(())
+}
+
+/// Writes the resolved configuration to `pipeline_config.toml` in `derivatives_dir` and returns
+/// its path. A configuration that cannot be serialised is an error, not an empty file that would
+/// silently run every job on the defaults.
+pub fn write_pipeline_config(derivatives_dir: &std::path::Path, config: &PipelineConfig) -> crate::Result<std::path::PathBuf> {
+    let toml = config.to_toml().map_err(|e| crate::error::QsmxtError::Config(format!("pipeline_config.toml: {e}")))?;
+    let path = derivatives_dir.join("pipeline_config.toml");
+    fs_err::write(&path, toml)?;
+    Ok(path)
 }
 
 /// The dataset's methods text and pipeline graph from what its runs did

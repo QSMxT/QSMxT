@@ -7,6 +7,7 @@ mod field_paths;
 mod fields;
 mod form;
 mod input;
+mod line_edit;
 mod mask;
 mod modals;
 mod page;
@@ -26,7 +27,7 @@ pub use modals::*;
 pub use page::*;
 pub use rows::*;
 pub use tasks::*;
-use tabs::*;
+use line_edit::{char_len, edit_line};
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -35,7 +36,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::LazyLock;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 use qsmxt_io::bids::discovery::{self, BidsTree};
 use qsmxt_io::nifti;

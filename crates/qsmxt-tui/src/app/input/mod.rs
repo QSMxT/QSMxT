@@ -154,22 +154,23 @@ impl App {
         }
         // Text fields (1-3)
         self.editing = true;
-        self.cursor_pos = match self.active_field {
+        let text: &str = match self.active_field {
             1 => match self.input_mode {
-                InputMode::Bids => self.form.bids_dir.len(),
-                InputMode::NIfTI => self.nifti_state.input_dir.len(),
-                InputMode::DicomToBids => self.dicom_state.dicom_dir.len(),
-                InputMode::Example => self.example_state.output_dir.len(),
+                InputMode::Bids => &self.form.bids_dir,
+                InputMode::NIfTI => &self.nifti_state.input_dir,
+                InputMode::DicomToBids => &self.dicom_state.dicom_dir,
+                InputMode::Example => &self.example_state.output_dir,
             },
             2 => match self.input_mode {
-                InputMode::Bids => self.form.output_dir.len(),
-                InputMode::NIfTI => self.nifti_state.output_dir.len(),
-                InputMode::DicomToBids => self.dicom_state.output_dir.len(),
-                InputMode::Example => self.form.output_dir.len(),
+                InputMode::Bids => &self.form.output_dir,
+                InputMode::NIfTI => &self.nifti_state.output_dir,
+                InputMode::DicomToBids => &self.dicom_state.output_dir,
+                InputMode::Example => &self.form.output_dir,
             },
-            3 => self.form.config_file.len(),
-            _ => 0,
+            3 => &self.form.config_file,
+            _ => "",
         };
+        self.cursor_pos = char_len(text);
     }
 
     /// Set the Input-tab mode by index (BIDS / NIfTI / DICOM).

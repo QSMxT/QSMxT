@@ -111,8 +111,7 @@ pub fn generate_all_slurm(
     fs_err::create_dir_all(&slurm_dir)?;
 
     // The jobs all run against this file, so they cannot disagree about the configuration.
-    let config_path = derivatives_dir.join("pipeline_config.toml");
-    fs_err::write(&config_path, config.to_toml().unwrap_or_default())?;
+    let config_path = crate::dataset::write_pipeline_config(&derivatives_dir, config)?;
 
     let qsmxt_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("qsmxt"));
     let q = |p: &Path| shell_quote(&p.display().to_string());
