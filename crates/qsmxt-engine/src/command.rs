@@ -8,8 +8,15 @@ use crate::schema::cli::{Flag, FlagAction, PIPELINE_FLAGS};
 use crate::schema::cli_apply::{opposite_of, setting_of};
 use crate::schema::{Setting, ValueType};
 
-/// Generate a `qsmxt run` CLI command from a pipeline configuration.
-/// Compares against defaults and only emits flags that differ.
+/// Generate a `qsmxt run` CLI command from a pipeline configuration, as a shell would take it
+/// ([`to_shell`] of [`command_args`]).
+pub fn generate_command(config: &PipelineConfig) -> String {
+    to_shell(&command_args(config))
+}
+
+/// The words of a `qsmxt run` command for a pipeline configuration, unquoted: `qsmxt`, `run`,
+/// `<bids_dir>`, then the flags and their values. Compares against defaults and only emits flags
+/// that differ.
 ///
 /// Settings that do not apply to the configuration (the TUI hides them; see
 /// [`crate::schema::settings_view`]) are left out: they cannot change the run, so saying them
@@ -17,7 +24,7 @@ use crate::schema::{Setting, ValueType};
 ///
 /// A config that follows a toolbox pipeline ([`crate::pipelines::followed`]) starts with
 /// `--pipeline <id>`, and its other flags are where it departs from that pipeline.
-pub fn generate_command(config: &PipelineConfig) -> String {
+pub fn command_args(config: &PipelineConfig) -> Vec<String> {
     let facts = crate::schema::ViewFacts::default();
     let pruned = crate::schema::prune_hidden(&config.normalised().0, &facts);
     let pipeline = crate::pipelines::followed(config, &facts).and_then(|id| {
@@ -35,10 +42,10 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 /// The command for `config`, with flags where it differs from `base`: QSMxT's defaults, or
 /// `pipeline`'s settings. Most flags set one registry setting ([`setting_of`]) and are said
 /// when that setting is shown and differs from `base`; the rest are spelled out below.
-fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<&str>) -> String {
+fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<&str>) -> Vec<String> {
     let mut parts: Vec<String> = vec!["qsmxt".into(), "run".into(), "<bids_dir>".into()];
     if let Some(id) = pipeline {
-        parts.push(format!("--pipeline {id}"));
+        say(&mut parts, &["--pipeline", id]);
     }
     let visible: Vec<&str> = crate::schema::settings_view(config, &crate::schema::ViewFacts::default())
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
@@ -53,11 +60,11 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
             "pipeline" => {}
             // The pattern is what switches grouping on, so it and the reconstruction are said
             // whenever it is on; the patterns are quoted so that a shell leaves their globs alone.
-            "orientation-group" if m.enabled() => parts.push(format!("--orientation-group {}", shell_quote(&m.group_by))),
+            "orientation-group" if m.enabled() => say(&mut parts, &["--orientation-group", &m.group_by]),
             "orientation-reference" if m.enabled() && !m.reference.trim().is_empty() => {
-                parts.push(format!("--orientation-reference {}", shell_quote(m.reference.trim())));
+                say(&mut parts, &["--orientation-reference", m.reference.trim()]);
             }
-            "multi-orientation-algorithm" if m.enabled() => parts.push(format!("--multi-orientation-algorithm {}", m.algorithm)),
+            "multi-orientation-algorithm" if m.enabled() => say(&mut parts, &["--multi-orientation-algorithm", &m.algorithm.to_string()]),
             "orientation-group" | "orientation-reference" | "multi-orientation-algorithm" => {}
             // --do-analysis implies segmentation, so saying both adds noise.
             "do-segmentation" => {
@@ -86,18 +93,16 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
             "romeo-template" => {
                 let (t, bt) = (config.field_mapping.romeo.template, base.field_mapping.romeo.template);
                 if !config.field_mapping.romeo.individual && t != bt {
-                    parts.push(format!("--romeo-template {}", t + 1));
+                    say(&mut parts, &["--romeo-template", &(t + 1).to_string()]);
                 }
             }
             // One value when the three are the same.
             "laplacian-fft-pad" => {
                 let pad = config.field_mapping.laplacian_fft_pad;
                 if config.field_mapping.laplacian_solver == LaplacianSolver::Fft && pad != base.field_mapping.laplacian_fft_pad {
-                    parts.push(if pad[0] == pad[1] && pad[1] == pad[2] {
-                        format!("--laplacian-fft-pad {}", pad[0])
-                    } else {
-                        format!("--laplacian-fft-pad {} {} {}", pad[0], pad[1], pad[2])
-                    });
+                    let pad: Vec<String> = if pad[0] == pad[1] && pad[1] == pad[2] { vec![pad[0].to_string()] } else { pad.map(|p| p.to_string()).to_vec() };
+                    parts.push("--laplacian-fft-pad".into());
+                    parts.extend(pad);
                 }
             }
             "mask-preset" => masking_flags(&mut parts, config, base),
@@ -108,7 +113,7 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
                 if let Some(sections) = config.masking.two_pass_sections.as_ref().filter(|_| config.masking.two_pass) {
                     if *sections != crate::masking::default_two_pass_sections() {
                         for section in sections {
-                            parts.push(format!("--two-pass-mask {}", section.compact_spec()));
+                            say(&mut parts, &["--two-pass-mask", &section.compact_spec()]);
                         }
                     }
                 }
@@ -120,7 +125,7 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
             "qsm-reference" => {
                 let spec = config.qsm.reference_spec();
                 if spec != base.qsm.reference_spec() {
-                    parts.push(format!("--qsm-reference {spec}"));
+                    say(&mut parts, &["--qsm-reference", &spec]);
                 }
             }
             "dismiss-recommendation" => dismissal_flags(&mut parts, config),
@@ -128,14 +133,33 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
                 let Some(setting) = setting_of(flag) else { continue };
                 let (v, b) = (lookup(&values, setting.path), lookup(&base_values, setting.path));
                 if v != b && visible.contains(&setting.path) {
-                    if let Some(arg) = render(flag, setting, &v) {
-                        parts.push(arg);
+                    if let Some(words) = render(flag, setting, &v) {
+                        parts.extend(words);
                     }
                 }
             }
         }
     }
-    parts.join(" ")
+    parts
+}
+
+/// Add `words` to a command's.
+fn say(parts: &mut Vec<String>, words: &[&str]) {
+    parts.extend(words.iter().map(|w| w.to_string()));
+}
+
+/// A command's words as a shell takes them: each word a shell would split or expand (a glob, a
+/// space, a quote) is quoted, so the command runs as it reads. A placeholder (`<bids_dir>`) is
+/// left as it is written, for the user to fill in.
+pub fn to_shell(words: &[String]) -> String {
+    words.iter().map(|w| {
+        let placeholder = w.starts_with('<') && w.ends_with('>');
+        if placeholder || (!w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || "-_.,/=:+@%".contains(c))) {
+            w.clone()
+        } else {
+            format!("'{}'", w.replace('\'', r"'\''"))
+        }
+    }).collect::<Vec<_>>().join(" ")
 }
 
 /// The value at `path`, `null` for an unset optional value (left out of the serialised config).
@@ -146,34 +170,34 @@ fn lookup(config: &Value, path: &str) -> Value {
 /// `--flag value` for a setting `qsmxt` keeps outside the registry's flags.
 fn emit_value(parts: &mut Vec<String>, flag: &Flag, value: &f64, base: &f64) {
     if value != base {
-        parts.push(format!("--{} {value}", flag.long));
+        say(parts, &[&format!("--{}", flag.long), &value.to_string()]);
     }
 }
 
 /// How `flag` says `value` of `setting`, or `None` where it cannot: an unset optional value is
 /// the one qsm-core derives, said by leaving the flag out, and a switch is said only by a flag
 /// for its direction.
-fn render(flag: &Flag, setting: &Setting, value: &Value) -> Option<String> {
+fn render(flag: &Flag, setting: &Setting, value: &Value) -> Option<Vec<String>> {
     let long = flag.long;
     let text = match (value, &setting.value_type) {
         (Value::Null, _) => return None,
         (Value::Bool(on), ValueType::Bool) if flag.action == FlagAction::SetTrue => {
             // `--x` turns it on and `--no-x` off; the other direction is its opposite's.
             if *on != long.starts_with("no-") {
-                return Some(format!("--{long}"));
+                return Some(vec![format!("--{long}")]);
             }
             return PIPELINE_FLAGS.iter().find(|f| opposite_of(f).is_some_and(|(o, _)| o.long == long))
-                .map(|f| format!("--{}", f.long));
+                .map(|f| vec![format!("--{}", f.long)]);
         }
-        (v, ValueType::EchoTime { .. }) => serde_json::from_value::<EchoTimeChoice>(v.clone()).ok()?.to_string(),
-        (v, ValueType::NumberOrChoice { .. }) => serde_json::from_value::<ChiBoundChoice>(v.clone()).ok()?.to_string(),
-        (v, ValueType::EchoReference { .. }) => serde_json::from_value::<crate::MotionReference>(v.clone()).ok()?.to_string(),
+        (v, ValueType::EchoTime { .. }) => vec![serde_json::from_value::<EchoTimeChoice>(v.clone()).ok()?.to_string()],
+        (v, ValueType::NumberOrChoice { .. }) => vec![serde_json::from_value::<ChiBoundChoice>(v.clone()).ok()?.to_string()],
+        (v, ValueType::EchoReference { .. }) => vec![serde_json::from_value::<crate::MotionReference>(v.clone()).ok()?.to_string()],
         // A bare flag stands for the value it takes when given without one (`*`, any tool).
-        (Value::String(s), _) if flag.default_missing.contains(&s.as_str()) => return Some(format!("--{long}")),
-        (Value::Array(xs), _) => xs.iter().map(scalar).collect::<Vec<_>>().join(" "),
-        (v, _) => scalar(v),
+        (Value::String(s), _) if flag.default_missing.contains(&s.as_str()) => return Some(vec![format!("--{long}")]),
+        (Value::Array(xs), _) => xs.iter().map(scalar).collect(),
+        (v, _) => vec![scalar(v)],
     };
-    Some(format!("--{long} {text}"))
+    Some(std::iter::once(format!("--{long}")).chain(text).collect())
 }
 
 /// A number as Rust writes it (`100`, not `100.0`), and other values as they are.
@@ -201,20 +225,20 @@ fn masking_flags(parts: &mut Vec<String>, config: &PipelineConfig, base: &Pipeli
     }
     match crate::masking::masking_preset_command(c) {
         Some((preset, input)) => {
-            parts.push(format!("--mask-preset {preset}"));
+            say(parts, &["--mask-preset", preset]);
             if let Some(input) = input {
-                parts.push(format!("--masking-input {input}"));
+                say(parts, &["--masking-input", &input.to_string()]);
             }
         }
         None => {
             for section in &c.sections {
-                parts.push(format!("--mask {}", section.compact_spec()));
+                say(parts, &["--mask", &section.compact_spec()]);
             }
             if c.combine != b.combine {
-                parts.push(format!("--mask-combine {}", c.combine));
+                say(parts, &["--mask-combine", &c.combine.to_string()]);
             }
             for op in &c.refinements {
-                parts.push(format!("--mask-refine {}", op.compact_spec()));
+                say(parts, &["--mask-refine", &op.compact_spec()]);
             }
         }
     }
@@ -230,10 +254,7 @@ fn dismissal_flags(parts: &mut Vec<String>, config: &PipelineConfig) {
         held = c.dismissed_recommendations;
     }
     for x in &held {
-        let arg = format!("{}={}", x.rule, x.chosen);
-        // Rule ids and dismissed values are written in characters a shell leaves alone.
-        let plain = arg.chars().all(|c| c.is_ascii_alphanumeric() || "-_.=,/".contains(c));
-        parts.push(format!("--dismiss-recommendation {}", if plain { arg } else { shell_quote(&arg) }));
+        say(parts, &["--dismiss-recommendation", &format!("{}={}", x.rule, x.chosen)]);
     }
 }
 
@@ -255,6 +276,14 @@ mod tests {
             let want: Vec<&str> = words.split_whitespace().collect();
             !want.is_empty() && have.windows(want.len()).any(|w| w == want.as_slice())
         }
+    }
+
+    /// A word a shell would split or expand is quoted; a placeholder is left for the user.
+    #[test]
+    fn to_shell_quotes_what_a_shell_would_change() {
+        let words: Vec<String> = ["qsmxt", "run", "<bids_dir>", "/data/my bids", "--include", "sub-1*", "--x", "it's"]
+            .map(String::from).to_vec();
+        assert_eq!(to_shell(&words), r"qsmxt run <bids_dir> '/data/my bids' --include 'sub-1*' --x 'it'\''s'");
     }
 
     #[test]
@@ -1464,19 +1493,6 @@ algorithm = "tv"
         c.field_mapping.phase_offset_sigma_mm = [10.0, 10.0, 5.0];
         let cmd = generate_command(&c);
         assert!(cmd.says("--phase-offset-sigma-mm 10 10 5"));
-    }
-}
-
-/// Quote a pattern for a shell when it contains glob metacharacters.
-///
-/// An orientation-group pattern is almost always a glob (`*acq-dir*`), and an unquoted glob
-/// in the displayed command is one the user's shell would expand against their working
-/// directory before qsmxt ever saw it.
-fn shell_quote(s: &str) -> String {
-    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        s.to_string()
-    } else {
-        format!("'{}'", s.replace('\'', r"'\''"))
     }
 }
 

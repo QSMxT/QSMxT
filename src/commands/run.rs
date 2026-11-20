@@ -3,9 +3,9 @@ use std::sync::Mutex;
 
 use log::{error, info, warn};
 
-use qsmxt_io::bids::discovery::{self, DiscoveryFilter};
+use qsmxt_io::bids::discovery;
 use qsmxt_io::bids::derivatives::DerivativeOutputs;
-use crate::cli::RunArgs;
+use crate::cli::{AcceptArgs, DatasetArgs, DicomExportArgs, ExecArgs, RunArgs};
 use qsmxt_io::executor;
 use qsmxt_engine::PipelineConfig;
 
@@ -122,11 +122,64 @@ pub(crate) use qsmxt_io::dataset::{
 #[cfg(test)]
 pub(crate) use qsmxt_io::dataset::current_run_records;
 
+/// What `qsmxt run` and `qsmxt slurm` start from: the configuration (the file, the flags and any
+/// recommendations accepted), the runs, and the checks a run makes before it starts. Shared, so
+/// a job runs what `qsmxt run` would.
+pub(crate) struct Prepared {
+    pub config: PipelineConfig,
+    /// The configuration before any recommendation was accepted (what `--dry` lists against).
+    pub as_configured: PipelineConfig,
+    pub runs: Vec<discovery::QsmRun>,
+    pub which: qsmxt_engine::recommendations::Accept,
+    pub accepted: super::recommend::Accepted,
+}
+
+/// [`Prepared`] for these options: the configuration built ([`build_config`]), the runs
+/// discovered, the recommendations asked for accepted, and every check that can be made before a
+/// run starts: each requested output each run can produce, the DICOM selection, and (with
+/// `check_groups`) the orientation groups.
+pub(crate) fn prepare(
+    dataset: &DatasetArgs, pipeline: &crate::cli_settings::SettingsArgs, accept: &AcceptArgs,
+    dicom_outputs: Option<&[String]>, check_groups: bool,
+) -> qsmxt_io::Result<Prepared> {
+    let AcceptArgs { accept_recommendations, accept_reference_settings } = *accept;
+    let mut config = build_config(dataset.config.as_deref(), pipeline)?;
+    let filter = dataset.discovery_filter();
+    let runs = discovery::discover_runs(&dataset.bids_dir, &filter)?;
+    if runs.is_empty() {
+        return Err(discovery::no_runs(&dataset.bids_dir, &filter));
+    }
+    // What the chosen methods' rules recommend is only ever applied when asked, before the
+    // checks (a required one would otherwise refuse the run).
+    let as_configured = config.clone();
+    let which = super::recommend::which(accept_recommendations, accept_reference_settings);
+    let accepted = if which.any() {
+        super::recommend::accept(&mut config, &runs, which)
+    } else {
+        super::recommend::Accepted::default()
+    };
+    // Every requested output every run can produce, before any run starts (#193, #273).
+    qsmxt_io::pipeline::requirements::check_runs(&runs, &config)?;
+    // A DICOM SEG is drawn on another exported series: refuse a selection that leaves it none.
+    qsmxt_io::dicom::export::check_outputs(dicom_outputs, &config).map_err(qsmxt_io::error::QsmxtError::Config)?;
+    // The orientation groups resolve now, not after hours of per-run pipelines: a reference that
+    // matches no member would otherwise only surface at the fan-in.
+    if check_groups {
+        orientation_groups(&runs, &config).map_err(qsmxt_io::error::QsmxtError::Config)?;
+    }
+    Ok(Prepared { config, as_configured, runs, which, accepted })
+}
+
 pub fn execute(args: RunArgs) -> qsmxt_io::Result<()> {
+    // Every option is taken apart here, so one that nothing reads is a warning (an unused
+    // variable), which CI's clippy refuses: no flag is parsed and silently ignored.
+    let RunArgs { dataset, pipeline, n_procs, dicom, dry, accept, exec, mem_limit_gb, no_mem_limit, no_dataset_steps } = args;
+    let ExecArgs { force, debug, clean_intermediates } = exec;
+    let DicomExportArgs { source_dicom, dicom_outputs } = dicom;
+
     // Resolve output: <dir>/derivatives/qsmxt/. Both come from args alone, so this can happen
     // before anything else — which it must, because the logger writes there.
-    let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
-    let derivatives_dir = base_dir.join("derivatives").join("qsmxt");
+    let derivatives_dir = dataset.base_dir().join("derivatives").join("qsmxt");
 
     // The logger goes up before the config is built, because building it is the step that
     // validates the CLI: every "ignoring invalid ..." warning applying the flags emits was
@@ -136,22 +189,22 @@ pub fn execute(args: RunArgs) -> qsmxt_io::Result<()> {
     // lines until it knows which runs it has, which name its log.
     // A missing input directory is refused before anything is created: the default output
     // directory is inside it.
-    if let Err(e) = discovery::require_bids_dir(&args.bids_dir) {
-        init_logging(LogSink::Discard, args.debug);
+    if let Err(e) = discovery::require_bids_dir(&dataset.bids_dir) {
+        init_logging(LogSink::Discard, debug);
         return Err(e);
     }
-    if args.dry {
-        init_logging(LogSink::Discard, args.debug);
-    } else if args.no_dataset_steps {
+    if dry {
+        init_logging(LogSink::Discard, debug);
+    } else if no_dataset_steps {
         std::fs::create_dir_all(&derivatives_dir)?;
-        init_logging(LogSink::Buffer(Vec::new()), args.debug);
+        init_logging(LogSink::Buffer(Vec::new()), debug);
     } else {
         std::fs::create_dir_all(&derivatives_dir)?;
         let log_file = std::fs::File::create(derivatives_dir.join("qsmxt.log"))?;
-        init_logging(LogSink::File(log_file), args.debug);
+        init_logging(LogSink::File(log_file), debug);
     }
 
-    if args.no_dataset_steps && args.clean_intermediates {
+    if no_dataset_steps && clean_intermediates {
         return Err(qsmxt_io::error::QsmxtError::Config(
             "--clean-intermediates runs after the dataset-level steps, which --no-dataset-steps \
              skips (a multi-orientation group still needs its members' intermediates); pass it to \
@@ -159,43 +212,10 @@ pub fn execute(args: RunArgs) -> qsmxt_io::Result<()> {
         ));
     }
 
-    // Build config: file -> CLI overrides -> checks
-    let mut config = build_config(args.config.as_deref(), &args.pipeline)?;
-
-    // Discover BIDS runs
-    let filter = DiscoveryFilter {
-        include: args.include.clone(),
-        exclude: args.exclude.clone(),
-        num_echoes: args.num_echoes,
-    };
-
-    let runs = discovery::discover_runs(&args.bids_dir, &filter)?;
-
-    if runs.is_empty() {
-        return Err(discovery::no_runs(&args.bids_dir, &filter));
-    }
-
-    // What the chosen methods' rules recommend is only ever applied when asked, before the
-    // checks (a required one would otherwise refuse the run).
-    let as_configured = config.clone();
-    let which = super::recommend::which(args.accept_recommendations, args.accept_reference_settings);
-    let accepted = if which.any() {
-        super::recommend::accept(&mut config, &runs, which)
-    } else {
-        super::recommend::Accepted::default()
-    };
-
-    // Every requested output every run can produce, before any run starts (#193, #273).
-    qsmxt_io::pipeline::requirements::check_runs(&runs, &config)?;
-    // A DICOM SEG is drawn on another exported series: refuse a selection that leaves it none.
-    qsmxt_io::dicom::export::check_outputs(args.dicom_outputs.as_deref(), &config).map_err(qsmxt_io::error::QsmxtError::Config)?;
-    // The orientation groups resolve now, not after hours of per-run pipelines: a reference that
-    // matches no member would otherwise only surface at the fan-in. A worker sees only its share
-    // of the runs, so its partial groups prove nothing; the aggregation step checks the whole.
-    if !args.no_dataset_steps && !args.dry {
-        orientation_groups(&runs, &config)
-            .map_err(qsmxt_io::error::QsmxtError::Config)?;
-    }
+    // A worker sees only its share of the runs, so its partial orientation groups prove nothing;
+    // the aggregation step checks the whole.
+    let Prepared { config, as_configured, runs, which, accepted } =
+        prepare(&dataset, &pipeline, &accept, dicom_outputs.as_deref(), !no_dataset_steps && !dry)?;
 
     // Count unique subjects
     let mut subjects: Vec<&str> = runs.iter().map(|r| r.key.subject.as_str()).collect();
@@ -208,9 +228,9 @@ pub fn execute(args: RunArgs) -> qsmxt_io::Result<()> {
         subjects.len()
     );
 
-    let (n_procs, mem_limit_bytes, mem_limit_source) = execution_parameters(&args);
+    let (n_procs, mem_limit_bytes, mem_limit_source) = execution_parameters(n_procs, mem_limit_gb, no_mem_limit);
 
-    if args.dry {
+    if dry {
         print_dry_run(&config, &runs, n_procs, mem_limit_bytes, &mem_limit_source);
         print_planned(&derivatives_dir, &config, &runs);
         super::recommend::print_dry(&as_configured, &runs, which);
@@ -223,28 +243,38 @@ pub fn execute(args: RunArgs) -> qsmxt_io::Result<()> {
         n_procs,
         mem_limit_bytes,
         mem_limit_source,
-        force: args.force,
-        source_dicom: args.source_dicom.clone(),
-        dicom_outputs: args.dicom_outputs.clone(),
+        force,
+        source_dicom,
+        dicom_outputs,
         applied: accepted.per_run.clone(),
     };
 
-    run_pipelines(&args, &derivatives_dir, &config, &runs, subjects.len(), exec_config, &accepted)
+    let worker = Worker { bids_dir: &dataset.bids_dir, no_dataset_steps, force, clean_intermediates };
+    run_pipelines(&worker, &derivatives_dir, &config, &runs, subjects.len(), exec_config, &accepted)
+}
+
+/// What [`run_pipelines`] needs of the command line: whether this is a worker, and how the
+/// dataset-level steps run.
+struct Worker<'a> {
+    bids_dir: &'a std::path::Path,
+    no_dataset_steps: bool,
+    force: bool,
+    clean_intermediates: bool,
 }
 
 /// The execution parameters: how many runs at once, and the memory they share (with what
 /// limited it, for the "Memory: … available" line).
-fn execution_parameters(args: &RunArgs) -> (usize, Option<u64>, String) {
-    let n_procs = args.n_procs.unwrap_or_else(|| {
+fn execution_parameters(n_procs: Option<usize>, mem_limit_gb: Option<f64>, no_mem_limit: bool) -> (usize, Option<u64>, String) {
+    let n_procs = n_procs.unwrap_or_else(|| {
         std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1)
     });
 
     // What limited it goes into the "Memory: … available" line.
-    let (mem_limit_bytes, mem_limit_source) = if args.no_mem_limit {
+    let (mem_limit_bytes, mem_limit_source) = if no_mem_limit {
         (None, String::new())
-    } else if let Some(gb) = args.mem_limit_gb {
+    } else if let Some(gb) = mem_limit_gb {
         (Some((gb * 1024.0 * 1024.0 * 1024.0) as u64), " (--mem-limit-gb)".to_string())
     } else {
         // Auto-detect: what the system, or a Slurm job's or container's limit, leaves; 1 GB
@@ -334,7 +364,7 @@ fn print_dry_run(
 
 /// Process every run, then the dataset-level steps (unless this is a worker), and report.
 fn run_pipelines(
-    args: &RunArgs, derivatives_dir: &std::path::Path, config: &PipelineConfig,
+    args: &Worker, derivatives_dir: &std::path::Path, config: &PipelineConfig,
     runs: &[discovery::QsmRun], n_subjects: usize, exec_config: executor::local::ExecutionConfig,
     accepted: &super::recommend::Accepted,
 ) -> qsmxt_io::Result<()> {
@@ -358,7 +388,7 @@ fn run_pipelines(
     let output = DerivativeOutputs::new(derivatives_dir);
 
     if !args.no_dataset_steps {
-        write_dataset_files(derivatives_dir, &args.bids_dir, config, runs)?;
+        write_dataset_files(derivatives_dir, args.bids_dir, config, runs)?;
     }
 
     let results = executor::local::execute_local(runs, config, &output, &exec_config);

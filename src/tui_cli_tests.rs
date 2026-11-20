@@ -130,7 +130,7 @@ fn slurm_mode_carries_debug_and_dicom_export() {
     let cli = crate::cli::Cli::try_parse_from(cmd.split_whitespace())
         .unwrap_or_else(|e| panic!("{e}\ncmd: {cmd}"));
     let crate::cli::Command::Slurm(shown) = cli.command else { panic!("not slurm: {cmd}") };
-    assert_eq!((shown.debug, shown.source_dicom, shown.dicom_outputs),
+    assert_eq!((shown.exec.debug, shown.dicom.source_dicom, shown.dicom.dicom_outputs),
                (args.debug, args.source_dicom, args.dicom_outputs), "{cmd}");
 
     // Without DICOM export its settings are not passed on.
@@ -161,14 +161,14 @@ fn dicom_outputs_repeat_or_comma_separate() {
     };
     for args in [&["--dicom-outputs", "chimap,swi"][..], &["--dicom-outputs", "Chimap", "--dicom-outputs", "SWI"][..]] {
         let crate::cli::Command::Run(r) = parse(args).unwrap().command else { panic!() };
-        let got: Vec<String> = r.dicom_outputs.unwrap().iter().map(|s| s.to_lowercase()).collect();
+        let got: Vec<String> = r.dicom.dicom_outputs.unwrap().iter().map(|s| s.to_lowercase()).collect();
         assert_eq!(got, ["chimap", "swi"], "{args:?}");
     }
     assert!(parse(&["--dicom-outputs", "chimapp"]).is_err(), "an unknown map is refused");
     // A space-separated list no longer swallows the BIDS directory.
     let argv = ["qsmxt", "run", "--export-dicom", "--dicom-outputs", "chimap", "bids"];
     let crate::cli::Command::Run(r) = crate::cli::Cli::try_parse_from(argv).unwrap().command else { panic!() };
-    assert_eq!(r.bids_dir, std::path::PathBuf::from("bids"));
+    assert_eq!(r.dataset.bids_dir, std::path::PathBuf::from("bids"));
 }
 
 /// The CLI's `--mask-preset` values are `mask_presets()` (the TUI's preset row is checked against

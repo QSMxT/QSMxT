@@ -57,121 +57,92 @@ pub struct SlurmOptions {
     pub pipeline: RunSettings,
 }
 
+/// The command the form runs, as a shell takes it: [`command_words`], each quoted where a shell
+/// would split or expand it (an `--include sub-1*` pattern, a path with a space).
 pub fn build_command_string(app: &App) -> String {
+    qsmxt_engine::command::to_shell(&command_words(app))
+}
+
+/// The words of the command the form runs, unquoted: `qsmxt run` (or `slurm`) and its arguments.
+pub fn command_words(app: &App) -> Vec<String> {
     let form = &app.form;
     let is_slurm = form.execution_mode == 1;
-    let mut parts = vec![
-        "qsmxt".to_string(),
-        if is_slurm { "slurm".to_string() } else { "run".to_string() },
-    ];
+    let mut words: Vec<String> = vec!["qsmxt".into(), if is_slurm { "slurm" } else { "run" }.into()];
+    let mut say = |w: &[&str]| words.extend(w.iter().map(|w| w.to_string()));
 
     // Positional args
-    if form.bids_dir.is_empty() {
-        parts.push("<bids_dir>".to_string());
-    } else {
-        parts.push(form.bids_dir.clone());
-    }
+    say(&[if form.bids_dir.is_empty() { "<bids_dir>" } else { &form.bids_dir }]);
     if !form.output_dir.is_empty() {
-        parts.push(form.output_dir.clone());
+        say(&[&form.output_dir]);
     }
-
-    // Config file
     if !form.config_file.is_empty() {
-        parts.push(format!("--config {}", form.config_file));
+        say(&["--config", &form.config_file]);
     }
 
     // Filters (from tree selection / include/exclude patterns)
     let (include, exclude) = app.filter_state.get_include_exclude();
-    if let Some(ref inc) = include {
-        parts.push(format!("--include {}", inc.join(" ")));
-    }
-    if let Some(ref exc) = exclude {
-        parts.push(format!("--exclude {}", exc.join(" ")));
+    for (flag, patterns) in [("--include", include), ("--exclude", exclude)] {
+        if let Some(patterns) = patterns {
+            say(&[flag]);
+            say(&patterns.iter().map(String::as_str).collect::<Vec<_>>());
+        }
     }
     if !app.filter_state.num_echoes.is_empty() {
-        parts.push(format!("--num-echoes {}", app.filter_state.num_echoes));
+        say(&["--num-echoes", &app.filter_state.num_echoes]);
     }
 
-    // Pipeline flags — delegate to qsmxt-engine library
+    // The pipeline's flags, as the engine says them (after its `qsmxt run <bids_dir>`).
     match app.current_config().as_ref() {
-        Err(e) => parts.push(format!("<invalid setting: {e}>")),
-        Ok(config) => {
-        let lib_cmd = qsmxt_engine::generate_command(config);
-        // The library generates "qsmxt run <bids_dir> [flags]"
-        // Strip the prefix and append only the flags
-        let flags = lib_cmd.strip_prefix("qsmxt run <bids_dir>").unwrap_or(&lib_cmd).trim();
-        if !flags.is_empty() {
-            for flag in flags.split_whitespace() {
-                parts.push(flag.to_string());
-            }
-        }
-        }
+        Err(e) => say(&[&format!("<invalid setting: {e}>")]),
+        Ok(config) => say(&qsmxt_engine::command::command_args(config).iter().skip(3).map(String::as_str).collect::<Vec<_>>()),
     }
 
-    // TUI-specific execution flags (not handled by the library)
+    // The run's own options (not the engine's).
+    let defaults = super::app::RunForm::default();
+    let changed = |current: &str, default: &str| current.trim() != default.trim();
     if is_slurm {
-        // SLURM-specific flags
-        if !form.slurm_account.trim().is_empty() {
-            parts.push(format!("--account {}", form.slurm_account.trim()));
-        } else {
-            parts.push("--account <account>".to_string());
-        }
-        let slurm_defaults = super::app::RunForm::default();
+        let account = form.slurm_account.trim();
+        say(&["--account", if account.is_empty() { "<account>" } else { account }]);
         if !form.slurm_partition.trim().is_empty() {
-            parts.push(format!("--partition {}", form.slurm_partition.trim()));
+            say(&["--partition", form.slurm_partition.trim()]);
         }
-        push_if_changed(&mut parts, "--time", &form.slurm_time, &slurm_defaults.slurm_time);
+        if changed(&form.slurm_time, &defaults.slurm_time) {
+            say(&["--time", form.slurm_time.trim()]);
+        }
         if !form.slurm_mem.trim().is_empty() {
-            parts.push(format!("--mem {}", form.slurm_mem.trim()));
+            say(&["--mem", form.slurm_mem.trim()]);
         }
-        push_if_changed(&mut parts, "--cpus-per-task", &form.slurm_cpus, &slurm_defaults.slurm_cpus);
-        if form.slurm_submit {
-            parts.push("--submit".to_string());
+        if changed(&form.slurm_cpus, &defaults.slurm_cpus) {
+            say(&["--cpus-per-task", form.slurm_cpus.trim()]);
         }
-        if form.force { parts.push("--force".to_string()); }
-        if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
-        if form.debug { parts.push("--debug".to_string()); }
-        push_dicom_export(&mut parts, app);
+        if form.slurm_submit { say(&["--submit"]); }
+        if form.force { say(&["--force"]); }
+        if form.clean_intermediates { say(&["--clean-intermediates"]); }
+        if form.debug { say(&["--debug"]); }
     } else {
-        if form.dry_run {
-            parts.push("--dry".to_string());
-        }
-        if form.debug {
-            parts.push("--debug".to_string());
-        }
+        if form.dry_run { say(&["--dry"]); }
+        if form.debug { say(&["--debug"]); }
         if !form.n_procs.trim().is_empty() {
-            parts.push(format!("--n-procs {}", form.n_procs.trim()));
+            say(&["--n-procs", form.n_procs.trim()]);
         }
         match form.mem_limit() {
-            (Some(gb), _) => parts.push(format!("--mem-limit-gb {gb}")),
-            (None, true) => parts.push("--no-mem-limit".to_string()),
+            (Some(gb), _) => say(&["--mem-limit-gb", &gb.to_string()]),
+            (None, true) => say(&["--no-mem-limit"]),
             (None, false) => {}
         }
-        if form.force { parts.push("--force".to_string()); }
-        if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
-        push_dicom_export(&mut parts, app);
+        if form.force { say(&["--force"]); }
+        if form.clean_intermediates { say(&["--clean-intermediates"]); }
     }
-
-    parts.join(" ")
-}
-
-/// DICOM export's run settings — the same in both modes (under SLURM each run's job exports).
-fn push_dicom_export(parts: &mut Vec<String>, app: &App) {
-    let form = &app.form;
+    // DICOM export's run settings — the same in both modes (under SLURM each run's job exports).
     if form.export_dicom {
         if let Some(p) = parse_optional_path(&form.source_dicom) {
-            parts.push(format!("--source-dicom {}", p.display()));
+            say(&["--source-dicom", &p.display().to_string()]);
         }
         if let Some(o) = app.dicom_outputs() {
-            parts.push(format!("--dicom-outputs {}", o.join(",")));
+            say(&["--dicom-outputs", &o.join(",")]);
         }
     }
-}
-
-fn push_if_changed(parts: &mut Vec<String>, flag: &str, current: &str, default: &str) {
-    if current.trim() != default.trim() {
-        parts.push(format!("{} {}", flag, current.trim()));
-    }
+    words
 }
 
 pub fn build_run_args(app: &App) -> qsmxt_io::Result<RunOptions> {
@@ -460,6 +431,18 @@ pub fn config_from_app(app: &App) -> qsmxt_io::Result<PipelineConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The command shown runs as it reads: a path with a space and an `--include` glob are
+    /// quoted, so a shell neither splits nor expands them.
+    #[test]
+    fn the_command_quotes_paths_and_patterns() {
+        let mut app = App::new();
+        app.form.bids_dir = "/data/my bids".into();
+        let cmd = build_command_string(&app);
+        assert!(cmd.starts_with("qsmxt run '/data/my bids'"), "{cmd}");
+        let words = command_words(&app);
+        assert_eq!(words[2], "/data/my bids", "the words are unquoted");
+    }
     use super::super::app::App;
 
     /// The config a run gets from its arguments.
@@ -1262,19 +1245,7 @@ mod tests {
         assert_eq!(parse_optional_path("  /bar  "), Some(PathBuf::from("/bar")));
     }
 
-    #[test]
-    fn test_push_if_changed_same() {
-        let mut parts = vec![];
-        push_if_changed(&mut parts, "--flag", "val", "val");
-        assert!(parts.is_empty());
-    }
 
-    #[test]
-    fn test_push_if_changed_different() {
-        let mut parts = vec![];
-        push_if_changed(&mut parts, "--flag", "new", "old");
-        assert_eq!(parts, vec!["--flag new"]);
-    }
 
     // --- SLURM command string ---
 

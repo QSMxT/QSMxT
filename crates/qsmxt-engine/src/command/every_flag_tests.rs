@@ -105,7 +105,7 @@ fn one_change_away(of: &Setting) -> Vec<PipelineConfig> {
 /// pipeline a config follows is most of its cost, and a pipeline's own settings are not said.
 fn says(config: &PipelineConfig, longs: &[String]) -> bool {
     let pruned = schema::prune_hidden(&config.normalised().0, &ViewFacts::default());
-    super::command_for(&pruned, &PipelineConfig::default(), None).split(' ').any(|w| longs.iter().any(|l| l == w))
+    super::command_for(&pruned, &PipelineConfig::default(), None).iter().any(|w| longs.iter().any(|l| l == w))
 }
 
 /// Whether some config that makes `s` apply, with `s` changed from its default, says its flag.

@@ -57,8 +57,8 @@ fn fmt_list(tools: &[String]) -> String {
 
 pub fn execute(args: ValidateArgs) -> qsmxt_io::Result<()> {
     let filter = DiscoveryFilter {
-        include: args.include,
-        exclude: args.exclude,
+        include: args.filter.include,
+        exclude: args.filter.exclude,
         ..Default::default()
     };
 

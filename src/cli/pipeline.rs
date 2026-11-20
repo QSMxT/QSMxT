@@ -1,12 +1,26 @@
-use clap::Parser;
+use clap::{Args, Parser};
 use std::path::PathBuf;
 
 use super::*;
 
 // ─── Pipeline commands ───
 
-#[derive(Parser, Debug)]
-pub struct RunArgs {
+/// Which runs of a dataset to process: the `--include` and `--exclude` patterns.
+#[derive(Args, Debug, Default)]
+pub struct RunFilterArgs {
+    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
+    #[arg(long, num_args = 1..)]
+    pub include: Option<Vec<String>>,
+
+    /// Exclude runs matching these glob patterns (e.g. "*mygrea*")
+    #[arg(long, num_args = 1..)]
+    pub exclude: Option<Vec<String>>,
+}
+
+/// The dataset a pipeline command works on: where it is and its outputs go, the configuration
+/// file, and which runs and echoes.
+#[derive(Args, Debug, Default)]
+pub struct DatasetArgs {
     /// Input BIDS directory
     pub bids_dir: PathBuf,
 
@@ -17,25 +31,52 @@ pub struct RunArgs {
     #[arg(long)]
     pub config: Option<PathBuf>,
 
-    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
-    #[arg(long, num_args = 1..)]
-    pub include: Option<Vec<String>>,
-
-    /// Exclude runs matching these glob patterns (e.g. "*mygrea*")
-    #[arg(long, num_args = 1..)]
-    pub exclude: Option<Vec<String>>,
+    #[command(flatten)]
+    pub filter: RunFilterArgs,
 
     /// Limit number of echoes to process
     #[arg(long)]
     pub num_echoes: Option<usize>,
+}
 
-    #[command(flatten)]
-    pub pipeline: crate::cli_settings::SettingsArgs,
+impl DatasetArgs {
+    /// Where the outputs go: `<output_dir or bids_dir>/derivatives/qsmxt/`'s parent.
+    pub fn base_dir(&self) -> &std::path::Path {
+        self.output_dir.as_deref().unwrap_or(&self.bids_dir)
+    }
 
-    /// Number of parallel threads
+    /// The runs to discover.
+    pub fn discovery_filter(&self) -> qsmxt_io::bids::discovery::DiscoveryFilter {
+        qsmxt_io::bids::discovery::DiscoveryFilter {
+            include: self.filter.include.clone(),
+            exclude: self.filter.exclude.clone(),
+            num_echoes: self.num_echoes,
+        }
+    }
+}
+
+/// How a pipeline command runs: the cache, the log and the intermediates.
+#[derive(Args, Debug, Default)]
+pub struct ExecArgs {
+    /// Force re-run, ignoring cached pipeline state
     #[arg(long)]
-    pub n_procs: Option<usize>,
+    pub force: bool,
 
+    /// Enable debug logging
+    #[arg(long)]
+    pub debug: bool,
+
+    /// Once every run (and any multi-orientation combination) is done, delete the intermediate
+    /// images under workflow/. Published outputs, per-step provenance and the cache state are
+    /// kept: a re-run with the same configuration recomputes nothing, one with a changed
+    /// configuration recomputes the intermediates it needs
+    #[arg(long)]
+    pub clean_intermediates: bool,
+}
+
+/// DICOM export's run options (the export itself is `--export-dicom`, a setting).
+#[derive(Args, Debug, Default)]
+pub struct DicomExportArgs {
     /// Optional source DICOM directory; inherit patient/study identity from the
     /// original DICOMs when exporting (used with --export-dicom)
     #[arg(long)]
@@ -46,15 +87,11 @@ pub struct RunArgs {
     #[arg(long, value_delimiter = ',', action = clap::ArgAction::Append, ignore_case = true,
           value_parser = clap::builder::PossibleValuesParser::new(DICOM_OUTPUT_TOKENS))]
     pub dicom_outputs: Option<Vec<String>>,
+}
 
-    /// Print the processing plan, the pipeline graph and the methods text without running
-    /// anything or writing any file. Also lists what the configuration departs from in the
-    /// chosen methods' reference pipelines, for every run's scan, and each covered setting's
-    /// reference value; with --accept-recommendations or --accept-reference-settings, the
-    /// settings that would change
-    #[arg(long)]
-    pub dry: bool,
-
+/// Which of the chosen methods' recommendations to apply before running.
+#[derive(Args, Debug, Default, Clone, Copy)]
+pub struct AcceptArgs {
     /// Apply the recommended value of every reasoned recommendation that is not dismissed
     /// (required, recommended and discouraged findings, each with its reason) before running.
     /// The original authors' settings are not applied; see --accept-reference-settings. Two
@@ -70,10 +107,36 @@ pub struct RunArgs {
     /// when --accept-recommendations is also given
     #[arg(long)]
     pub accept_reference_settings: bool,
+}
 
-    /// Enable debug logging
+#[derive(Parser, Debug)]
+pub struct RunArgs {
+    #[command(flatten)]
+    pub dataset: DatasetArgs,
+
+    #[command(flatten)]
+    pub pipeline: crate::cli_settings::SettingsArgs,
+
+    /// Number of parallel threads
     #[arg(long)]
-    pub debug: bool,
+    pub n_procs: Option<usize>,
+
+    #[command(flatten)]
+    pub dicom: DicomExportArgs,
+
+    /// Print the processing plan, the pipeline graph and the methods text without running
+    /// anything or writing any file. Also lists what the configuration departs from in the
+    /// chosen methods' reference pipelines, for every run's scan, and each covered setting's
+    /// reference value; with --accept-recommendations or --accept-reference-settings, the
+    /// settings that would change
+    #[arg(long)]
+    pub dry: bool,
+
+    #[command(flatten)]
+    pub accept: AcceptArgs,
+
+    #[command(flatten)]
+    pub exec: ExecArgs,
 
     /// Memory limit in GB for concurrent run scheduling (if not specified: the memory available,
     /// within a Slurm job's or container's memory limit when there is one)
@@ -83,17 +146,6 @@ pub struct RunArgs {
     /// Disable memory-aware concurrency limiting
     #[arg(long)]
     pub no_mem_limit: bool,
-
-    /// Force re-run, ignoring cached pipeline state
-    #[arg(long)]
-    pub force: bool,
-
-    /// Once every run (and any multi-orientation combination) is done, delete the intermediate
-    /// images under workflow/. Published outputs, per-step provenance and the cache state are
-    /// kept: a re-run with the same configuration recomputes nothing, one with a changed
-    /// configuration recomputes the intermediates it needs
-    #[arg(long)]
-    pub clean_intermediates: bool,
 
     /// Process each run and stop: skip the dataset-level steps (multi-orientation
     /// reconstruction, summary tables, cohort figures, provenance, dataset_description.json,
@@ -106,43 +158,15 @@ pub struct RunArgs {
 
 #[derive(Parser, Debug)]
 pub struct AggregateArgs {
-    /// Input BIDS directory
-    pub bids_dir: PathBuf,
-
-    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt/)
-    pub output_dir: Option<PathBuf>,
-
-    /// Pipeline configuration file (TOML): the one the runs were processed with
-    #[arg(long)]
-    pub config: Option<PathBuf>,
-
-    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
-    #[arg(long, num_args = 1..)]
-    pub include: Option<Vec<String>>,
-
-    /// Exclude runs matching these glob patterns (e.g. "*mygrea*")
-    #[arg(long, num_args = 1..)]
-    pub exclude: Option<Vec<String>>,
-
-    /// Limit number of echoes to process
-    #[arg(long)]
-    pub num_echoes: Option<usize>,
+    /// The dataset, configuration and runs the workers processed
+    #[command(flatten)]
+    pub dataset: DatasetArgs,
 
     #[command(flatten)]
     pub pipeline: crate::cli_settings::SettingsArgs,
 
-    /// Enable debug logging
-    #[arg(long)]
-    pub debug: bool,
-
-    /// Recompute the multi-orientation reconstructions, ignoring their cached state
-    #[arg(long)]
-    pub force: bool,
-
-    /// Once the dataset-level steps are done, delete the intermediate images under workflow/
-    /// (as `qsmxt run --clean-intermediates`)
-    #[arg(long)]
-    pub clean_intermediates: bool,
+    #[command(flatten)]
+    pub exec: ExecArgs,
 
     /// The command recorded as the provenance Activity's `Command` (default: this command).
     /// `qsmxt slurm` sets it to the `qsmxt slurm ...` invocation that produced the outputs
@@ -162,22 +186,14 @@ pub struct ValidateArgs {
     /// Input BIDS directory
     pub bids_dir: PathBuf,
 
-    /// Include only runs matching these glob patterns
-    #[arg(long, num_args = 1..)]
-    pub include: Option<Vec<String>>,
-
-    /// Exclude runs matching these glob patterns
-    #[arg(long, num_args = 1..)]
-    pub exclude: Option<Vec<String>>,
+    #[command(flatten)]
+    pub filter: RunFilterArgs,
 }
 
 #[derive(Parser, Debug)]
 pub struct SlurmArgs {
-    /// Input BIDS directory
-    pub bids_dir: PathBuf,
-
-    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt/)
-    pub output_dir: Option<PathBuf>,
+    #[command(flatten)]
+    pub dataset: DatasetArgs,
 
     /// SLURM account name
     #[arg(long)]
@@ -187,12 +203,8 @@ pub struct SlurmArgs {
     #[arg(long)]
     pub partition: Option<String>,
 
-    /// Pipeline configuration file (TOML)
-    #[arg(long)]
-    pub config: Option<PathBuf>,
-
     /// Wall time limit (e.g., 02:00:00)
-    #[arg(long, default_value = "02:00:00")]
+    #[arg(long, default_value = qsmxt_io::executor::slurm::DEFAULT_TIME)]
     pub time: String,
 
     /// Memory per job in GB [default: estimated per run from its size and the pipeline]
@@ -200,58 +212,22 @@ pub struct SlurmArgs {
     pub mem: Option<usize>,
 
     /// CPUs per task
-    #[arg(long, default_value_t = 4)]
+    #[arg(long, default_value_t = qsmxt_io::executor::slurm::DEFAULT_CPUS)]
     pub cpus_per_task: usize,
 
     /// Auto-submit scripts via sbatch
     #[arg(long)]
     pub submit: bool,
 
-    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
-    #[arg(long, num_args = 1..)]
-    pub include: Option<Vec<String>>,
+    /// Passed to every job; the intermediates are cleaned by the aggregation job
+    #[command(flatten)]
+    pub exec: ExecArgs,
 
-    /// Exclude runs matching these glob patterns (e.g. "*mygrea*")
-    #[arg(long, num_args = 1..)]
-    pub exclude: Option<Vec<String>>,
+    #[command(flatten)]
+    pub dicom: DicomExportArgs,
 
-    /// Limit number of echoes to process
-    #[arg(long)]
-    pub num_echoes: Option<usize>,
-
-    /// Force re-run, ignoring cached pipeline state (passed to every job)
-    #[arg(long)]
-    pub force: bool,
-
-    /// Once every run and the dataset-level steps are done, delete the intermediate images
-    /// under workflow/ (done by the aggregation job)
-    #[arg(long)]
-    pub clean_intermediates: bool,
-
-    /// Enable debug logging (in every job)
-    #[arg(long)]
-    pub debug: bool,
-
-    /// Optional source DICOM directory; inherit patient/study identity from the original DICOMs
-    /// when exporting (used with --export-dicom; each run's job exports its maps)
-    #[arg(long)]
-    pub source_dicom: Option<PathBuf>,
-
-    /// Restrict DICOM export to these maps (default: all produced); repeat the flag or
-    /// comma-separate them (used with --export-dicom)
-    #[arg(long, value_delimiter = ',', action = clap::ArgAction::Append, ignore_case = true,
-          value_parser = clap::builder::PossibleValuesParser::new(DICOM_OUTPUT_TOKENS))]
-    pub dicom_outputs: Option<Vec<String>>,
-
-    /// Apply the recommended value of every reasoned recommendation that is not dismissed
-    /// before writing the jobs (as `qsmxt run --accept-recommendations`)
-    #[arg(long)]
-    pub accept_recommendations: bool,
-
-    /// Apply the original authors' settings of the chosen methods before writing the jobs (as
-    /// `qsmxt run --accept-reference-settings`)
-    #[arg(long)]
-    pub accept_reference_settings: bool,
+    #[command(flatten)]
+    pub accept: AcceptArgs,
 
     #[command(flatten)]
     pub pipeline: crate::cli_settings::SettingsArgs,

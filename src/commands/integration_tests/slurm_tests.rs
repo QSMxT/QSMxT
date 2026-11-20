@@ -10,18 +10,17 @@ fn test_slurm_command() {
     testutils::create_single_echo_bids(&bids);
 
     super::slurm::execute(SlurmArgs {
-        accept_recommendations: false,
-        accept_reference_settings: false,
-        bids_dir: bids,
-        output_dir: Some(out.clone()),
+        dataset: DatasetArgs { bids_dir: bids, output_dir: Some(out.clone()), config: None, num_echoes: None, filter: RunFilterArgs { include: None, exclude: None } },
         account: "testacct".to_string(),
         partition: Some("gpu".to_string()),
-        config: None,
         time: "01:00:00".to_string(),
-        mem: Some(16), cpus_per_task: 2, submit: false,
-        include: None, exclude: None, num_echoes: None, force: false, clean_intermediates: false,
-        debug: false, source_dicom: None, dicom_outputs: None,
+        mem: Some(16),
+        cpus_per_task: 2,
+        submit: false,
         pipeline: Default::default(),
+        exec: ExecArgs { force: false, clean_intermediates: false, debug: false },
+        dicom: DicomExportArgs { source_dicom: None, dicom_outputs: None },
+        accept: AcceptArgs { accept_recommendations: false, accept_reference_settings: false },
     }).unwrap();
 
     assert!(out.join("derivatives/qsmxt/slurm").exists());
@@ -37,20 +36,19 @@ fn test_slurm_writes_requested_pipeline_config() {
     testutils::create_single_echo_bids(&bids);
 
     super::slurm::execute(SlurmArgs {
-        accept_recommendations: false,
-        accept_reference_settings: false,
-        bids_dir: bids,
-        output_dir: Some(out.clone()),
+        dataset: DatasetArgs { bids_dir: bids, output_dir: Some(out.clone()), config: None, num_echoes: None, filter: RunFilterArgs { include: None, exclude: None } },
         account: "testacct".to_string(),
         partition: None,
-        config: None,
         time: "01:00:00".to_string(),
-        mem: Some(16), cpus_per_task: 2, submit: false,
-        include: None, exclude: None, num_echoes: None, force: false, clean_intermediates: false,
-        debug: false, source_dicom: None, dicom_outputs: None,
+        mem: Some(16),
+        cpus_per_task: 2,
+        submit: false,
         pipeline: crate::cli_settings::SettingsArgs::from_flags(&[
             "--qsm-algorithm", "tkd", "--unwrapping-algorithm", "laplacian", "--bf-algorithm", "pdf",
         ]),
+        exec: ExecArgs { force: false, clean_intermediates: false, debug: false },
+        dicom: DicomExportArgs { source_dicom: None, dicom_outputs: None },
+        accept: AcceptArgs { accept_recommendations: false, accept_reference_settings: false },
     }).unwrap();
 
     let written = std::fs::read_to_string(out.join("derivatives/qsmxt/pipeline_config.toml")).unwrap();
@@ -174,21 +172,24 @@ fn slurm_jobs_produce_what_a_local_run_does() {
     let mut args = default_run_args(bids.clone(), local.clone());
     args.dry = false;
     args.no_mem_limit = true;
-    args.include = include.clone();
-    args.num_echoes = Some(1);
+    args.dataset.filter.include = include.clone();
+    args.dataset.num_echoes = Some(1);
     args.pipeline = pipeline();
     super::run::execute(args).unwrap();
 
     let dist = dir.path().join("dist");
     super::slurm::execute(SlurmArgs {
-        accept_recommendations: false,
-        accept_reference_settings: false,
-        bids_dir: bids.clone(), output_dir: Some(dist.clone()),
-        account: "acct".into(), partition: None, config: None, time: "01:00:00".into(),
-        mem: None, cpus_per_task: 1, submit: false,
-        include, exclude: None, num_echoes: Some(1), force: false, clean_intermediates: false,
-        debug: false, source_dicom: None, dicom_outputs: None,
+        dataset: DatasetArgs { bids_dir: bids.clone(), output_dir: Some(dist.clone()), config: None, num_echoes: Some(1), filter: RunFilterArgs { include, exclude: None } },
+        account: "acct".into(),
+        partition: None,
+        time: "01:00:00".into(),
+        mem: None,
+        cpus_per_task: 1,
+        submit: false,
         pipeline: pipeline(),
+        exec: ExecArgs { force: false, clean_intermediates: false, debug: false },
+        dicom: DicomExportArgs { source_dicom: None, dicom_outputs: None },
+        accept: AcceptArgs { accept_recommendations: false, accept_reference_settings: false },
     }).unwrap();
     let slurm_dir = dist.join("derivatives/qsmxt/slurm");
     let mut run_scripts: Vec<PathBuf> = std::fs::read_dir(&slurm_dir).unwrap().flatten().map(|e| e.path())
@@ -276,7 +277,7 @@ fn aggregate_names_runs_that_were_not_processed_under_its_configuration() {
     worker.dry = false;
     worker.no_mem_limit = true;
     worker.no_dataset_steps = true;
-    worker.include = Some(vec!["*acq-dir1*".to_string()]);
+    worker.dataset.filter.include = Some(vec!["*acq-dir1*".to_string()]);
     worker.pipeline = cheap_pipeline();
     super::run::execute(worker).unwrap();
 
@@ -303,7 +304,7 @@ fn a_worker_refuses_clean_intermediates() {
     let mut args = default_run_args(bids, dir.path().join("out"));
     args.dry = false;
     args.no_dataset_steps = true;
-    args.clean_intermediates = true;
+    args.exec.clean_intermediates = true;
     let err = super::run::execute(args).unwrap_err().to_string();
     assert!(err.contains("qsmxt aggregate"), "{err}");
 }

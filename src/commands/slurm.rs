@@ -1,56 +1,36 @@
-use qsmxt_io::bids::discovery::{self, DiscoveryFilter};
-use crate::cli::SlurmArgs;
+use crate::cli::{DicomExportArgs, ExecArgs, SlurmArgs};
 
 pub fn execute(args: SlurmArgs) -> qsmxt_io::Result<()> {
-    // Build config the same way `qsmxt run` does: file -> CLI/TUI overrides -> every check that
-    // can be made before a run starts. Without the overrides the generated jobs silently fall
-    // back to the pipeline defaults; without the checks a bad setting is found once per job,
-    // after submission.
-    let mut config = super::run::build_config(args.config.as_deref(), &args.pipeline)?;
-
-    let filter = DiscoveryFilter {
-        include: args.include.clone(),
-        exclude: args.exclude.clone(),
-        num_echoes: args.num_echoes,
-    };
-    let runs = discovery::discover_runs(&args.bids_dir, &filter)?;
-
-    if runs.is_empty() {
-        return Err(discovery::no_runs(&args.bids_dir, &filter));
-    }
-
-    // Applied here, so every job reads the same configuration file.
-    let which = super::recommend::which(args.accept_recommendations, args.accept_reference_settings);
-    if which.any() {
-        super::recommend::accept(&mut config, &runs, which);
-    }
-
-    // Refuse before writing or submitting a job that would fail on its node.
-    qsmxt_io::pipeline::requirements::check_runs(&runs, &config)?;
-    // A DICOM SEG is drawn on another exported series: refuse a selection that leaves it none.
-    qsmxt_io::dicom::export::check_outputs(args.dicom_outputs.as_deref(), &config).map_err(qsmxt_io::error::QsmxtError::Config)?;
-    super::run::orientation_groups(&runs, &config).map_err(qsmxt_io::error::QsmxtError::Config)?;
+    // Every option is taken apart here, so one that nothing reads is a warning (an unused
+    // variable), which CI's clippy refuses.
+    let SlurmArgs { dataset, account, partition, time, mem, cpus_per_task, submit, exec, dicom, accept, pipeline } = args;
+    let ExecArgs { force, debug, clean_intermediates } = exec;
+    let DicomExportArgs { source_dicom, dicom_outputs } = dicom;
+    // As `qsmxt run` prepares a run: file -> CLI/TUI overrides -> recommendations asked for ->
+    // every check that can be made before a run starts. Without the overrides the generated jobs
+    // silently fall back to the pipeline defaults; without the checks a bad setting is found
+    // once per job, after submission. Applied here, so every job reads the same configuration.
+    let super::run::Prepared { config, runs, .. } =
+        super::run::prepare(&dataset, &pipeline, &accept, dicom_outputs.as_deref(), true)?;
     super::recommend::log_found(&config, &runs);
-
-    let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
 
     let jobs = qsmxt_io::executor::slurm::generate_all_slurm(
         &runs,
-        &args.bids_dir,
-        base_dir,
+        &dataset.bids_dir,
+        dataset.base_dir(),
         &config,
         &qsmxt_io::executor::slurm::SlurmOptions {
-            account: &args.account,
-            partition: args.partition.as_deref(),
-            time: &args.time,
-            mem_gb: args.mem,
-            cpus: args.cpus_per_task,
-            num_echoes: args.num_echoes,
-            force: args.force,
-            clean_intermediates: args.clean_intermediates,
-            debug: args.debug,
-            source_dicom: args.source_dicom.as_deref(),
-            dicom_outputs: args.dicom_outputs.as_deref(),
+            account: &account,
+            partition: partition.as_deref(),
+            time: &time,
+            mem_gb: mem,
+            cpus: cpus_per_task,
+            num_echoes: dataset.num_echoes,
+            force,
+            clean_intermediates,
+            debug,
+            source_dicom: source_dicom.as_deref(),
+            dicom_outputs: dicom_outputs.as_deref(),
             command_line: std::env::args().collect::<Vec<_>>().join(" "),
         },
     )?;
@@ -62,7 +42,7 @@ pub fn execute(args: SlurmArgs) -> qsmxt_io::Result<()> {
     println!("and the aggregation job (dataset-level steps, after every run job succeeds):");
     println!("  {}", jobs.aggregate_script.display());
 
-    if args.submit {
+    if submit {
         let (ids, agg) = qsmxt_io::executor::slurm::submit_jobs(&jobs)?;
         println!("Submitted {} run job(s): {}", ids.len(), ids.join(" "));
         println!("Submitted aggregation job {agg} (afterok:{})", ids.join(":"));
@@ -113,9 +93,9 @@ mod tests {
         argv[0] = "qsmxt";
         let parsed = <crate::cli::Cli as clap::Parser>::try_parse_from(&argv).unwrap_or_else(|e| panic!("{cmd}: {e}"));
         let crate::cli::Command::Run(r) = parsed.command else { panic!("not run: {cmd}") };
-        assert!(r.debug);
-        assert_eq!(r.source_dicom.as_deref(), Some(Path::new("/dicom dir")));
-        assert_eq!(r.dicom_outputs, Some(outputs.clone()));
+        assert!(r.exec.debug);
+        assert_eq!(r.dicom.source_dicom.as_deref(), Some(Path::new("/dicom dir")));
+        assert_eq!(r.dicom.dicom_outputs, Some(outputs.clone()));
     }
 
     /// Split a command line the way the job's bash does, for the single-quoted words it uses.

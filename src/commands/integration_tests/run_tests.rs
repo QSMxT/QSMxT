@@ -41,7 +41,7 @@ fn run_with_a_filter_that_matches_nothing_fails() {
     let dir = tempfile::tempdir().unwrap();
     testutils::create_single_echo_bids(dir.path());
     let mut args = default_run_args(dir.path().to_path_buf(), dir.path().join("out"));
-    args.include = Some(vec!["*nothing-like-this*".to_string()]);
+    args.dataset.filter.include = Some(vec!["*nothing-like-this*".to_string()]);
     let err = super::run::execute(args).unwrap_err().to_string();
     assert!(err.contains("no QSM-compatible runs found") && err.contains("--include"), "{err}");
 }
@@ -57,29 +57,35 @@ fn a_missing_bids_dir_is_an_error_everywhere() {
         assert!(err.contains("does not exist"), "{err}");
     };
     let mut run = default_run_args(missing.clone(), missing.clone());
-    run.output_dir = None;
+    run.dataset.output_dir = None;
     expect(super::run::execute(run));
     let mut real = default_run_args(missing.clone(), missing.clone());
-    real.output_dir = None;
+    real.dataset.output_dir = None;
     real.dry = false;
     expect(super::run::execute(real));
-    expect(super::validate::execute(ValidateArgs { bids_dir: missing.clone(), include: None, exclude: None }));
+    expect(super::validate::execute(ValidateArgs { bids_dir: missing.clone(), filter: Default::default() }));
     let mut agg = aggregate_args(missing.clone(), missing.clone(), vec![]);
-    agg.output_dir = None;
+    agg.dataset.output_dir = None;
     expect(super::aggregate::execute(agg));
     expect(super::slurm::execute(SlurmArgs {
-        accept_recommendations: false, accept_reference_settings: false,
-        bids_dir: missing.clone(), output_dir: None, account: "a".to_string(), partition: None,
-        config: None, time: "01:00:00".to_string(), mem: None, cpus_per_task: 1, submit: false,
-        include: None, exclude: None, num_echoes: None, force: false, clean_intermediates: false,
-        debug: false, source_dicom: None, dicom_outputs: None, pipeline: Default::default(),
+        dataset: DatasetArgs { bids_dir: missing.clone(), output_dir: None, config: None, num_echoes: None, filter: RunFilterArgs { include: None, exclude: None } },
+        account: "a".to_string(),
+        partition: None,
+        time: "01:00:00".to_string(),
+        mem: None,
+        cpus_per_task: 1,
+        submit: false,
+        pipeline: Default::default(),
+        exec: ExecArgs { force: false, clean_intermediates: false, debug: false },
+        dicom: DicomExportArgs { source_dicom: None, dicom_outputs: None },
+        accept: AcceptArgs { accept_recommendations: false, accept_reference_settings: false },
     }));
     assert!(!missing.exists(), "nothing is created for a missing dataset");
 
     // A file is not a dataset either.
     let file = dir.path().join("a-file");
     std::fs::write(&file, "").unwrap();
-    let err = super::validate::execute(ValidateArgs { bids_dir: file, include: None, exclude: None })
+    let err = super::validate::execute(ValidateArgs { bids_dir: file, filter: Default::default() })
         .unwrap_err().to_string();
     assert!(err.contains("is not a directory"), "{err}");
 }
@@ -470,11 +476,11 @@ fn cleaning_intermediates_keeps_published_outputs_and_the_cache() {
     let mut args = default_run_args(bids, out.clone());
     args.dry = false;
     args.no_mem_limit = true;
-    args.clean_intermediates = true;
+    args.exec.clean_intermediates = true;
     // What is cleaned does not depend on the algorithms; TKD and Laplacian are the cheapest.
     args.pipeline.add(&["--qsm-algorithm", "tkd"]);
     args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
-    let mut rerun = default_run_args(args.bids_dir.clone(), out.clone());
+    let mut rerun = default_run_args(args.dataset.bids_dir.clone(), out.clone());
     rerun.pipeline.add(&["--qsm-algorithm", "tkd"]);
     rerun.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
     super::run::execute(args).unwrap();
@@ -493,7 +499,7 @@ fn cleaning_intermediates_keeps_published_outputs_and_the_cache() {
     let before = niftis_with_mtime(&deriv);
     rerun.dry = false;
     rerun.no_mem_limit = true;
-    rerun.clean_intermediates = true;
+    rerun.exec.clean_intermediates = true;
     super::run::execute(rerun).unwrap();
     assert_eq!(niftis_with_mtime(&deriv), before, "an immediate re-run recomputed something");
 }
@@ -509,8 +515,8 @@ fn cleaning_intermediates_waits_for_the_multi_orientation_fan_in() {
     let mut args = default_run_args(bids, out.clone());
     args.dry = false;
     args.no_mem_limit = true;
-    args.clean_intermediates = true;
-    args.include = Some(vec!["*acq-dir*".to_string()]);
+    args.exec.clean_intermediates = true;
+    args.dataset.filter.include = Some(vec!["*acq-dir*".to_string()]);
     args.pipeline.add(&["--orientation-group", "acq"]);
     args.pipeline.add(&["--qsm-algorithm", "tkd"]);
     args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
@@ -531,7 +537,7 @@ fn the_orientation_reference_is_the_groups_frame() {
     let mut args = default_run_args(bids, out.clone());
     args.dry = false;
     args.no_mem_limit = true;
-    args.include = Some(vec!["*acq-dir*".to_string()]);
+    args.dataset.filter.include = Some(vec!["*acq-dir*".to_string()]);
     args.pipeline.add(&["--orientation-group", "acq"]);
     args.pipeline.add(&["--orientation-reference", "dir3"]);
     args.pipeline.add(&["--qsm-algorithm", "tkd"]);
@@ -567,7 +573,7 @@ fn a_group_that_never_formed_is_not_in_the_methods() {
     let mut args = default_run_args(bids, out.clone());
     args.dry = false;
     args.no_mem_limit = true;
-    args.include = Some(vec!["*acq-highres*".to_string()]);
+    args.dataset.filter.include = Some(vec!["*acq-highres*".to_string()]);
     args.pipeline.add(&["--orientation-group", "acq"]);
     args.pipeline.add(&["--qsm-algorithm", "tkd"]);
     args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
@@ -599,7 +605,7 @@ fn methods_say_dicom_export_only_when_series_were_written() {
         args.pipeline.add(&["--export-dicom"]);
         args.pipeline.add(&["--qsm-algorithm", "tkd"]);
         args.pipeline.add(&["--unwrapping-algorithm", "laplacian"]);
-        args.dicom_outputs = outputs;
+        args.dicom.dicom_outputs = outputs;
         args
     };
     let deriv = out.join("derivatives/qsmxt");
@@ -632,7 +638,7 @@ fn an_unmatched_orientation_reference_refuses_the_run_up_front() {
     let mut args = default_run_args(bids, out.clone());
     args.dry = false;
     args.no_mem_limit = true;
-    args.include = Some(vec!["*acq-dir*".to_string()]);
+    args.dataset.filter.include = Some(vec!["*acq-dir*".to_string()]);
     args.pipeline.add(&["--orientation-group", "acq"]);
     args.pipeline.add(&["--orientation-reference", "Neutral"]);
     args.pipeline.add(&["--qsm-algorithm", "tkd"]);
@@ -819,7 +825,7 @@ fn test_run_with_mask_ops() {
     args.pipeline.add(&["--bf-algorithm", "vsharp"]);
     args.dry = false;
     args.no_mem_limit = true;
-    args.clean_intermediates = true;
+    args.exec.clean_intermediates = true;
     args.pipeline.add(&["--mask", "phase-quality,threshold:otsu,dilate:1,erode:1"]);
     super::run::execute(args).unwrap();
 
@@ -926,7 +932,7 @@ fn a_single_echo_uncombined_coil_run_is_an_error_not_a_panic() {
     let out = dir.path().join("out");
     testutils::create_multi_coil_bids(&bids, 2);
     let mut args = default_run_args(bids.clone(), out.clone());
-    args.num_echoes = Some(1);
+    args.dataset.num_echoes = Some(1);
     let err = super::run::execute(args).unwrap_err().to_string();
     assert!(err.contains("MCPC-3D-S") && err.contains("2 echoes"), "{err}");
 

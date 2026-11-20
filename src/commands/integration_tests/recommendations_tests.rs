@@ -105,7 +105,7 @@ fn accepted_recommendations_reach_the_record_and_summary() {
     let out = dir.path().join("accepted");
     let mut args = departing_args(bids.clone(), out.clone());
     args.dry = false;
-    args.accept_recommendations = true;
+    args.accept.accept_recommendations = true;
     super::run::execute(args).unwrap();
     let deriv = out.join("derivatives/qsmxt");
     let config = qsmxt_engine::PipelineConfig::from_toml(&std::fs::read_to_string(deriv.join("pipeline_config.toml")).unwrap()).unwrap();

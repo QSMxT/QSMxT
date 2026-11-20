@@ -13,6 +13,12 @@ fn shell_quote(s: &str) -> String {
 }
 
 /// Scheduler settings shared by every generated job.
+/// A job's wall time when none is asked for (`qsmxt slurm --time`, the TUI's SLURM time).
+pub const DEFAULT_TIME: &str = "02:00:00";
+
+/// CPUs per job when none are asked for (`qsmxt slurm --cpus-per-task`, the TUI's SLURM CPUs).
+pub const DEFAULT_CPUS: usize = 4;
+
 pub struct SlurmOptions<'a> {
     pub account: &'a str,
     pub partition: Option<&'a str>,

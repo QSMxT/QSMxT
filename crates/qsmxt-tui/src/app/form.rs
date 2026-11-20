@@ -178,9 +178,9 @@ impl Default for RunForm {
             clean_intermediates: false,
             slurm_account: String::new(),
             slurm_partition: String::new(),
-            slurm_time: "02:00:00".to_string(),
+            slurm_time: qsmxt_io::executor::slurm::DEFAULT_TIME.to_string(),
             slurm_mem: String::new(),
-            slurm_cpus: "4".to_string(),
+            slurm_cpus: qsmxt_io::executor::slurm::DEFAULT_CPUS.to_string(),
             slurm_submit: false,
         }
     }

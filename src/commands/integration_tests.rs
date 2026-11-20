@@ -22,25 +22,16 @@ mod recommendations_tests;
 
 fn default_run_args(bids_dir: PathBuf, output_dir: PathBuf) -> RunArgs {
     RunArgs {
-        bids_dir,
-        output_dir: Some(output_dir),
-        config: None,
-        include: None,
-        exclude: None,
-        num_echoes: None,
+        dataset: DatasetArgs { bids_dir, output_dir: Some(output_dir), ..Default::default() },
+        pipeline: Default::default(),
         n_procs: Some(1),
-        source_dicom: None,
-        dicom_outputs: None,
+        dicom: Default::default(),
         dry: true,
-        debug: false,
+        accept: Default::default(),
+        exec: Default::default(),
         mem_limit_gb: None,
         no_mem_limit: false,
-        force: false,
-        clean_intermediates: false,
         no_dataset_steps: false,
-        accept_recommendations: false,
-        accept_reference_settings: false,
-        pipeline: Default::default(),
     }
 }
 
@@ -79,9 +70,11 @@ fn cheap_pipeline() -> crate::cli_settings::SettingsArgs {
 
 fn aggregate_args(bids: PathBuf, out: PathBuf, include: Vec<String>) -> AggregateArgs {
     AggregateArgs {
-        bids_dir: bids, output_dir: Some(out), config: None, include: Some(include), exclude: None,
-        num_echoes: None, pipeline: cheap_pipeline(), debug: false, force: false,
-        clean_intermediates: false, command_line: None,
+        dataset: DatasetArgs {
+            bids_dir: bids, output_dir: Some(out), filter: RunFilterArgs { include: Some(include), exclude: None },
+            ..Default::default()
+        },
+        pipeline: cheap_pipeline(), exec: Default::default(), command_line: None,
     }
 }
 
@@ -152,7 +145,7 @@ fn bids_validator_fixture() {
     let bids = scratch.path().join("cosmos");
     testutils::create_multi_orientation_bids(&bids);
     run("cosmos", &bids, &|a| {
-        a.include = Some(vec!["*acq-dir*".to_string()]);
+        a.dataset.filter.include = Some(vec!["*acq-dir*".to_string()]);
         a.pipeline.add(&["--orientation-group", "acq"]);
     });
 
