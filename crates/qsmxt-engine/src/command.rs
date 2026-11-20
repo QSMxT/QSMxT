@@ -32,109 +32,6 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 
 
 
-/// The flags a command says, in the order it says them: roughly the order the run does things
-/// in, with each method's settings after the flag that chooses it. (QSMART's inner inversion's
-/// settings come between QSMART's own, after the three that choose and cap it.) The opposites of
-/// switches (`--no-x` of `--x`) are said at their switch's place. A registry flag not listed here
-/// is said after the flag of the registry entry before it ([`emit_order`]).
-const EMIT_ORDER: &[&str] = &[
-    "pipeline", "orientation-group", "orientation-reference", "multi-orientation-algorithm",
-    "multi-orientation-lambda", "cosmos-magnitude-weighting", "cosmos-tol", "cosmos-max-iter",
-    "multi-orientation-force", "no-orientation-registration", "no-qsm", "do-swi", "no-magnitude",
-    "do-segmentation", "do-analysis", "synthseg-version", "synthseg-crop", "synthseg-patch",
-    "no-synthseg-flip-averaging", "no-synthseg-topology-cleanup", "synthseg-sigma", "use-custom-dseg",
-    "do-smwi", "smwi-threshold", "smwi-power", "smwi-mip-window", "do-t2starmap", "do-r2primemap", "do-r2map",
-    "do-r2starmap", "do-chisep", "use-custom-qsm", "use-custom-r2", "use-custom-r2prime", "r2prime-strategy",
-    "r2primenet-patch", "r2primenet-ignore-field-mismatch", "export-dicom", "axial-resampling",
-    "obliquity-threshold", "crop-to-mask", "ignore-slice-gap", "fft-padding", "tukey-window",
-    "crop-margin-mm", "output-space", "no-inhomogeneity-correction", "homogeneity-sigma-mm",
-    "homogeneity-nbox", "inhomogeneity-method", "n4-shrink-factor", "n4-max-iterations",
-    "n4-convergence-threshold", "n4-mesh", "n4-spline-order", "n4-bias-field-fwhm", "n4-wiener-noise",
-    "n4-histogram-bins", "n4-geometry", "use-custom-masks", "phase-offset-removal", "phase-offset-sigma-mm",
-    "coil-combination-sigma", "bipolar-correction", "unwrapping-algorithm", "laplacian-solver",
-    "laplacian-fft-pad", "laplacian-unmasked", "laplacian-keep-outside", "prelude-labelling",
-    "prelude-partitions", "motion-correction", "motion-reference", "no-motion-chain", "motion-chain-levels",
-    "motion-min-ncc", "registration-levels", "registration-max-samples", "registration-max-iterations",
-    "registration-max-evaluations", "registration-tolerance", "registration-rotation-step-deg",
-    "registration-translation-step-mm", "registration-min-overlap", "b0-estimation",
-    "qsmart-fit-threshold-mode", "qsmart-fit-percentile", "qsmart-fit-threshold", "b0-weight-type",
-    "b0-weight-assumed-t2star", "linear-fit-estimate-offset", "robust-fit-loss", "robust-fit-tuning",
-    "robust-fit-iterations", "robust-fit-downweight-level", "robust-fit-flag-ratio", "complex-fit-reltol",
-    "complex-fit-max-iter", "romeo-individual", "romeo-correct-global", "no-romeo-phase-coherence",
-    "no-romeo-phase-gradient-coherence", "no-romeo-phase-linearity", "no-romeo-mag-coherence",
-    "romeo-mag-weight", "romeo-mag-weight2", "romeo-bestpath", "romeo-merge-regions", "romeo-correct-regions",
-    "romeo-template", "romeo-temporal-uncertain-unwrapping", "romeo-max-seeds", "romeo-wrap-addition",
-    "mask-preset", "masking-input", "mask", "mask-combine", "mask-refine", "two-pass", "two-pass-mask",
-    "two-pass-mask-combine", "two-pass-mode", "bet-fractional-intensity", "bet-smoothness",
-    "bet-gradient-threshold", "bet-iterations", "bet-subdivisions", "bet-voxel-scale", "bet-orientation",
-    "bf-algorithm", "bf-erode-voxels", "bf-polish-mask", "bf-ukb-mask-trim", "vsharp-deconvolve",
-    "vsharp-threshold", "vsharp-max-radius", "vsharp-min-radius", "vsharp-radius-step", "vsharp-grid",
-    "vsharp-grid-spacing", "pdf-tol", "pdf-n-cg", "pdf-space", "pdf-n-pad", "lbv-tol", "lbv-depth",
-    "lbv-peel", "lbv-n1", "lbv-n2", "lbv-n3", "lbv-precision", "ismv-variant", "ismv-tol", "ismv-max-iter",
-    "ismv-radius", "sharp-threshold", "sharp-radius", "resharp-radius", "resharp-tik-reg", "resharp-tol",
-    "resharp-max-iter", "harperella-radius", "harperella-max-iter", "harperella-tol", "harperella-pad",
-    "harperella-rim", "iharperella-max-iter", "iharperella-tol", "iharperella-pad", "iharperella-rim",
-    "qsm-algorithm", "qsmart-inversion", "qsmart-ilsqr-max-iter", "qsmart-ilsqr-pad-mm", "rts-delta",
-    "rts-mu", "rts-rho", "rts-tol", "rts-max-iter", "rts-lsmr-iter", "rts-tau", "rts-gamma", "rts-pad",
-    "tv-lambda", "tv-rho", "tv-tol", "tv-max-iter", "tv-pad", "tkd-threshold", "tkd-pad", "tsvd-threshold",
-    "tsvd-pad", "tikhonov-lambda", "tikhonov-pad", "nltv-lambda", "nltv-rho", "nltv-mu", "nltv-tol",
-    "nltv-max-iter", "nltv-tol-newton", "nltv-newton-iter", "nltv-te", "nltv-pad", "medi-lambda",
-    "medi-percentage", "medi-max-iter", "medi-cg-max-iter", "medi-cg-tol", "medi-tol", "medi-smv-radius",
-    "no-medi-smv-shrink-mask", "medi-merit", "medi-data-weighting", "medi-csf", "medi-lambda-csf",
-    "medi-csf-r2s-threshold", "medi-csf-erode", "medi-zeropad", "no-medi-smv", "medi-msmv", "medi-msmv-maxk",
-    "medi-msmv-vessel-radius", "no-medi-msmv-prefilter", "medi-te", "tfi-lambda", "tfi-precond",
-    "tfi-data-weighting", "tfi-merit", "tfi-linear", "tfi-percentage", "tfi-max-iter", "tfi-cg-max-iter",
-    "tfi-cg-tol", "tfi-tol", "tfi-te", "ilsqr-tol", "ilsqr-max-iter", "ilsqr-pad-mm", "ilsqr-precision",
-    "star-pad", "star-te", "lsqr-residual-weighting", "no-lsqr-global-offset", "lsqr-tol", "lsqr-max-iter",
-    "tgv-iterations", "tgv-erosions", "tgv-alpha0", "tgv-alpha1", "tgv-step-size", "tgv-te", "ndi-tau",
-    "ndi-alpha", "ndi-max-iter", "ndi-auto-stop", "ndi-te", "ndi-weight-norm", "fansi-alpha1", "fansi-mu1",
-    "fansi-mu2", "fansi-alpha0", "fansi-mu0", "fansi-max-iter", "fansi-tol-update", "fansi-tol-delta",
-    "fansi-te", "l1qsm-alpha1", "l1qsm-mu1", "l1qsm-mu2", "l1qsm-mu3", "l1qsm-lambda", "l1qsm-max-iter",
-    "l1qsm-tol-update", "l1qsm-tol-delta", "l1qsm-te", "whqsm-alpha1", "whqsm-mu1", "whqsm-mu2", "whqsm-beta",
-    "whqsm-muh", "whqsm-max-iter", "whqsm-tol-update", "whqsm-tol-delta", "whqsm-weight", "whqsm-te",
-    "hdqsm-alpha-l2", "hdqsm-mu1-l2", "hdqsm-mu2", "hdqsm-max-iter-l1", "hdqsm-max-iter-l2",
-    "hdqsm-tol-update", "amp-pe-wave-order", "amp-pe-nlevel", "amp-pe-wave-pec", "amp-pe-simulated-te",
-    "amp-pe-max-linearization-ite", "amp-pe-damp-rate-sig", "amp-pe-damp-rate-par", "amp-pe-max-pe-spar-ite",
-    "amp-pe-max-pe-est-ite", "amp-pe-cvg-thd", "amp-pe-tikhonov-beta", "qsmart-vasc-sphere-radius",
-    "qsmart-sdf-sigma1-stage1", "qsmart-sdf-sigma2-stage1", "qsmart-sdf-sigma1-stage2",
-    "qsmart-sdf-sigma2-stage2", "qsmart-sdf-lower-lim", "qsmart-sdf-curv-constant", "qsmart-frangi-scale-min",
-    "qsmart-frangi-scale-max", "qsmart-frangi-scale-ratio", "qsmart-frangi-c-mode", "qsmart-frangi-c",
-    "qsmart-frangi-c-factor", "qsmart-vessel-units", "qsmart-vessel-magnitude", "qsmart-offset-grid", "heidi",
-    "heidi-cone-threshold", "heidi-gradient-threshold", "no-heidi-laplacian-correction",
-    "heidi-laplacian-threshold", "heidi-gradient-mask-floor", "heidi-continuation-steps",
-    "heidi-inner-iterations", "heidi-mu-min", "heidi-tol", "no-heidi-denoise", "heidi-denoise-iterations",
-    "heidi-denoise-time-step", "heidi-denoise-conductance", "heidi-denoise-reference-itk", "heidi-te",
-    "tile-size", "tile-halo", "chisep", "r2star-qsm-r-const-3t", "decompose-n-inner", "decompose-chi-bound",
-    "decompose-unwrap-phase", "decompose-fit", "decompose-max-iterations",
-    "decompose-max-function-evaluations", "decompose-function-tolerance", "decompose-step-tolerance",
-    "decompose-optimality-tolerance", "decompose-finite-difference-step", "decompose-typical-x",
-    "chi-sep-ilsqr-dr-pos", "chi-sep-ilsqr-dr-neg", "chi-sep-ilsqr-pad", "chi-sep-ilsqr-cg-max-iter-lsqr",
-    "chi-sep-ilsqr-cg-tol-lsqr", "chi-sep-ilsqr-cg-max-iter-sa", "chi-sep-ilsqr-cg-tol-sa",
-    "chi-sep-ilsqr-d2-thr", "chi-sep-ilsqr-prc-w-i-min", "chi-sep-ilsqr-prc-w-i-max",
-    "chi-sep-ilsqr-prc-w-g-min", "chi-sep-ilsqr-prc-w-g-max", "chi-sep-ilsqr-qsm-max-iter",
-    "chi-sep-ilsqr-qsm-tol", "chi-sep-ilsqr-qsm-pad-mm", "chi-sep-ilsqr-qsm-precision", "chi-sep-medi-lambda",
-    "chi-sep-medi-lambda-csf", "chi-sep-medi-dr-pos", "chi-sep-medi-dr-neg", "chi-sep-medi-pad",
-    "chi-sep-medi-tol", "chi-sep-medi-max-iter", "chi-sep-medi-cg-tol", "chi-sep-medi-cg-max-iter",
-    "chi-sep-medi-qsm-max-iter", "chi-sep-medi-qsm-tol", "chi-sep-medi-qsm-pad-mm",
-    "chi-sep-medi-qsm-precision", "chi-sep-medi-csf-r2star", "wavesep-dr-pos", "wavesep-dr-neg",
-    "wavesep-alpha", "wavesep-lambda", "wavesep-wavelet-order", "wavesep-max-iter", "wavesep-tol",
-    "hc-chisep-dr-pos-3t", "hc-chisep-bin-hz", "chi-sepnet-route", "chi-sepnet-patch",
-    "chi-sepnet-frame-patch", "susep-net-patch", "qsm-reference", "qsm-per-echo", "swi-unwrapping",
-    "swi-hp-sigma", "swi-scaling", "swi-strength", "swi-mip-window", "swi-filtered-phase",
-    "dismiss-recommendation",
-];
-
-/// Every flag a command can say, in order: [`EMIT_ORDER`], and each registry flag it does not list
-/// after the flag of the entry before it.
-fn emit_order() -> &'static [&'static str] {
-    static ORDER: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
-        let registry: Vec<&'static str> =
-            crate::schema::settings().iter().filter_map(|s| s.cli_flag).map(|f| f.trim_start_matches("--")).collect();
-        crate::schema::cli::in_registry_place(EMIT_ORDER, &registry)
-    });
-    &ORDER
-}
-
 /// The command for `config`, with flags where it differs from `base`: QSMxT's defaults, or
 /// `pipeline`'s settings. Most flags set one registry setting ([`setting_of`]) and are said
 /// when that setting is shown and differs from `base`; the rest are spelled out below.
@@ -147,8 +44,10 @@ fn command_for(config: &PipelineConfig, base: &PipelineConfig, pipeline: Option<
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
     let (values, base_values) = (serde_json::to_value(config).unwrap_or_default(), serde_json::to_value(base).unwrap_or_default());
     let m = &config.multi_orientation;
-    for long in emit_order() {
-        let flag = PIPELINE_FLAGS.iter().find(|f| f.long == *long).expect("every flag said is in the table");
+    // In the table's order: the registry's (`schema::cli`), each opposite switch said at its
+    // switch's place.
+    for flag in PIPELINE_FLAGS.iter() {
+        let long = &flag.long;
         match *long {
             // Said first, above.
             "pipeline" => {}
