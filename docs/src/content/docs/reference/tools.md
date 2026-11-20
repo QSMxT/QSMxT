@@ -7,7 +7,9 @@ Beyond the end-to-end pipeline, QSMxT exposes each building block as a standalon
 command that reads and writes NIfTI files. These are handy for experimentation,
 teaching, scripting, or slotting a single step into another workflow.
 
-Every command takes NIfTI input and produces NIfTI output. Run
+Every command takes NIfTI input and produces NIfTI output. A method's settings are
+`qsmxt run`'s flags, with the same names, defaults and meaning (`qsmxt invert rts --rts-delta`,
+`qsmxt bgremove pdf --pdf-tol`), so a step runs here as it does in a pipeline. Run
 `qsmxt <command> --help` (and `qsmxt <command> <subcommand> --help`) for exact
 arguments.
 
@@ -21,7 +23,7 @@ Generate or refine binary masks.
 | `value` | Fixed-value thresholding |
 | `percentile` | Percentile thresholding |
 | `sti-gui` | STI Suite QSM_GUI's thresholding: the level its `thresh_tool` starts at (Otsu's threshold of the middle slice, scaled to that slice's maximum) |
-| `bet` | Brain extraction (BET); `--orientation as-stored` runs it on the voxels as stored, as MEDI's `BET.m` does |
+| `bet` | Brain extraction (BET); `--bet-orientation as-stored` runs it on the voxels as stored, as MEDI's `BET.m` does |
 | `hd-bet` | Deep-learning brain extraction (HD-BET); whole volume by default; `--window`, `--low-memory` or `--patch XxYxZ` for sliding-window patches, `--tta`. Weights are downloaded on first use |
 | `rs2-net` | Deep-learning **rodent** brain extraction (RS2-Net); `--tta`, `--tile-step`. Weights are downloaded on first use |
 | `mindgrab` | Deep-learning brain extraction for any contrast (MindGrab); `--tta`. Needs the image's NIfTI affine. Weights are downloaded on first use |
@@ -141,13 +143,13 @@ given `--te` and `--field-strength`, or an unwrapped total field in ppm without 
 file per echo), `--echo-times` and `--field-strength`: PDF weights its fit by a noise
 map made from them.
 
-`qsmxt bgremove vsharp` takes `--deconvolve <true|false>` (default `false`, as
-`qsmxt run`), `--threshold` (used only with deconvolution),
-`--max-radius`/`--min-radius`/`--radius-step` in mm, and `--grid <isotropic|native|finest>` with
-`--grid-spacing` in mm (the working grid, as `qsmxt run`'s `--vsharp-grid`).
+`qsmxt bgremove vsharp` takes `--vsharp-deconvolve <true|false>` (default `false`),
+`--vsharp-threshold` (used only with deconvolution),
+`--vsharp-max-radius`/`--vsharp-min-radius`/`--vsharp-radius-step` in mm, and
+`--vsharp-grid <isotropic|native|finest>` with `--vsharp-grid-spacing` in mm (the working grid).
 
 `qsmxt bgremove sharp --variant qsmjl` runs QSM.jl's SHARP (at QSM.jl's defaults, 18 × the smallest
-voxel dimension and 0.05, unless `--radius`/`--threshold` say otherwise), and `qsmxt bgremove vsharp
+voxel dimension and 0.05, unless `--sharp-radius`/`--sharp-threshold` say otherwise), and `qsmxt bgremove vsharp
 --ball qsmjl` QSM.jl's SMV ball, for comparison with that implementation; `qsmxt run`
 always runs the defaults.
 
@@ -207,7 +209,7 @@ with `--field-strength` and `--echo-times` (every echo's). `ndi`, `nltv`, `fansi
 `fansi-tgv`, `l1qsm`, `lsqr` and `heidi` (without `--seed`) need `--magnitude` as their data
 weight; `medi` and `tfi`
 need the magnitude of every echo (one 4D file or one file per echo). MEDI-mSMV is
-`qsmxt invert medi --msmv`.
+`qsmxt invert medi --medi-msmv`.
 
 `qsmxt invert heidi` is LSQR+HEIDI, HEIDI as published. `qsmxt invert heidi --seed chi.nii`
 instead runs HEIDI on a map another inversion made of the same field, as `qsmxt run --heidi`
@@ -243,7 +245,7 @@ Split a susceptibility map into paramagnetic and diamagnetic sources, writing
 | `wavesep` | WaveSep — QSM + R2′ |
 | `hc-chisep` | Hollow-cylinder χ-separation — QSM + R2′ + multi-echo magnitude |
 | `susep-net` | SUSEP-Net (deep learning) — QSM + R2′ + local field |
-| `chi-sepnet` | χ-sepnet (deep learning) — local field + R2′ or R2* (the authors' route; `--route native` takes a QSM too) |
+| `chi-sepnet` | χ-sepnet (deep learning) — local field + R2′ or R2* (the authors' route; `--chi-sepnet-route native` takes a QSM too) |
 
 ## Supplementary maps
 
@@ -282,7 +284,7 @@ qsmxt r2prime --r2star r2star.nii --r2primenet --field-strength 3 -m mask.nii -o
 
 | Command | Purpose |
 | --- | --- |
-| `homogeneity` | Correct intensity inhomogeneity on magnitude data, with `makehomogeneous` (default) or N4 (`--method n4`; `--n4-geometry make-nii` gives N4 the axis-aligned header MATLAB's `make_nii` writes, as QSMART does) |
+| `homogeneity` | Correct intensity inhomogeneity on magnitude data, with `makehomogeneous` (default) or N4 (`--inhomogeneity-method n4`; `--n4-geometry make-nii` gives N4 the axis-aligned header MATLAB's `make_nii` writes, as QSMART does) |
 | `resample` | Resample an oblique volume to axial orientation. Continuous data (magnitude, an unwrapped field, χ) as a positional argument; **wrapped phase needs `--phase` with `--magnitude`** so the interpolation goes through the complex domain |
 
 ```sh

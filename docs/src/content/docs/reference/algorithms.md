@@ -228,7 +228,7 @@ extractors and `signal-erode` do not depend on that scale, but a
 `threshold:fixed:<v>` or `min-intensity:<v>` step on a magnitude input does:
 choose `<v>` for the method in use.
 
-`qsmxt homogeneity` runs either on a single image (`--method makehomogeneous|n4`,
+`qsmxt homogeneity` runs either on a single image (`--inhomogeneity-method makehomogeneous|n4`,
 with the same N4 options).
 
 ## Oblique acquisitions
@@ -1442,7 +1442,7 @@ of those, R2PRIMEnet's prediction from R2\* (3 T only); see
   always runs its NNLS fit; `--pipeline chi-sep-medi` uses `nnls`. It needs the magnitude of
   every echo. The standalone `qsmxt separate chi-sep-medi --csf-mask` takes a CSF mask file
   instead, or `none` for no CSF term, as the toolbox's GUI runs without a CSF mask
-  (`--csf-r2star` picks the R2\* otherwise).
+  (`--chi-sep-medi-csf-r2star` picks the R2\* otherwise).
 
 Their relaxometric constants D_r default to the toolbox's 137 × B0 / 2.9 T Hz/ppm (141.7 at
 3 T); `--chi-sep-ilsqr-dr-pos` / `-dr-neg` and `--chi-sep-medi-dr-pos` / `-dr-neg` set them
