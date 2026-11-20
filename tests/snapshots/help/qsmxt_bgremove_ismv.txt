@@ -21,17 +21,17 @@ Options:
       --output-mask <OUTPUT_MASK>
           Output eroded mask (for algorithms that erode)
 
-      --variant <VARIANT>
-          Implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014)
+      --ismv-variant <VARIANT>
+          iSMV implementation: wen2014 (the authors' paper and code) or qsmjl (QSM.jl's) (default: wen2014)
 
-      --tol <TOL>
-          Tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5)
+      --ismv-tol <ISMV_TOL>
+          iSMV tolerance: the relative change between iterates it stops at (qsmjl: the residual relative to the first) (default: 5e-5)
 
-      --max-iter <MAX_ITER>
-          Max iterations (default: no limit)
+      --ismv-max-iter <ISMV_MAX_ITER>
+          iSMV max iterations (default: no limit)
 
-      --radius <RADIUS>
-          Kernel radius in mm (default: 6 × the smallest voxel dimension; qsmjl: 2 × the largest)
+      --ismv-radius <MM>
+          iSMV kernel radius in mm, or auto for 6 × the smallest voxel dimension (qsmjl: 2 × the largest) (default: auto)
 
   -h, --help
           Print help

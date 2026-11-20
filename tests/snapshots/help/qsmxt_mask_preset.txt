@@ -24,8 +24,20 @@ Options:
       --phase <PHASE>
           Phase image (3-D, or 4-D multi-echo): the mask leaves out voxels where the scanner recorded no phase (a constant value in every echo), as `qsmxt run` does for every recipe. A phase-quality map rates that flat phase as reliable, so give this with `--quality`
 
+      --bet-smoothness <BET_SMOOTHNESS>
+          BET surface smoothness factor. Applies to every BET step in the masking recipe (default: 1)
+
+      --bet-gradient-threshold <BET_GRADIENT_THRESHOLD>
+          BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe (default: 0)
+
+      --bet-iterations <BET_ITERATIONS>
+          BET surface evolution iterations. Applies to every BET step in the masking recipe (default: 1000)
+
+      --bet-subdivisions <BET_SUBDIVISIONS>
+          BET icosphere subdivision level. Applies to every BET step in the masking recipe (default: 4)
+
       --bet-orientation <ORIENTATION>
-          Which way round the recipe's BET steps see the left-right axis: fsl (default) or as-stored (see `run --bet-orientation`)
+          Which way round BET sees the left-right axis: `fsl` (the default; reversed for a neurologically stored image, as FSL's bet reads a NIfTI file) or `as-stored` (the voxels in the order they are stored, as MEDI's BET.m runs bet2). Applies to every BET step in the masking recipe
 
   -h, --help
           Print help

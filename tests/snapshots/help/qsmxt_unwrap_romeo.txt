@@ -16,6 +16,21 @@ Options:
       --magnitude <MAGNITUDE>
           Magnitude image (improves quality)
 
+      --romeo-individual
+          ROMEO: unwrap each echo on its own (individual mode, for motion or time series)
+
+      --no-romeo-individual
+          ROMEO: unwrap the template echo spatially and the others temporally from it (default)
+
+      --romeo-template <ROMEO_TEMPLATE>
+          ROMEO: template echo index (1-indexed, only for template mode) (default: 1)
+
+      --romeo-correct-global
+          ROMEO: correct global 2π offsets, of each echo and between echoes (default: off)
+
+      --no-romeo-correct-global
+          ROMEO: do not correct global 2π offsets (default)
+
       --no-romeo-phase-coherence
           ROMEO: disable phase coherence weights (default: on)
 
@@ -43,26 +58,11 @@ Options:
       --romeo-bestpath
           ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off)
 
-      --romeo-template <ROMEO_TEMPLATE>
-          ROMEO: template echo index (1-indexed, only for template mode)
-
-      --romeo-individual
-          ROMEO: unwrap each echo on its own (individual mode, for motion or time series)
-
-      --no-romeo-individual
-          ROMEO: unwrap the template echo spatially and the others temporally from it (default)
-
-      --romeo-correct-global
-          ROMEO: correct global 2π offsets, of each echo and between echoes (default: off)
-
-      --no-romeo-correct-global
-          ROMEO: do not correct global 2π offsets (default)
-
       --romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>
           ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0)
 
       --romeo-max-seeds <ROMEO_MAX_SEEDS>
-          ROMEO: maximum number of seed regions (default: 1)
+          ROMEO: Maximum number of seed regions (default: 1)
 
       --romeo-merge-regions
           ROMEO: merge neighboring regions after unwrapping (default: off)

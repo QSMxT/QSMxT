@@ -32,38 +32,38 @@ Options:
 
           [default: 3]
 
-      --wave-order <WAVE_ORDER>
-          Daubechies wavelet order (1=db1, 2=db2)
+      --amp-pe-wave-order <AMP_PE_WAVE_ORDER>
+          AMP-PE: Daubechies wavelet order (1=db1, 2=db2) (default: 1)
 
-      --nlevel <NLEVEL>
-          Wavelet decomposition levels
+      --amp-pe-nlevel <AMP_PE_NLEVEL>
+          AMP-PE: Wavelet decomposition levels (default: 3)
 
-      --wave-pec <WAVE_PEC>
-          Morphology-mask energy retention fraction (0.0-1.0)
+      --amp-pe-wave-pec <AMP_PE_WAVE_PEC>
+          AMP-PE: Morphology-mask energy retention fraction (0.0-1.0) (default: 0.85)
 
-      --simulated-te <SIMULATED_TE>
-          Simulated echo time (s) used to turn the field into phase
+      --amp-pe-simulated-te <AMP_PE_SIMULATED_TE>
+          AMP-PE simulated echo time (s) used to turn the field into phase (default: 0.008)
 
-      --max-linearization-ite <MAX_LINEARIZATION_ITE>
-          Linearization iterations per stage
+      --amp-pe-max-linearization-ite <AMP_PE_MAX_LINEARIZATION_ITE>
+          AMP-PE: Linearisation iterations per stage (default: 25)
 
-      --damp-rate-sig <DAMP_RATE_SIG>
-          GAMP signal-update damping rate
+      --amp-pe-tikhonov-beta <AMP_PE_TIKHONOV_BETA>
+          AMP-PE: L2-seed Tikhonov weight (default: 0.02)
 
-      --damp-rate-par <DAMP_RATE_PAR>
-          Parameter-estimation learning rate (kappa)
+      --amp-pe-damp-rate-sig <AMP_PE_DAMP_RATE_SIG>
+          AMP-PE: GAMP signal-update damping rate (default: 0.01)
 
-      --max-pe-spar-ite <MAX_PE_SPAR_ITE>
-          Inner sparse-reconstruction iterations
+      --amp-pe-damp-rate-par <AMP_PE_DAMP_RATE_PAR>
+          AMP-PE: Parameter-estimation learning rate (kappa) (default: 0.1)
 
-      --max-pe-est-ite <MAX_PE_EST_ITE>
-          Inner parameter-estimation iterations
+      --amp-pe-max-pe-spar-ite <AMP_PE_MAX_PE_SPAR_ITE>
+          AMP-PE: Inner sparse-reconstruction iterations (default: 5)
 
-      --cvg-thd <CVG_THD>
-          GAMP inner convergence threshold
+      --amp-pe-max-pe-est-ite <AMP_PE_MAX_PE_EST_ITE>
+          AMP-PE: Inner parameter-estimation iterations (default: 5)
 
-      --tikhonov-beta <TIKHONOV_BETA>
-          L2-seed Tikhonov weight
+      --amp-pe-cvg-thd <AMP_PE_CVG_THD>
+          AMP-PE: GAMP inner convergence threshold (default: 1e-6)
 
   -h, --help
           Print help

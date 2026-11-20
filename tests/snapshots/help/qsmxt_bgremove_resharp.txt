@@ -21,17 +21,17 @@ Options:
       --output-mask <OUTPUT_MASK>
           Output eroded mask (for algorithms that erode)
 
-      --radius <RADIUS>
-          SMV kernel radius in mm
+      --resharp-radius <RESHARP_RADIUS>
+          RESHARP: SMV kernel radius, in mm (default: 3)
 
-      --tik-reg <TIK_REG>
-          Tikhonov regularization parameter
+      --resharp-tik-reg <RESHARP_TIK_REG>
+          RESHARP: Tikhonov regularisation parameter (default: 0.0001)
 
-      --tol <TOL>
-          Conjugate gradients squared (CGS) relative tolerance
+      --resharp-tol <RESHARP_TOL>
+          RESHARP conjugate gradients squared (CGS) relative tolerance (default: 1e-6)
 
-      --max-iter <MAX_ITER>
-          Maximum CGS iterations
+      --resharp-max-iter <RESHARP_MAX_ITER>
+          RESHARP: Maximum CGS iterations (default: 200)
 
   -h, --help
           Print help

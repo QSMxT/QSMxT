@@ -30,38 +30,38 @@ Options:
       --echo-times <ECHO_TIMES>...
           Echo times in seconds, every echo's, in order
 
-      --alpha1 <ALPHA1>
-          TV regularization weight (alpha1)
-
-      --mu1 <MU1>
-          ADMM penalty for TV splitting (mu1)
-
-      --mu2 <MU2>
-          ADMM penalty for data-fidelity splitting (mu2)
-
-      --beta <BETA>
-          Weak-harmonic ROI penalty (beta)
-
-      --muh <MUH>
-          ADMM penalty for harmonic-field splitting (muh)
-
-      --max-iter <MAX_ITER>
-          Max iterations
-
-      --tol-update <TOL_UPDATE>
-          Percent-update convergence tolerance
-
-      --tol-delta <TOL_DELTA>
-          Inner Newton convergence tolerance
-
-      --weight <WEIGHT>
-          Data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need --magnitude (default: flat)
-
       --magnitude <MAGNITUDE>...
           Magnitude NIfTI, for a magnitude data weight (--weight): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
 
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
+      --whqsm-alpha1 <WHQSM_ALPHA1>
+          WH-QSM TV regularization weight (alpha1) (default: 0.0002)
+
+      --whqsm-mu1 <WHQSM_MU1>
+          WH-QSM ADMM penalty for TV splitting (mu1) (default: 0.02)
+
+      --whqsm-mu2 <WHQSM_MU2>
+          WH-QSM ADMM penalty for data-fidelity splitting (mu2) (default: 1)
+
+      --whqsm-beta <WHQSM_BETA>
+          WH-QSM weak-harmonic ROI penalty (beta) (default: 150)
+
+      --whqsm-muh <WHQSM_MUH>
+          WH-QSM ADMM penalty for harmonic-field splitting (muh) (default: 5)
+
+      --whqsm-max-iter <WHQSM_MAX_ITER>
+          WH-QSM: Maximum outer iterations (default: 150)
+
+      --whqsm-tol-update <WHQSM_TOL_UPDATE>
+          WH-QSM: Percent-update stopping tolerance (default: 0.1)
+
+      --whqsm-tol-delta <WHQSM_TOL_DELTA>
+          WH-QSM: Inner Newton stopping tolerance (default: 1e-6)
+
+      --whqsm-weight <WEIGHT>
+          WH-QSM data weight: flat (1 over the whole volume, WH_nlTV.m's default), flat-in-mask (1 inside the mask only), max-normalised (the magnitude over its maximum) or in-vivo (min(2 × magnitude / maximum, 1)); the last two need magnitude images (default: flat)
+
+      --whqsm-te <TE>
+          WH-QSM: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: first)
 
   -h, --help
           Print help

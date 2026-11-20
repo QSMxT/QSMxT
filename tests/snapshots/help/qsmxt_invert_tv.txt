@@ -24,20 +24,20 @@ Options:
       --tile-halo <TILE_HALO>
           DL tiling: context margin per side, in voxels (default 8)
 
-      --lambda <LAMBDA>
-          Lambda parameter (default: 0.0003)
+      --tv-lambda <TV_LAMBDA>
+          TV-ADMM: L1 regularisation weight (larger = smoother) (default: 0.0003)
 
-      --rho <RHO>
-          Rho (ADMM penalty), or auto for 100 × lambda (default: auto)
+      --tv-rho <RHO>
+          TV rho (ADMM penalty), or auto for 100 × lambda (default: auto)
 
-      --tol <TOL>
-          Tolerance
+      --tv-tol <TV_TOL>
+          TV-ADMM: Convergence tolerance (default: 0.001)
 
-      --max-iter <MAX_ITER>
-          Max iterations
+      --tv-max-iter <TV_MAX_ITER>
+          TV-ADMM: Maximum ADMM iterations (default: 250)
 
-      --pad <X> <Y> <Z>
-          Zero-padding before the FFTs in voxels, X Y Z: at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded (default: 0 0 0)
+      --tv-pad <X> <Y> <Z>
+          TV-ADMM: Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded, in voxels (default: 0 0 0)
 
   -h, --help
           Print help

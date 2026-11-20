@@ -39,10 +39,10 @@ Options:
           Do not fit a global field offset alongside χ
 
       --lsqr-tol <LSQR_TOL>
-          LSQR convergence tolerance
+          LSQR convergence tolerance (default: 1e-5)
 
       --lsqr-max-iter <LSQR_MAX_ITER>
-          LSQR max iterations
+          LSQR: Maximum LSQR iterations (default: 400)
 
   -h, --help
           Print help

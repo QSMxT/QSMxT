@@ -24,17 +24,17 @@ Options:
       --tile-halo <TILE_HALO>
           DL tiling: context margin per side, in voxels (default 8)
 
-      --tol <TOL>
-          Tolerance
+      --ilsqr-tol <ILSQR_TOL>
+          iLSQR tolerance of the streaking-artefact solve (default: 0.001)
 
-      --max-iter <MAX_ITER>
-          Max iterations of each LSQR solve (default: 100)
+      --ilsqr-max-iter <ILSQR_MAX_ITER>
+          iLSQR max iterations of each LSQR solve (default: 100)
 
-      --pad-mm <MM>
-          Zero-padding in mm per side
+      --ilsqr-pad-mm <MM>
+          iLSQR zero-padding in mm per side (default: 12)
 
-      --precision <PRECISION>
-          Arithmetic of the two LSQR solves: double, or single as the original implementation (default: double)
+      --ilsqr-precision <PRECISION>
+          iLSQR arithmetic of the two LSQR solves: double, or single as the original implementation (default: double)
 
   -h, --help
           Print help

@@ -27,26 +27,26 @@ Options:
       --echo-times <ECHO_TIMES>...
           Echo times in seconds, every echo's, in order
 
-      --tol <TOL>
-          Tolerance: stop the coarsest grid's relaxation when its summed absolute update falls below this, in radians over the echo spacing (default: 0.01)
+      --lbv-tol <LBV_TOL>
+          LBV tolerance: stop the coarsest grid's relaxation when its summed absolute update falls below this, in radians over the echo spacing (default: 0.01)
 
-      --depth <LEVEL>
-          Coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3)
+      --lbv-depth <LEVEL>
+          LBV coarsest multigrid level, at most 8 (default: log2 of the smallest dimension minus 3)
 
-      --peel <LAYERS>
-          Boundary layers removed from the mask beyond the first (default: 0)
+      --lbv-peel <LAYERS>
+          LBV: Boundary layers removed from the mask beyond the first, in voxels (default: 0)
 
-      --n1 <N1>
-          Relaxations on each grid before the coarser grid (default: 30)
+      --lbv-n1 <LBV_N1>
+          LBV: Relaxations on each grid before the coarser grid (default: 30)
 
-      --n2 <N2>
-          Relaxations on each grid after the coarser grid (default: 100)
+      --lbv-n2 <LBV_N2>
+          LBV: Relaxations on each grid after the coarser grid (default: 100)
 
-      --n3 <N3>
-          Relaxations on the finest grid at the end (default: 100)
+      --lbv-n3 <LBV_N3>
+          LBV: Relaxations on the finest grid at the end (default: 100)
 
-      --precision <PRECISION>
-          Arithmetic: double, or single as the original implementation (default: double)
+      --lbv-precision <PRECISION>
+          LBV arithmetic: double, or single as the original implementation (default: double)
 
   -h, --help
           Print help

@@ -1,6 +1,6 @@
 ## Command
 
-qsmxt run <bids_dir> --do-swi --do-analysis --do-smwi --do-t2starmap --do-r2primemap --do-chisep --export-dicom --motion-correction --two-pass
+qsmxt run <bids_dir> --two-pass --motion-correction --do-chisep --do-swi --do-smwi --do-t2starmap --do-r2primemap --do-analysis --export-dicom
 
 ## Config hash
 

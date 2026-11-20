@@ -37,35 +37,35 @@ Options:
       --csf-mask <FILE|none>
           CSF mask NIfTI for the CSF-uniformity term, or `none` for no CSF term (the toolbox's GUI without a CSF mask) (default: the CSF found from R2* of the echoes, as the toolbox's script does; see --csf-r2star)
 
-      --csf-r2star <METHOD>
-          The R2* the CSF mask is found from when no --csf-mask is given: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs)
+      --chi-sep-medi-lambda <CHI_SEP_MEDI_LAMBDA>
+          χ-sep MEDI weight of the data terms against the L1 terms (default: 1)
 
-      --lambda <LAMBDA>
-          Weight of the data terms against the L1 terms (default: 1)
+      --chi-sep-medi-lambda-csf <CHI_SEP_MEDI_LAMBDA_CSF>
+          χ-sep MEDI weight of the CSF-uniformity term (default: 1)
 
-      --lambda-csf <LAMBDA_CSF>
-          Weight of the CSF-uniformity term (default: 1)
+      --chi-sep-medi-dr-pos <HZ_PER_PPM>
+          χ-sep MEDI paramagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto)
 
-      --dr-pos <DR_POS>
-          Paramagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
+      --chi-sep-medi-dr-neg <HZ_PER_PPM>
+          χ-sep MEDI diamagnetic relaxometric constant (Hz/ppm), or auto for 137 × B0 / 2.9 T (default: auto)
 
-      --dr-neg <DR_NEG>
-          Diamagnetic relaxometric constant (Hz/ppm) (default: 137 × B0 / 2.9 T)
+      --chi-sep-medi-pad <CHI_SEP_MEDI_PAD>
+          χ-sep MEDI zero-padding at both ends of the third axis, in voxels (default: 5)
 
-      --pad <PAD>
-          Zero-padding at both ends of the third axis, in voxels (default: 5)
+      --chi-sep-medi-tol <CHI_SEP_MEDI_TOL>
+          χ-sep MEDI: stop when the relative change falls below this (default: 0.03)
 
-      --tol <TOL>
-          Stop when the relative change falls below this (default: 0.03)
+      --chi-sep-medi-max-iter <CHI_SEP_MEDI_MAX_ITER>
+          χ-sep MEDI maximum Gauss-Newton iterations (default: 30)
 
-      --max-iter <MAX_ITER>
-          Maximum Gauss-Newton iterations (default: 30)
+      --chi-sep-medi-cg-tol <CHI_SEP_MEDI_CG_TOL>
+          χ-sep MEDI inner CG tolerance (default: 0.05)
 
-      --cg-tol <CG_TOL>
-          Inner CG tolerance (default: 0.05)
+      --chi-sep-medi-cg-max-iter <CHI_SEP_MEDI_CG_MAX_ITER>
+          χ-sep MEDI inner CG max iterations (default: 100)
 
-      --cg-max-iter <CG_MAX_ITER>
-          Inner CG max iterations (default: 100)
+      --chi-sep-medi-csf-r2star <METHOD>
+          χ-sep MEDI: the R2* its CSF mask is extracted from: arlo (MEDI's ARLO; the default) or nnls (the χ-separation toolbox's r2star_nnls, which its script runs)
 
   -h, --help
           Print help

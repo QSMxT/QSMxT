@@ -30,23 +30,23 @@ Options:
       --magnitude <MAGNITUDE>...
           Magnitude of every echo (the data weight is their echo-time-weighted combination): one 4D NIfTI, or one 3D NIfTI per echo in echo order
 
-      --alpha-l2 <ALPHA_L2>
-          L2-stage TV weight (alpha_l2)
+      --hdqsm-alpha-l2 <HDQSM_ALPHA_L2>
+          HD-QSM L2-stage TV weight (alpha_l2) (default: 3e-5)
 
-      --mu1-l2 <MU1_L2>
-          L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto)
+      --hdqsm-mu1-l2 <MU1_L2>
+          HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2), or auto for 100 × alpha_l2 (default: auto)
 
-      --mu2 <MU2>
-          Fidelity consistency weight (mu2)
+      --hdqsm-mu2 <HDQSM_MU2>
+          HD-QSM fidelity consistency weight (mu2) (default: 1)
 
-      --max-iter-l1 <MAX_ITER_L1>
-          Stage-1 (L1) iterations (max_iter_l1)
+      --hdqsm-max-iter-l1 <HDQSM_MAX_ITER_L1>
+          HD-QSM stage-1 (L1) iterations (max_iter_l1) (default: 20)
 
-      --max-iter-l2 <MAX_ITER_L2>
-          Stage-2 (L2) iterations (max_iter_l2)
+      --hdqsm-max-iter-l2 <HDQSM_MAX_ITER_L2>
+          HD-QSM stage-2 (L2) iterations (max_iter_l2) (default: 80)
 
-      --tol-update <TOL_UPDATE>
-          Stage-2 percent-update convergence tolerance
+      --hdqsm-tol-update <HDQSM_TOL_UPDATE>
+          HD-QSM stage-2 percent-update convergence tolerance (default: 0.01)
 
   -h, --help
           Print help

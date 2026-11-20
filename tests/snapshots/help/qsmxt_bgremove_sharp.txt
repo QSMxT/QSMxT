@@ -21,16 +21,16 @@ Options:
       --output-mask <OUTPUT_MASK>
           Output eroded mask (for algorithms that erode)
 
-      --threshold <THRESHOLD>
-          Deconvolution (TSVD) threshold (default: 0.03; qsmjl: 0.05)
-
-      --radius <RADIUS>
-          Sphere radius in mm (default: 4; qsmjl: 18 × the smallest voxel dimension)
-
       --variant <VARIANT>
           Implementation: sepia (SEPIA's SHARP.m, the default) or qsmjl (QSM.jl's `sharp`, with its own defaults)
 
           [possible values: sepia, qsmjl]
+
+      --sharp-threshold <SHARP_THRESHOLD>
+          SHARP: Deconvolution threshold (default: 0.03)
+
+      --sharp-radius <SHARP_RADIUS>
+          SHARP: SMV kernel radius, in mm (default: 4)
 
   -h, --help
           Print help

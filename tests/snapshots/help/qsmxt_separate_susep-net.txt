@@ -28,8 +28,8 @@ Options:
       --r2prime <R2PRIME>
           R2' map NIfTI in Hz
 
-      --patch <D> <H> <W>
-          Sliding-window patch in voxels, D H W, each a multiple of 8 (default: the whole volume at once)
+      --susep-net-patch <D> <H> <W>
+          Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once
 
   -h, --help
           Print help

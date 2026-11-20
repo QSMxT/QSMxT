@@ -37,11 +37,11 @@ Options:
       --se-echo-times <SE_ECHO_TIMES>...
           Spin-echo times in seconds (comma-separated) for --se-magnitude
 
-      --dr-pos-3t <DR_POS_3T>
-          Paramagnetic relaxivity at 3T (Hz/ppm)
+      --hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>
+          HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) (default: 137)
 
-      --bin-hz <BIN_HZ>
-          R2' bin width for the anchored grid search (Hz)
+      --hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>
+          HC-ChiSep R2' bin width for the anchored grid search (Hz) (default: 0.25)
 
   -h, --help
           Print help

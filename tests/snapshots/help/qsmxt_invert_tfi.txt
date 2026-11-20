@@ -33,43 +33,6 @@ Options:
       --magnitude <MAGNITUDE>...
           Magnitude of every echo: one 4D NIfTI, or one 3D NIfTI per echo in echo order
 
-      --lambda <LAMBDA>
-          Lambda: the data-fidelity weight (larger fits the field more closely)
-
-      --precond <PRECOND>
-          Preconditioner value (susceptibility scaling outside the mask)
-
-      --merit <MERIT>
-          Enable MERIT weighting (default: true)
-
-          [possible values: true, false]
-
-      --linear <LINEAR>
-          Fit the field linearly, as the TFI paper does (default: true); false uses MEDI's exponential data term
-
-          [possible values: true, false]
-
-      --data-weighting <DATA_WEIGHTING>
-          Data weighting mode (0=uniform, 1=SNR)
-
-      --percentage <PERCENTAGE>
-          Edge percentage (0.0-1.0)
-
-      --cg-tol <CG_TOL>
-          CG tolerance
-
-      --cg-max-iter <CG_MAX_ITER>
-          CG max iterations
-
-      --max-iter <MAX_ITER>
-          Max outer iterations
-
-      --tol <TOL>
-          Outer tolerance
-
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)
-
       --kernel <KERNEL>
           Dipole kernel on a grid with an odd number of voxels along an axis: default samples the dipole on the Fourier grid; original samples it half a frequency step off, as the original implementation does, for comparison with it. Identical on even grids (default: default)
 
@@ -79,6 +42,43 @@ Options:
           Arithmetic: double, or single as the original implementation runs, for comparison with it (default: double)
 
           [possible values: double, single]
+
+      --tfi-lambda <TFI_LAMBDA>
+          TFI lambda: the data-fidelity weight (larger fits the field more closely) (default: 1000)
+
+      --tfi-precond <TFI_PRECOND>
+          TFI: Preconditioner value (susceptibility scaling outside the mask) (default: 30)
+
+      --tfi-percentage <TFI_PERCENTAGE>
+          TFI edge percentage (0.0-1.0) (default: 0.9)
+
+      --tfi-max-iter <TFI_MAX_ITER>
+          TFI: Maximum outer iterations (default: 10)
+
+      --tfi-cg-max-iter <TFI_CG_MAX_ITER>
+          TFI: Maximum conjugate gradient iterations (default: 100)
+
+      --tfi-cg-tol <TFI_CG_TOL>
+          TFI: CG convergence tolerance (default: 0.01)
+
+      --tfi-tol <TFI_TOL>
+          TFI: Outer convergence tolerance (default: 0.1)
+
+      --tfi-merit <TFI_MERIT>
+          TFI: enable MERIT weighting (default: true)
+
+          [possible values: true, false]
+
+      --tfi-linear <TFI_LINEAR>
+          TFI: fit the field linearly, as the TFI paper does (default: true); false uses MEDI's exponential data term
+
+          [possible values: true, false]
+
+      --tfi-data-weighting <TFI_DATA_WEIGHTING>
+          TFI: data weighting mode (0=uniform, 1=SNR) (default: 1)
+
+      --tfi-te <TE>
+          TFI: the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)
 
   -h, --help
           Print help

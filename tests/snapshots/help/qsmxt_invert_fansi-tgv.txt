@@ -33,32 +33,32 @@ Options:
       --magnitude <MAGNITUDE>...
           Magnitude NIfTI, the data weight (required): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined
 
-      --alpha1 <ALPHA1>
-          First-order (TGV gradient) L1 penalty weight (alpha1)
+      --fansi-alpha1 <FANSI_ALPHA1>
+          FANSI first-order (TV/TGV) L1 penalty weight (alpha1) (default: 0.0002)
 
-      --mu1 <MU1>
-          Gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
+      --fansi-mu1 <MU1>
+          FANSI gradient-consistency ADMM weight (mu1), or auto for 100 × alpha1 (default: auto)
 
-      --mu2 <MU2>
-          Fidelity-consistency ADMM weight (mu2)
+      --fansi-mu2 <FANSI_MU2>
+          FANSI fidelity-consistency ADMM weight (mu2) (default: 1)
 
-      --alpha0 <ALPHA0>
-          Second-order L1 penalty weight (alpha0), or auto for 2 × alpha1 (default: auto)
+      --fansi-alpha0 <ALPHA0>
+          FANSI second-order L1 penalty weight (alpha0, nlTGV only), or auto for 2 × alpha1 (default: auto)
 
-      --mu0 <MU0>
-          Second-order consistency ADMM weight (mu0), or auto for 2 × mu1 (default: auto)
+      --fansi-mu0 <MU0>
+          FANSI second-order consistency ADMM weight (mu0, nlTGV only), or auto for 2 × mu1 (default: auto)
 
-      --max-iter <MAX_ITER>
-          Max iterations
+      --fansi-max-iter <FANSI_MAX_ITER>
+          FANSI: Number of outer ADMM iterations (default: 150)
 
-      --tol-update <TOL_UPDATE>
-          Percent-update convergence tolerance
+      --fansi-tol-update <FANSI_TOL_UPDATE>
+          FANSI: Percent-update stopping tolerance (default: 0.1)
 
-      --tol-delta <TOL_DELTA>
-          Inner Newton convergence tolerance
+      --fansi-tol-delta <FANSI_TOL_DELTA>
+          FANSI: Inner Newton convergence tolerance (default: 1e-6)
 
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)
+      --fansi-te <TE>
+          FANSI (nlTV and nlTGV): the echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: spacing)
 
   -h, --help
           Print help

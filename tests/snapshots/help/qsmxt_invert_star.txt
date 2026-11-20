@@ -30,11 +30,11 @@ Options:
       --echo-times <ECHO_TIMES>...
           Echo times in seconds, every echo's, in order
 
-      --pad <X> <Y> <Z>
-          Zero-padding in voxels per side, X Y Z (default: 8 8 20)
+      --star-pad <X> <Y> <Z>
+          STAR-QSM zero-padding in voxels per side, X Y Z (default: 8 8 20)
 
-      --te <TE>
-          Echo time the field is converted to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum)
+      --star-te <TE>
+          Echo time STAR-QSM converts the field to phase at: first, last, spacing (TE2 - TE1), sum (of the echo times), or a time in ms (default: sum)
 
   -h, --help
           Print help
