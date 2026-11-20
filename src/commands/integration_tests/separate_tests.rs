@@ -13,7 +13,7 @@ fn separate_common(dir: &Path, prefix: &str) -> SeparateCommonArgs {
         qsm,
         mask,
         output: dir.join(prefix),
-        field_strength: 3.0,
+        field_strength: Some(3.0),
         b0_direction: vec![0.0, 0.0, 1.0],
     }
 }
@@ -59,7 +59,7 @@ fn separate_chi_sepnet_refuses_a_bad_frame_patch_first() {
     use clap::Parser;
     let cli = crate::cli::Cli::try_parse_from([
         "qsmxt", "separate", "chi-sepnet", "--local-field", "absent.nii", "--mask", "absent.nii",
-        "--r2star", "absent.nii", "--output", "out", "--frame-patch", "100", "128", "64",
+        "--r2star", "absent.nii", "--field-strength", "3", "--output", "out", "--frame-patch", "100", "128", "64",
     ]).unwrap();
     let crate::cli::Command::Separate { command } = cli.command else { panic!() };
     let e = super::separate::execute(command).unwrap_err().to_string();

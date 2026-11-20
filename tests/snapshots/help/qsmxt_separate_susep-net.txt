@@ -12,11 +12,6 @@ Options:
   -o, --output <OUTPUT>
           Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
 
-      --field-strength <FIELD_STRENGTH>
-          B0 field strength in Tesla
-
-          [default: 3]
-
       --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
           B0 direction (3 values)
 

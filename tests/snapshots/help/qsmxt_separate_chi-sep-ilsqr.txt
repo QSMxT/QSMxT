@@ -1,6 +1,6 @@
 χ-separation iLSQR (Shin 2021) — local field + R2' + QSM
 
-Usage: qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME>
+Usage: qsmxt separate chi-sep-ilsqr [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> --local-field <LOCAL_FIELD> --r2prime <R2PRIME> --field-strength <FIELD_STRENGTH>
 
 Options:
       --qsm <QSM>
@@ -14,8 +14,6 @@ Options:
 
       --field-strength <FIELD_STRENGTH>
           B0 field strength in Tesla
-
-          [default: 3]
 
       --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
           B0 direction (3 values)

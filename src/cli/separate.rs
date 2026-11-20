@@ -30,9 +30,11 @@ pub struct SeparateCommonArgs {
     /// and {prefix}_desc-total_Chimap.nii — the pipeline's names
     #[arg(short, long)]
     pub output: PathBuf,
+    // Required (each method's `mut_arg`) by every method that uses it, so no method assumes 3 T;
+    // WaveSep and SUSEP-Net do not use it, and there it is accepted but hidden.
     /// B0 field strength in Tesla
-    #[arg(long, default_value_t = 3.0)]
-    pub field_strength: f64,
+    #[arg(long)]
+    pub field_strength: Option<f64>,
     /// B0 direction (3 values)
     #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
     pub b0_direction: Vec<f64>,
@@ -60,6 +62,7 @@ pub enum SeparateCommand {
 }
 
 #[derive(Parser, Debug)]
+#[command(mut_arg("field_strength", |a| a.hide(true)))]
 pub struct SeparateSusepNetArgs {
     #[command(flatten)]
     pub common: SeparateCommonArgs,
@@ -84,9 +87,11 @@ pub struct SeparateChiSepNetArgs {
     /// and {prefix}_desc-total_Chimap.nii — the pipeline's names
     #[arg(short, long)]
     pub output: PathBuf,
-    /// B0 field strength in Tesla
-    #[arg(long, default_value_t = 3.0)]
-    pub field_strength: f64,
+    /// B0 field strength in Tesla; required with --r2star (R2PRIMEnet refuses a field strength
+    /// other than 3 T unless --r2primenet-ignore-field-mismatch is given). χ-sepnet itself does
+    /// not use it
+    #[arg(long)]
+    pub field_strength: Option<f64>,
     /// B0 direction (3 values)
     #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
     pub b0_direction: Vec<f64>,
@@ -96,8 +101,9 @@ pub struct SeparateChiSepNetArgs {
     /// R2' map NIfTI in Hz (χ-sepnet-R2')
     #[arg(long)]
     pub r2prime: Option<PathBuf>,
-    /// R2* map NIfTI in Hz (χ-sepnet-R2*: R2' predicted by R2PRIMEnet; `--route toolbox` only)
-    #[arg(long)]
+    /// R2* map NIfTI in Hz (χ-sepnet-R2*: R2' predicted by R2PRIMEnet; `--route toolbox` only).
+    /// Needs --field-strength
+    #[arg(long, requires = "field_strength")]
     pub r2star: Option<PathBuf>,
     /// Conventional QSM (χ_total) NIfTI in ppm; `--route native` only (the toolbox route makes its
     /// own with QSMnetME)
@@ -109,6 +115,7 @@ pub struct SeparateChiSepNetArgs {
 }
 
 #[derive(Parser, Debug)]
+#[command(mut_arg("field_strength", |a| a.required(true)))]
 #[command(group(clap::ArgGroup::new("r2star_source").required(true).args(["r2star", "magnitude"])))]
 pub struct SeparateR2starQsmArgs {
     #[command(flatten)]
@@ -128,6 +135,7 @@ pub struct SeparateR2starQsmArgs {
 }
 
 #[derive(Parser, Debug)]
+#[command(mut_arg("field_strength", |a| a.required(true)))]
 pub struct SeparateDecomposeArgs {
     #[command(flatten)]
     pub common: SeparateCommonArgs,
@@ -147,6 +155,7 @@ pub struct SeparateDecomposeArgs {
 }
 
 #[derive(Parser, Debug)]
+#[command(mut_arg("field_strength", |a| a.required(true)))]
 pub struct SeparateChiSepIlsqrArgs {
     #[command(flatten)]
     pub common: SeparateCommonArgs,
@@ -165,6 +174,7 @@ pub struct SeparateChiSepIlsqrArgs {
 /// magnitude, and its CSF term reads a CSF mask made from R2* of the echoes (ARLO, or the
 /// χ-separation toolbox's NNLS fit), so it takes the echoes' magnitudes and echo times.
 #[derive(Parser, Debug)]
+#[command(mut_arg("field_strength", |a| a.required(true)))]
 pub struct SeparateChiSepMediArgs {
     #[command(flatten)]
     pub common: SeparateCommonArgs,
@@ -191,6 +201,7 @@ pub struct SeparateChiSepMediArgs {
 }
 
 #[derive(Parser, Debug)]
+#[command(mut_arg("field_strength", |a| a.hide(true)))]
 pub struct SeparateWavesepArgs {
     #[command(flatten)]
     pub common: SeparateCommonArgs,
@@ -203,6 +214,7 @@ pub struct SeparateWavesepArgs {
 }
 
 #[derive(Parser, Debug)]
+#[command(mut_arg("field_strength", |a| a.required(true)))]
 pub struct SeparateHcChisepArgs {
     #[command(flatten)]
     pub common: SeparateCommonArgs,

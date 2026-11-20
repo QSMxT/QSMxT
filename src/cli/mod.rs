@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn separate_and_qsmart_accept_negative_b0_direction() {
         let cli = parse(&["separate", "r2star-qsm", "--qsm", "q.nii", "-m", "m.nii", "-o", "out",
-            "--r2star", "r.nii", "--b0-direction", "0.05", "-0.09", "0.99"]);
+            "--r2star", "r.nii", "--field-strength", "3", "--b0-direction", "0.05", "-0.09", "0.99"]);
         let Command::Separate { command: SeparateCommand::R2starQsm(a) } = cli.command
             else { panic!("expected separate r2star-qsm") };
         assert_eq!(a.common.b0_direction, vec![0.05, -0.09, 0.99]);
@@ -355,6 +355,65 @@ mod tests {
         crate::cli_settings::apply_normalised(&mut c, &run.pipeline).unwrap();
         assert!(c.pipeline.axial_resampling);
         assert_eq!(c.pipeline.obliquity_threshold, 5.0);
+    }
+
+    /// The χ-separation methods that use the field strength (D_r, CF, the signal model) need
+    /// `--field-strength`: without it the error names the flag instead of assuming 3 T.
+    #[test]
+    fn separate_methods_that_use_the_field_strength_require_it() {
+        let cases: [(&str, &[&str]); 5] = [
+            ("r2star-qsm", &["--r2star", "r.nii"]),
+            ("decompose", &["--magnitude", "mag.nii", "--qsm-per-echo", "q.nii", "--echo-times", "0.01"]),
+            ("chi-sep-ilsqr", &["--local-field", "f.nii", "--r2prime", "r.nii"]),
+            ("chi-sep-medi", &["--local-field", "f.nii", "--r2prime", "r.nii", "--magnitude", "mag.nii",
+                "--echo-times", "0.01"]),
+            ("hc-chisep", &["--r2prime", "r.nii", "--magnitude", "mag.nii", "--echo-times", "0.01"]),
+        ];
+        for (alg, inputs) in cases {
+            let args = [&["qsmxt", "separate", alg, "--qsm", "q.nii", "-m", "m.nii", "-o", "out"][..], inputs].concat();
+            let err = Cli::try_parse_from(&args).unwrap_err().to_string();
+            assert!(err.contains("--field-strength"), "{alg}: {err}");
+            let cli = Cli::try_parse_from([&args[..], &["--field-strength", "7"]].concat()).unwrap();
+            let Command::Separate { command } = cli.command else { panic!("expected separate {alg}") };
+            let common = match command {
+                SeparateCommand::R2starQsm(a) => a.common,
+                SeparateCommand::Decompose(a) => a.common,
+                SeparateCommand::ChiSepIlsqr(a) => a.common,
+                SeparateCommand::ChiSepMedi(a) => a.common,
+                SeparateCommand::HcChisep(a) => a.common,
+                _ => panic!("expected separate {alg}"),
+            };
+            assert_eq!(common.field_strength, Some(7.0), "{alg}");
+        }
+    }
+
+    /// WaveSep and SUSEP-Net do not use the field strength: they parse without it, still accept
+    /// it, and do not list it in their help.
+    #[test]
+    fn wavesep_and_susep_net_do_not_need_the_field_strength() {
+        for (alg, inputs) in [("wavesep", &["--r2prime", "r.nii"][..]),
+                              ("susep-net", &["--r2prime", "r.nii", "--local-field", "f.nii"][..])] {
+            let args = [&["qsmxt", "separate", alg, "--qsm", "q.nii", "-m", "m.nii", "-o", "out"][..], inputs].concat();
+            assert!(Cli::try_parse_from(&args).is_ok(), "{alg}");
+            assert!(Cli::try_parse_from([&args[..], &["--field-strength", "7"]].concat()).is_ok(), "{alg}");
+            let help = Cli::try_parse_from(["qsmxt", "separate", alg, "--help"]).unwrap_err().to_string();
+            assert!(!help.contains("--field-strength"), "{alg}: {help}");
+        }
+    }
+
+    /// χ-sepnet uses the field strength only through R2PRIMEnet's 3 T check, so `--r2star`
+    /// needs it and `--r2prime` does not.
+    #[test]
+    fn chi_sepnet_requires_the_field_strength_with_r2star() {
+        let base = ["qsmxt", "separate", "chi-sepnet", "--local-field", "f.nii", "-m", "m.nii", "-o", "out"];
+        let err = Cli::try_parse_from([&base[..], &["--r2star", "r.nii"]].concat()).unwrap_err().to_string();
+        assert!(err.contains("--field-strength"), "{err}");
+        let cli = Cli::try_parse_from([&base[..], &["--r2star", "r.nii", "--field-strength", "7"]].concat()).unwrap();
+        let Command::Separate { command: SeparateCommand::ChiSepNet(a) } = cli.command else { panic!("expected chi-sepnet") };
+        assert_eq!(a.field_strength, Some(7.0));
+        let cli = Cli::try_parse_from([&base[..], &["--r2prime", "r.nii"]].concat()).unwrap();
+        let Command::Separate { command: SeparateCommand::ChiSepNet(a) } = cli.command else { panic!("expected chi-sepnet") };
+        assert_eq!(a.field_strength, None);
     }
 
     /// `invert lsqr` and `invert amp-pe` need the field strength, like every other command that
