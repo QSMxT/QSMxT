@@ -105,11 +105,13 @@ pub fn apply(config: &mut PipelineConfig, given: &[Given]) -> crate::Result<()> 
     let settings: Vec<Given> = given.iter().filter(|g| !APPLIED_HERE.contains(&g.flag.long)).cloned().collect();
     let rest = qsmxt_engine::schema::cli_apply::apply_settings(config, &settings).map_err(err)?;
     config.multi_orientation.validate().map_err(err)?;
-    // A pipeline that cannot run with the flags given after it (HEIDI's with --orientation-group)
-    // is refused with the reason, as the TUI's Pipeline tab does not offer it.
+    // A pipeline that cannot run with the flags given after it (HEIDI's with --orientation-group),
+    // or in this build (one that runs a deep-learning model), is refused with the reason, as the
+    // TUI's Pipeline tab does not offer it.
     if let Some(id) = one("pipeline") {
         if let Some(why) = qsmxt_engine::pipelines::unavailable(config, id) {
-            return Err(err(format!("--pipeline {id} is not available with --orientation-group: {why}")));
+            let with = if why == qsmxt_engine::pipelines::HEIDI_MULTI_ORIENTATION { " with --orientation-group" } else { "" };
+            return Err(err(format!("--pipeline {id} is not available{with}: {why}")));
         }
     }
 
