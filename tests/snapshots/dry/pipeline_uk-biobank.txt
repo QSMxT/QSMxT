@@ -1,13 +1,13 @@
 Pipeline:
   Phase offset removal: enabled
   Inhomogeneity:     makehomogeneous
-  Masking:           magnitude,hd-bet:full,signal-erode:0.80:5:1:12.0:1000
+  Masking:           magnitude,hd-bet:192x192x96:step=0.5,signal-erode:0.80:5:1:12.0:1000
   Unwrapping:        laplacian
   BG removal:        vsharp
   QSM algorithm:     Ilsqr
   QSM reference:     None
 
-  sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 12.2 GB)
+  sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 3.9 GB)
     Phase offset removal: on → off (the pipeline's on this scan)
     Weight type: Phase SNR → Assumed decay (the pipeline's on this scan)
 
@@ -56,7 +56,7 @@ Methods (a run writes them to <tmp>/out/derivatives/qsmxt/methods.md):
 
 # Methods
 
-QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the UK Biobank QSM pipeline. In place of the UK Biobank pipeline's brain mask from its T1-weighted images, the HD-BET mask described below was used. Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using HD-BET deep-learning brain extraction (Isensee et al., 2019) of the inhomogeneity-corrected RSS-combined magnitude image, followed by signal-gated erosion (removal of low-signal boundary voxels; QSM-CI). Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003) with an FFT Poisson solve. The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* and identical in every voxel (Wang et al., 2022). Before and after background field removal, the mask was trimmed of voxels with unreliable phase as in the UK Biobank pipeline (Wang et al., 2022): phase-reliability maps of the first and last echoes (the magnitude of the unit phasor averaged over a 2 mm ball) were thresholded at 0.6 and 0.5 before background removal and at 0.7 and 0.6 after it, then in each slice components smaller than 300 (after: 200) voxels were removed and holes smaller than 50 (after: 30) voxels filled, and enclosed holes were filled. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015) with zero-padding = 64 mm per side and precision = single. No susceptibility referencing was applied.
+QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the UK Biobank QSM pipeline. In place of the UK Biobank pipeline's brain mask from its T1-weighted images, the HD-BET mask described below was used. Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using HD-BET deep-learning brain extraction (Isensee et al., 2019; 192x192x96-voxel sliding-window patches) of the inhomogeneity-corrected RSS-combined magnitude image, followed by signal-gated erosion (removal of low-signal boundary voxels; QSM-CI). Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003) with an FFT Poisson solve. The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* and identical in every voxel (Wang et al., 2022). Before and after background field removal, the mask was trimmed of voxels with unreliable phase as in the UK Biobank pipeline (Wang et al., 2022): phase-reliability maps of the first and last echoes (the magnitude of the unit phasor averaged over a 2 mm ball) were thresholded at 0.6 and 0.5 before background removal and at 0.7 and 0.6 after it, then in each slice components smaller than 300 (after: 200) voxels were removed and holes smaller than 50 (after: 30) voxels filled, and enclosed holes were filled. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015) with zero-padding = 64 mm per side and precision = single. No susceptibility referencing was applied.
 
 ## References
 
@@ -94,4 +94,5 @@ Reference values of the chosen methods (for the first run's scan):
   Padding (iLSQR): 64 mm — ukb mask trim on uses 64 mm
   Precision (iLSQR): Single — iLSQR uses Single
   Brain mask: HD-BET — ukb mask trim on uses HD-BET
+  HD-BET inference: sliding window — ukb mask trim on uses sliding window
   QSM reference: None — ukb mask trim on uses None
