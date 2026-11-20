@@ -219,7 +219,9 @@ mod tests {
         let Command::Combine { command: CombineCommand::Mcpc3ds(a) } = cli.command
             else { panic!("expected combine mcpc3ds") };
         assert!(matches!(a.hip_unwrapping, UnwrapAlgorithmArg::Prelude));
-        assert_eq!(a.prelude_params.to_prelude_params(), qsm_core::unwrap::PreludeParams {
+        let mut c = qsmxt_engine::PipelineConfig::default();
+        qsmxt_io::settings::apply(&mut c, &a.settings.0).unwrap();
+        assert_eq!(qsm_core::unwrap::PreludeParams::from(&c.field_mapping.prelude), qsm_core::unwrap::PreludeParams {
             num_phase_partitions: 6,
             labelling: qsm_core::unwrap::PreludeLabelling::Volume,
             ..Default::default()
@@ -240,7 +242,8 @@ mod tests {
         let q = qsm_core::separation::ChiSepIlsqrParams::default().qsm_ilsqr;
         for (path, flag, default) in [
             (&["run"][..], "vsharp-radius-step", v.radius_step.to_string()),
-            (&["bgremove", "vsharp"][..], "radius-step", v.radius_step.to_string()),
+            // The standalone commands show the run's flag help (cli_settings::SettingsOf).
+            (&["bgremove", "vsharp"][..], "vsharp-radius-step", v.radius_step.to_string()),
             (&["run"][..], "chi-sep-ilsqr-qsm-max-iter", q.max_iter.to_string()),
             (&["run"][..], "chi-sep-ilsqr-qsm-pad-mm", q.pad_mm.to_string()),
         ] {
