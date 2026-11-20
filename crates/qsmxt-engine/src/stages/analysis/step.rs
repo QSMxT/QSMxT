@@ -5,6 +5,7 @@ use log::Level;
 use serde_json::Value;
 
 use crate::cache::step_cache_key;
+use crate::plan::Stage;
 use crate::observe::StageEvent;
 use crate::record::{Choice, Decision, Topic};
 use crate::run::{Done, Run};
@@ -33,11 +34,11 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         let identities: Vec<(&str, Value)> = maps.iter().map(|(i, name, _)| (*name, self.store.identity(i))).collect();
         let params = a::params(self.config.segmentation.version, self.store.identity(&seg_item), &identities);
-        let key = step_cache_key("analysis", None, &params, self.config);
+        let key = step_cache_key(Stage::Analysis, None, &params, self.config);
         if self.store.cached("analysis", &key) {
             self.log(Level::Info, "Skipping analysis (cached)");
             self.observer.stage("analysis", None, StageEvent::Cached);
-            self.reuse("analysis");
+            self.reuse(Stage::Analysis);
             return Ok(());
         }
         if maps.is_empty() {
@@ -46,7 +47,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             return Ok(());
         }
         if self.dry {
-            self.pretend("analysis", None, &params, &key);
+            self.pretend(Stage::Analysis, None, &params, &key);
             return Ok(());
         }
         self.observer.stage("analysis", None, StageEvent::Started("Summarising maps per structure"));
@@ -76,7 +77,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             .with_detail(names.join(", ")));
         self.put(Item::RegionStats, Data::Text(&table))?;
         self.complete(Done {
-            step: "analysis", algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::RegionStats],
+            stage: Stage::Analysis, algorithm: None, params: &params, outcome: None, key: &key, outputs: &[Item::RegionStats],
         }, "Per-structure analysis")
     }
 }

@@ -874,7 +874,7 @@ fn two_pass_heidi_runs_on_the_combined_map() {
     let g = graph(&config, &facts());
     assert!(g.has_edge("bgremove", "twopass"), "HEIDI reads the main pass's local field");
     assert_consistent(&g);
-    let key = |c: &PipelineConfig| crate::cache::step_cache_key("twopass", None, &serde_json::json!({}), c);
+    let key = |c: &PipelineConfig| crate::cache::step_cache_key(crate::plan::Stage::TwoPassCombination, None, &serde_json::json!({}), c);
     let mut changed = config.clone();
     changed.inversion.heidi.cone_threshold = 0.05;
     assert_ne!(key(&config), key(&changed), "HEIDI's settings key the combination");

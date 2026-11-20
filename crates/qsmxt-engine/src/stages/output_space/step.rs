@@ -3,6 +3,7 @@
 
 use log::Level;
 
+use crate::plan::Stage;
 use crate::record::{Choice, Decision, Topic};
 use crate::run::{Done, Run};
 use crate::stages;
@@ -20,7 +21,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             return self.store.keep_working_grid();
         }
         let params = o::params(dst_dims);
-        let Some(key) = self.begin("output_space", None, &params, "Skipping output_space (cached)",
+        let Some(key) = self.begin(Stage::OutputSpace, None, &params, "Skipping output_space (cached)",
                                    "Resampling outputs to the acquired grid") else { return Ok(()) };
         let (src_dims, src_affine) = (self.meta.dims, self.meta.affine);
         self.log(Level::Info, &format!(
@@ -91,7 +92,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         // Read: the working-grid versions each output was returned from.
         let items: Vec<Item> = published.iter().map(|(i, _)| *i).collect();
         self.complete(Done {
-            step: "output_space", algorithm: None, params: &params, outcome: None, key: &key, outputs: &items,
+            stage: Stage::OutputSpace, algorithm: None, params: &params, outcome: None, key: &key, outputs: &items,
         }, "Output space")
     }
 }

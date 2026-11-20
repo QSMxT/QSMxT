@@ -10,7 +10,9 @@
 //! recomputes the same steps whichever front end runs it.
 //!
 //! The fixed table ([`downstream_of`]) is what a step recorded before stores kept what it read
-//! falls back to: it holds every edge any plan has, and more.
+//! falls back to: it holds every edge any plan has, and more. It reads old state files, so it is
+//! keyed by the names steps are recorded under ([`crate::plan::Stage::name`]), including one no run
+//! records any more (`resample`); a run's own steps are [`crate::plan::Stage`]s.
 
 use crate::cache::RELIABLE_SUFFIX;
 use crate::store::OUTPUT_SPACE;

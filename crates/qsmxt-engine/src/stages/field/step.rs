@@ -2,6 +2,7 @@
 
 use log::Level;
 
+use crate::plan::Stage;
 use crate::record::{Choice, Decision, Topic};
 use crate::run::{Done, Run, centre_frequency_decision};
 use crate::stages;
@@ -13,7 +14,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     pub(crate) fn field_map(&mut self) -> Result<(), S::Error> {
         let algorithm = stages::field::algorithm(self.config, &self.meta);
         let params = stages::field::params(self.config, &self.meta);
-        let Some(key) = self.begin("unwrap", Some(&algorithm), &params, "Skipping unwrap (cached)",
+        let Some(key) = self.begin(Stage::FieldMap, Some(&algorithm), &params, "Skipping unwrap (cached)",
                                    "Phase unwrapping / echo combination") else { return Ok(()) };
         match centre_frequency_decision(self.facts) {
             Some(d) => {
@@ -41,7 +42,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             }
             self.observer.progress(n, n);
             return self.complete(Done {
-                step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
+                stage: Stage::FieldMap, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
             }, "Phase unwrapping");
         }
         let phase_items: Vec<Item> = (1..=n).map(|e| self.echo_phase(e)).collect();
@@ -93,7 +94,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         // The threshold QSMART's echo fit resolved, recorded beside the parameters.
         let outcome = field.qsmart_fit_threshold.map(|t| ("qsmart_fit_threshold", serde_json::json!(t)));
         self.complete(Done {
-            step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome, key: &key, outputs: &outputs,
+            stage: Stage::FieldMap, algorithm: Some(&algorithm), params: &params, outcome, key: &key, outputs: &outputs,
         }, "Phase unwrapping")
     }
 }

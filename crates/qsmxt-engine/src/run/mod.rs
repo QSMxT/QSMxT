@@ -353,7 +353,7 @@ pub(crate) struct Run<'r, S: StageStore + ?Sized> {
 /// it read, which the run takes from the plan ([`Run::reads`]), and without its decisions, which
 /// the run kept as it made them.
 pub(crate) struct Done<'a> {
-    pub(crate) step: &'a str,
+    pub(crate) stage: Stage,
     pub(crate) algorithm: Option<&'a str>,
     pub(crate) params: &'a Value,
     pub(crate) outcome: Option<(&'static str, Value)>,
@@ -395,9 +395,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     }
 
     /// The step's earlier output is reused: what it decided when it was computed holds.
-    pub(crate) fn reuse(&mut self, step: &str) {
+    pub(crate) fn reuse(&mut self, stage: Stage) {
         self.state = Some(StepState::Cached);
-        let earlier = self.store.decisions(step);
+        let earlier = self.store.decisions(&stage.name());
         self.decisions.extend(earlier);
     }
 
@@ -459,16 +459,18 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
     /// The key `step` is cached under, unless its earlier output is still valid (then `None`, with
     /// `skipping` logged). Otherwise the step starts, `doing` being what it does.
-    pub(crate) fn begin(&mut self, step: &str, algorithm: Option<&str>, params: &Value, skipping: &str, doing: &str) -> Option<String> {
-        let key = step_cache_key(step, algorithm, params, self.config);
+    pub(crate) fn begin(&mut self, stage: Stage, algorithm: Option<&str>, params: &Value, skipping: &str, doing: &str) -> Option<String> {
+        let key = step_cache_key(stage, algorithm, params, self.config);
+        // The store and the observer know a step by its name.
+        let step = &stage.name();
         if self.store.cached(step, &key) {
             self.observer.log(Level::Info, skipping);
             self.observer.stage(step, algorithm, StageEvent::Cached);
-            self.reuse(step);
+            self.reuse(stage);
             return None;
         }
         if self.dry {
-            self.pretend(step, algorithm, params, &key);
+            self.pretend(stage, algorithm, params, &key);
             return None;
         }
         self.observer.stage(step, algorithm, StageEvent::Started(doing));
@@ -479,13 +481,13 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
     /// In a dry run, record `step` as computed under `key`, with the outputs the plan says it
     /// writes, so the steps after it see what they would.
-    pub(crate) fn pretend(&mut self, step: &str, algorithm: Option<&str>, params: &Value, key: &str) {
-        let outputs = self.details(step).map(|d| d.writes).unwrap_or_default();
+    pub(crate) fn pretend(&mut self, stage: Stage, algorithm: Option<&str>, params: &Value, key: &str) {
+        let outputs = self.details(stage).map(|d| d.writes).unwrap_or_default();
         // A dry run's store is a shadow ([`crate::store::MemoryStore::shadow`]), which takes these without fail.
         for item in &outputs {
             let _ = self.store.put(*item, Data::Mask(&[]));
         }
-        let _ = self.record(Done { step, algorithm, params, outcome: None, key, outputs: &outputs });
+        let _ = self.record(Done { stage, algorithm, params, outcome: None, key, outputs: &outputs });
     }
 
     /// Keep an output, and show it. A volume on a grid of its own (a projection) is kept but not
@@ -502,9 +504,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
     /// Record a computed step, with what it decided while computed; `label` names it in the log.
     pub(crate) fn complete(&mut self, c: Done<'_>, label: &str) -> Result<(), S::Error> {
-        let (step, algorithm) = (c.step, c.algorithm);
+        let (step, algorithm) = (c.stage.name(), c.algorithm);
         self.record(c)?;
-        self.observer.stage(step, algorithm, StageEvent::Finished(label));
+        self.observer.stage(&step, algorithm, StageEvent::Finished(label));
         Ok(())
     }
 
@@ -513,8 +515,9 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// ([`Self::reads`]), never a list of its own.
     pub(crate) fn record(&mut self, c: Done<'_>) -> Result<(), S::Error> {
         let decisions = self.decisions[self.computing_from.min(self.decisions.len())..].to_vec();
-        let inputs = self.reads(c.step);
-        let Done { step, algorithm, params, outcome, key, outputs } = c;
+        let inputs = self.reads(c.stage);
+        let Done { stage, algorithm, params, outcome, key, outputs } = c;
+        let step = &stage.name();
         self.store.record(&Completed { step, algorithm, params, outcome, key, inputs: &inputs, outputs, decisions: &decisions })?;
         self.state = Some(StepState::Computed);
         Ok(())
@@ -524,19 +527,19 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// decisions so far left them ([`crate::pipeline_graph::as_decided`]) — a supplied mask that
     /// could not be used is computed from the echoes, and reads them. The same items the graph
     /// after the run ([`crate::pipeline_graph::pipeline_graph_after`]) draws the step reading.
-    fn reads(&self, step: &str) -> Vec<Item> {
-        self.details(step).map(|d| d.reads).unwrap_or_default()
+    fn reads(&self, stage: Stage) -> Vec<Item> {
+        self.details(stage).map(|d| d.reads).unwrap_or_default()
     }
 
     /// What `step` reads and writes in this run: the plan's, drawn again from the facts as the
     /// run's decisions so far left them, and knowing whether the run is resampled (a run that is
     /// not writes its working echoes before the resampling step, which it skips).
-    fn details(&self, step: &str) -> Option<crate::pipeline_graph::StepDetails> {
+    fn details(&self, stage: Stage) -> Option<crate::pipeline_graph::StepDetails> {
         let decided = self.decided.iter().chain(&self.decisions);
         let ran = crate::pipeline_graph::as_decided(self.facts, decided);
         let resampled = Some(self.meta.source_geometry.is_some());
         crate::pipeline_graph::step_details(self.plan, self.config, &ran, resampled).into_iter().zip(&self.plan.steps)
-            .find(|(_, s)| s.name == step).map(|(d, _)| d)
+            .find(|(_, s)| s.stage == stage).map(|(d, _)| d)
     }
 
     pub(crate) fn log(&mut self, level: Level, message: &str) {

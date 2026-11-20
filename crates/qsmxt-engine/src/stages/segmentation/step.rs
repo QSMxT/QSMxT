@@ -3,6 +3,7 @@
 use log::Level;
 use serde_json::json;
 
+use crate::plan::Stage;
 use crate::plan::Step;
 use crate::record::{Choice, Decision, Topic};
 use crate::run::{Done, Run};
@@ -18,7 +19,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let c = &config.segmentation;
         let supplied: &[Item] = if c.custom_dseg_tool.is_some() { &[Item::SuppliedSegmentation] } else { &[] };
         let params = self.with_supplied(stages::segmentation::params(config), supplied);
-        let Some(key) = self.begin("segmentation", Some("synthseg"), &params, "Skipping segmentation (cached)",
+        let Some(key) = self.begin(Stage::Segmentation, Some("synthseg"), &params, "Skipping segmentation (cached)",
                                    "Segmenting") else { return Ok(()) };
         let lookup = stages::segmentation::lookup_table(c.version);
         // Prefer a bring-your-own segmentation, as masking does.
@@ -35,7 +36,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                     self.put(Item::Segmentation, Data::Real(&data))?;
                     self.put(Item::SegmentationLabels, Data::Text(&lookup))?;
                     return self.complete(Done {
-                        step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
+                        stage: Stage::Segmentation, algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
                         outputs: &[Item::Segmentation, Item::SegmentationLabels],
                     }, "Segmentation (custom)");
                 }
@@ -83,7 +84,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let present = labels.ids.iter().skip(1).zip(seg.volumes.iter().skip(1)).filter(|(_, &v)| v > 0.0).count();
         self.log(Level::Info, &format!("Segmented {} of {} structures", present, labels.ids.len() - 1));
         self.complete(Done {
-            step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
+            stage: Stage::Segmentation, algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
             outputs: &[Item::Segmentation, Item::SegmentationLabels, Item::SegmentationVolumes],
         }, "Segmentation")
     }

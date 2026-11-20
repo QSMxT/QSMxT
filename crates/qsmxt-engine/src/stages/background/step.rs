@@ -12,7 +12,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     /// Background-field removal for one pass, from the total field — or, for iQFM, straight from
     /// the echoes' wrapped phase (joint unwrapping and removal).
     pub(crate) fn background_removal(&mut self, step: &Step, pass: Pass) -> Result<(), S::Error> {
-        let name = step.stage.name();
+        let stage = step.stage;
         let label = pass_label(pass);
         let iqfm = self.config.bg_removal.algorithm == crate::enums::BfAlgorithm::Iqfm;
         let algorithm = format!("{}", self.config.bg_removal.algorithm);
@@ -25,7 +25,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         } else {
             ("Skipping bgremove (cached)", format!("Background field removal{label}"))
         };
-        let Some(key) = self.begin(&name, Some(&algorithm), &params, skipping, &doing) else { return Ok(()) };
+        let Some(key) = self.begin(stage, Some(&algorithm), &params, skipping, &doing) else { return Ok(()) };
         let mask_item = self.pass_mask(pass);
         let outputs = [Item::LocalField(pass), Item::LocalFieldMask(pass)];
         // UK Biobank's mask trimming reads reliability maps of the first and last echo's phase
@@ -58,7 +58,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 outputs.extend([Item::EchoLocalField(e), Item::EchoLocalFieldMask(e)]);
             }
             return self.complete(Done {
-                step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
+                stage, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
             }, &format!("Background removal ({algorithm}), each echo"));
         }
         let local = if iqfm {
@@ -102,7 +102,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::LocalFieldMask(pass), Data::Mask(&local.mask))?;
         let label = if iqfm { format!("Background removal (iQFM){label}") } else { format!("Background removal ({algorithm}){label}") };
         self.complete(Done {
-            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
+            stage, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, outputs: &outputs,
         }, &label)
     }
 }

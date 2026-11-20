@@ -416,7 +416,7 @@ mod tests {
         assert!(params(&c, &meta, false).get("unwrap").is_none());
         c.separation.decompose.unwrap_phase = true;
         assert_eq!(params(&c, &meta, false)["unwrap"], "echoes");
-        let key = |c: &PipelineConfig| crate::cache::step_cache_key("chi_separation", None, &params(c, &meta, false), c);
+        let key = |c: &PipelineConfig| crate::cache::step_cache_key(crate::plan::Stage::ChiSeparation, None, &params(c, &meta, false), c);
         let fixed = key(&c);
         c.separation.decompose.chi_bound = crate::ChiBoundChoice::EchoSpacing;
         assert_ne!(key(&c), fixed);

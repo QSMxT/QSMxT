@@ -5,6 +5,7 @@
 //! end reuses exactly the same outputs.
 
 use crate::config::PipelineConfig;
+use crate::plan::{Pass, Stage};
 
 /// Suffix on the reliable pass's step names: two-pass runs masking, background removal and
 /// inversion a second time under these names.
@@ -43,10 +44,10 @@ fn md5_simple(s: &str) -> u64 {
 ///
 /// Sections are as narrow as the step actually reads: an upstream step keyed on a section it does
 /// not read would be recomputed, and invalidate everything after it, whenever that section
-/// changed. Two-pass steps read what their main-pass twin reads.
-pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value {
+/// changed. Two-pass steps read what their main-pass twin reads. Every step is listed, so a new one
+/// is decided here.
+pub fn consumed_config(stage: Stage, config: &PipelineConfig) -> serde_json::Value {
     use serde_json::json;
-    let base = step.strip_suffix(RELIABLE_SUFFIX).unwrap_or(step);
     let crop = json!({
         "crop_to_mask": config.pipeline.crop_to_mask,
         "fft_padding": config.pipeline.fft_padding,
@@ -63,11 +64,11 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
         }
         m
     };
-    match base {
-        "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
+    match stage {
+        Stage::ScalePhase => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
         // Its taper ratio is in its parameters.
-        "tukey_window" => json!({ "tukey_window": config.pipeline.tukey_window }),
-        "inhomog" | "magnitude" => json!({
+        Stage::TukeyWindow => json!({ "tukey_window": config.pipeline.tukey_window }),
+        Stage::InhomogeneityCorrection | Stage::Magnitude => json!({
             "inhomogeneity_correction": config.masking.inhomogeneity_correction,
             "inhomogeneity_method": config.masking.inhomogeneity_method,
             "homogeneity": config.homogeneity,
@@ -75,7 +76,7 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
             "n4_geometry": config.masking.n4_geometry,
         }),
         // The main mask is not the two-pass one, so its settings stay out of the main mask's key.
-        "mask" if step == base => {
+        Stage::Mask(Pass::Main) => {
             let mut m = masking();
             if let Some(o) = m.as_object_mut() {
                 o.remove("two_pass");
@@ -92,7 +93,7 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
             }
             c
         }
-        "mask" => {
+        Stage::Mask(Pass::Reliable) => {
             // Unset, the reliable mask's combine mode is the main mask's, already in the key:
             // left out, so the keys of runs from before it existed still match.
             let mut m = masking();
@@ -103,46 +104,46 @@ pub fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value
             }
             json!({ "masking": m, "bet": config.bet, "homogeneity": config.homogeneity, "n4": config.n4 })
         }
-        "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
-        "swi" => json!({ "swi": config.swi }),
-        "unwrap" => json!({ "field_mapping": config.field_mapping }),
+        Stage::Motion => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
+        Stage::Swi => json!({ "swi": config.swi }),
+        Stage::FieldMap => json!({ "field_mapping": config.field_mapping }),
         // The reliable pass of a `local` two-pass run fills background removal's eroded rim
         // around the holes (qsm-core `fill_eroded_rim`).
-        "bgremove" if step != base && config.masking.two_pass_mode == crate::enums::TwoPassMode::Local =>
+        Stage::BackgroundRemoval(Pass::Reliable) if config.masking.two_pass_mode == crate::enums::TwoPassMode::Local =>
             json!({ "bg_removal": config.bg_removal, "crop": crop, "two_pass_mode": config.masking.two_pass_mode }),
-        "bgremove" => json!({ "bg_removal": config.bg_removal, "crop": crop }),
+        Stage::BackgroundRemoval(_) => json!({ "bg_removal": config.bg_removal, "crop": crop }),
         // A two-pass run inverts each pass without HEIDI and fills the combined map ("twopass"),
         // so HEIDI's settings leave its passes as they are. (Where the plan drops two-pass, the
         // inversion's own parameters carry them: `stages::inversion::params`.)
-        "invert" if config.masking.two_pass => {
+        Stage::Inversion(_) if config.masking.two_pass => {
             let mut inversion = serde_json::to_value(&config.inversion).unwrap_or_default();
             if let Some(o) = inversion.as_object_mut() {
                 o.remove("heidi");
             }
             json!({ "inversion": inversion, "crop": crop })
         }
-        "invert" | "tgv" | "qsmart" => json!({ "inversion": config.inversion, "crop": crop }),
+        Stage::Inversion(_) | Stage::Tgv(_) | Stage::Qsmart(_) => json!({ "inversion": config.inversion, "crop": crop }),
         // A two-pass run's HEIDI fills the combined map here (left out when off, so the keys of
         // runs from before it existed still match).
-        "twopass" if config.inversion.heidi.enabled => json!({ "masking": masking(), "heidi": config.inversion.heidi }),
-        "twopass" => json!({ "masking": masking() }),
-        "reference" | "reference-singlepass" => json!({ "qsm": config.qsm }),
-        "segmentation" => json!({ "segmentation": config.segmentation }),
-        "smwi" => json!({ "smwi": config.smwi }),
-        "chi_separation" => json!({ "separation": config.separation }),
-        "output_space" => json!({ "output_space": config.pipeline.output_space }),
+        Stage::TwoPassCombination if config.inversion.heidi.enabled => json!({ "masking": masking(), "heidi": config.inversion.heidi }),
+        Stage::TwoPassCombination => json!({ "masking": masking() }),
+        Stage::Reference | Stage::SinglePassReference => json!({ "qsm": config.qsm }),
+        Stage::Segmentation => json!({ "segmentation": config.segmentation }),
+        Stage::Smwi => json!({ "smwi": config.smwi }),
+        Stage::ChiSeparation => json!({ "separation": config.separation }),
+        Stage::OutputSpace => json!({ "output_space": config.pipeline.output_space }),
         // Keyed by their own parameters alone: R2*/T2* (ARLO has no settings), R2/R2′ (its
         // separation settings are in its parameters; keying the whole section would recompute the
         // MESE fit whenever the χ-separation method changed) and the statistics.
-        _ => serde_json::Value::Null,
+        Stage::Relaxometry | Stage::R2 | Stage::Analysis | Stage::Load | Stage::ResampleAxial => serde_json::Value::Null,
     }
 }
 
 /// A step's cache key: its algorithm and recorded parameters, plus the configuration it reads.
 pub fn step_cache_key(
-    step: &str, algorithm: Option<&str>, params: &serde_json::Value, config: &PipelineConfig,
+    stage: Stage, algorithm: Option<&str>, params: &serde_json::Value, config: &PipelineConfig,
 ) -> String {
-    let consumed = consumed_config(step, config);
+    let consumed = consumed_config(stage, config);
     if consumed.is_null() {
         return step_params_hash(algorithm, params);
     }
@@ -152,6 +153,11 @@ pub fn step_cache_key(
 
 #[cfg(test)]
 mod tests {
+    /// The step a name is.
+    fn st(name: &str) -> crate::plan::Stage {
+        crate::plan::Stage::from_name(name).unwrap_or_else(|| panic!("no step {name}"))
+    }
+
     use super::*;
 
     /// Every leaf of `value`, as a JSON pointer.
@@ -197,7 +203,7 @@ mod tests {
                 *j.pointer_mut(p).unwrap() = new;
                 let Ok(cfg) = serde_json::from_value::<PipelineConfig>(j) else { continue };
                 tested += 1;
-                assert_ne!(step_cache_key(step, None, &params, &cfg), step_cache_key(step, None, &params, &base),
+                assert_ne!(step_cache_key(st(step), None, &params, &cfg), step_cache_key(st(step), None, &params, &base),
                            "changing {p} leaves {step} cached");
             }
             assert!(tested * 2 >= paths.len().min(4), "{section}: only {tested} of {} leaves exercised", paths.len());
@@ -219,12 +225,12 @@ mod tests {
         levels.n4.max_iterations.push(10);
         let mut make_nii = n4.clone();
         make_nii.masking.n4_geometry = crate::enums::N4Geometry::MakeNii;
-        assert_ne!(step_cache_key("mask", None, &p, &make_nii), step_cache_key("mask", None, &p, &n4));
+        assert_ne!(step_cache_key(st("mask"), None, &p, &make_nii), step_cache_key(st("mask"), None, &p, &n4));
         for step in ["magnitude", "mask-reliable"] {
-            assert_ne!(step_cache_key(step, None, &p, &make_nii), step_cache_key(step, None, &p, &n4), "{step}");
-            assert_ne!(step_cache_key(step, None, &p, &n4), step_cache_key(step, None, &p, &base), "{step}");
-            assert_ne!(step_cache_key(step, None, &p, &shrink), step_cache_key(step, None, &p, &n4), "{step}");
-            assert_ne!(step_cache_key(step, None, &p, &levels), step_cache_key(step, None, &p, &n4), "{step}");
+            assert_ne!(step_cache_key(st(step), None, &p, &make_nii), step_cache_key(st(step), None, &p, &n4), "{step}");
+            assert_ne!(step_cache_key(st(step), None, &p, &n4), step_cache_key(st(step), None, &p, &base), "{step}");
+            assert_ne!(step_cache_key(st(step), None, &p, &shrink), step_cache_key(st(step), None, &p, &n4), "{step}");
+            assert_ne!(step_cache_key(st(step), None, &p, &levels), step_cache_key(st(step), None, &p, &n4), "{step}");
         }
     }
 
@@ -237,7 +243,7 @@ mod tests {
         let changed = |edit: fn(&mut PipelineConfig), step: &str| {
             let mut c = base.clone();
             edit(&mut c);
-            step_cache_key(step, None, &p, &c) != step_cache_key(step, None, &p, &base)
+            step_cache_key(st(step), None, &p, &c) != step_cache_key(st(step), None, &p, &base)
         };
         assert!(changed(|c| c.field_mapping.qsmart_fit_threshold = 30.0, "unwrap"));
         assert!(changed(|c| c.field_mapping.qsmart_fit_threshold_mode = crate::enums::QsmartFitThresholdMode::Percentile, "unwrap"));
@@ -266,23 +272,23 @@ mod tests {
         c.pipeline.crop_to_mask = !c.pipeline.crop_to_mask;
         let p = serde_json::json!({});
         for step in ["bgremove", "invert", "tgv", "qsmart", "invert-reliable"] {
-            assert_ne!(step_cache_key(step, None, &p, &c), step_cache_key(step, None, &p, &base), "{step}");
+            assert_ne!(step_cache_key(st(step), None, &p, &c), step_cache_key(st(step), None, &p, &base), "{step}");
         }
-        assert_eq!(step_cache_key("unwrap", None, &p, &c), step_cache_key("unwrap", None, &p, &base));
+        assert_eq!(step_cache_key(st("unwrap"), None, &p, &c), step_cache_key(st("unwrap"), None, &p, &base));
         // The two-pass settings are the reliable pass's business, not the main mask's.
         let mut t = base.clone();
         t.masking.two_pass = true;
-        assert_eq!(step_cache_key("mask", None, &p, &t), step_cache_key("mask", None, &p, &base));
-        assert_ne!(step_cache_key("mask-reliable", None, &p, &t), step_cache_key("mask-reliable", None, &p, &base));
+        assert_eq!(step_cache_key(st("mask"), None, &p, &t), step_cache_key(st("mask"), None, &p, &base));
+        assert_ne!(step_cache_key(st("mask-reliable"), None, &p, &t), step_cache_key(st("mask-reliable"), None, &p, &base));
         // So is the reliable mask's own combine mode; unset, the key is what it was before the
         // setting existed (the masking section without it).
         let mut u = t.clone();
         u.masking.two_pass_combine = Some(crate::masking::MaskCombine::And);
-        assert_eq!(step_cache_key("mask", None, &p, &u), step_cache_key("mask", None, &p, &t));
-        assert_ne!(step_cache_key("mask-reliable", None, &p, &u), step_cache_key("mask-reliable", None, &p, &t));
+        assert_eq!(step_cache_key(st("mask"), None, &p, &u), step_cache_key(st("mask"), None, &p, &t));
+        assert_ne!(step_cache_key(st("mask-reliable"), None, &p, &u), step_cache_key(st("mask-reliable"), None, &p, &t));
         let mut old = serde_json::to_value(&t.masking).unwrap();
         old.as_object_mut().unwrap().remove("two_pass_combine");
-        assert_eq!(consumed_config("mask-reliable", &t)["masking"], old);
+        assert_eq!(consumed_config(st("mask-reliable"), &t)["masking"], old);
     }
 
     /// The two-pass mode keys the reliable side (its mask, its background removal's rim fill and
@@ -296,12 +302,12 @@ mod tests {
         let mut original = local.clone();
         original.masking.two_pass_mode = crate::enums::TwoPassMode::Original;
         for step in ["mask-reliable", "bgremove-reliable", "twopass"] {
-            assert_ne!(step_cache_key(step, None, &p, &local), step_cache_key(step, None, &p, &original), "{step}");
+            assert_ne!(step_cache_key(st(step), None, &p, &local), step_cache_key(st(step), None, &p, &original), "{step}");
         }
         for step in ["mask", "bgremove", "invert", "invert-reliable"] {
-            assert_eq!(step_cache_key(step, None, &p, &local), step_cache_key(step, None, &p, &original), "{step}");
+            assert_eq!(step_cache_key(st(step), None, &p, &local), step_cache_key(st(step), None, &p, &original), "{step}");
         }
-        assert!(consumed_config("mask-reliable", &original)["masking"].get("two_pass_mode").is_none());
-        assert!(consumed_config("bgremove-reliable", &original).get("two_pass_mode").is_none());
+        assert!(consumed_config(st("mask-reliable"), &original)["masking"].get("two_pass_mode").is_none());
+        assert!(consumed_config(st("bgremove-reliable"), &original).get("two_pass_mode").is_none());
     }
 }

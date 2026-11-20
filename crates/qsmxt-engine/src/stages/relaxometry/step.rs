@@ -2,6 +2,7 @@
 
 use log::Level;
 
+use crate::plan::Stage;
 use crate::run::{Done, Run};
 use crate::stages;
 use crate::store::{Data, Item, StageStore};
@@ -10,7 +11,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     /// R2* by ARLO from every echo's magnitude, and T2* from it.
     pub(crate) fn relaxometry(&mut self) -> Result<(), S::Error> {
         let params = stages::relaxometry::t2star_r2star_params(&self.meta);
-        let Some(key) = self.begin("t2star_r2star", Some("arlo"), &params, "Skipping t2star_r2star (cached)",
+        let Some(key) = self.begin(Stage::Relaxometry, Some("arlo"), &params, "Skipping t2star_r2star (cached)",
                                    "Computing R2*/T2* maps") else { return Ok(()) };
         let n = self.n_echoes();
         self.log(Level::Info, &format!("Computing R2*/T2* maps (ARLO, {n} echoes)"));
@@ -31,7 +32,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::R2star, Data::Real(&r2star))?;
         self.put(Item::T2star, Data::Real(&t2star))?;
         self.complete(Done {
-            step: "t2star_r2star", algorithm: Some("arlo"), params: &params, outcome: None, key: &key,
+            stage: Stage::Relaxometry, algorithm: Some("arlo"), params: &params, outcome: None, key: &key,
             outputs: &[Item::R2star, Item::T2star],
         }, "T2*/R2* mapping")
     }

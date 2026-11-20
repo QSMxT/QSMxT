@@ -245,7 +245,7 @@ mod tests {
         let unmasked = params(&config, &meta(3));
         assert_eq!(unmasked["laplacian_unmasked"], true);
         let key = |p: &serde_json::Value, c: &PipelineConfig| {
-            crate::cache::step_cache_key("unwrap", Some("laplacian"), p, c)
+            crate::cache::step_cache_key(crate::plan::Stage::FieldMap, Some("laplacian"), p, c)
         };
         let mut masked_config = config.clone();
         masked_config.field_mapping.laplacian_unmasked = false;
