@@ -297,7 +297,7 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
             qsm, mask: mask_path.clone(), output: prefix.clone(), field_strength: 3.0,
             b0_direction: vec![0.0, 0.0, 1.0],
         },
-        r2star: Some(r2star), magnitude: vec![], echo_times: vec![], r_const_3t: None,
+        r2star: Some(r2star), magnitude: vec![], echo_times: vec![], settings: Default::default(),
     })).unwrap();
     for p in [pipeline.chi_para_path(&key), pipeline.chi_dia_path(&key), pipeline.chi_sep_total_path(&key)] {
         exists(name(p));

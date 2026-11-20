@@ -25,20 +25,8 @@ pub fn parse_chi_bound(s: &str) -> Result<qsmxt_engine::ChiBoundChoice, String> 
 }
 
 /// iLSQR's arithmetic: `double` or `single`.
-/// The R2* χ-sep MEDI's CSF mask is extracted from: `arlo` or `nnls`.
-pub fn parse_chi_sep_csf_r2star(s: &str) -> Result<qsmxt_engine::ChiSepCsfR2star, String> {
-    qsmxt_engine::ChiSepCsfR2star::ALL.into_iter().find(|m| m.as_str() == s.trim())
-        .ok_or_else(|| format!("expected arlo or nnls, got '{s}'"))
-}
-
 pub fn parse_ilsqr_precision(s: &str) -> Result<qsmxt_engine::IlsqrPrecision, String> {
     qsmxt_engine::IlsqrPrecision::ALL.into_iter().find(|p| p.as_str() == s.trim())
-        .ok_or_else(|| format!("expected double or single, got '{s}'"))
-}
-
-/// LBV's arithmetic: `double` or `single`.
-pub fn parse_lbv_precision(s: &str) -> Result<qsmxt_engine::LbvPrecision, String> {
-    qsmxt_engine::LbvPrecision::ALL.into_iter().find(|p| p.as_str() == s.trim())
         .ok_or_else(|| format!("expected double or single, got '{s}'"))
 }
 
@@ -52,22 +40,4 @@ pub fn parse_bet_orientation(s: &str) -> Result<qsmxt_engine::BetOrientation, St
 pub fn parse_n4_geometry(s: &str) -> Result<qsmxt_engine::N4Geometry, String> {
     qsmxt_engine::N4Geometry::ALL.into_iter().find(|g| g.as_str() == s.trim())
         .ok_or_else(|| format!("expected scanner or make-nii, got '{s}'"))
-}
-
-/// HARPERELLA's / iHARPERELLA's boundary rim: `whole` or `sti`.
-pub fn parse_harperella_rim(s: &str) -> Result<qsmxt_engine::HarperellaRim, String> {
-    qsmxt_engine::HarperellaRim::ALL.into_iter().find(|r| r.as_str() == s.trim())
-        .ok_or_else(|| format!("expected whole or sti, got '{s}'"))
-}
-
-/// An iSMV implementation: `wen2014` or `qsmjl`.
-pub fn parse_ismv_variant(s: &str) -> Result<qsmxt_engine::IsmvVariant, String> {
-    qsmxt_engine::IsmvVariant::ALL.into_iter().find(|v| v.as_str() == s.trim())
-        .ok_or_else(|| format!("expected wen2014 or qsmjl, got '{s}'"))
-}
-
-/// A PDF dipole kernel: `image` or `kspace`.
-pub fn parse_pdf_space(s: &str) -> Result<qsmxt_engine::PdfSpace, String> {
-    qsmxt_engine::PdfSpace::ALL.into_iter().find(|k| k.as_str() == s.trim())
-        .ok_or_else(|| format!("expected image or kspace, got '{s}'"))
 }

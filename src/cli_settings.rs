@@ -200,10 +200,10 @@ macro_rules! flag_set {
     )*};
 }
 
-/// Whether `path` is one of `set`'s settings (`!path` leaves one out).
+/// Whether `path` is one of `set`'s settings (`!path` leaves out what `path` would take in).
 fn in_set(set: &[&str], path: &str) -> bool {
-    !set.contains(&format!("!{path}").as_str())
-        && set.iter().any(|p| if p.ends_with('.') { path.starts_with(p) } else { path == *p })
+    let takes = |p: &str| if p.ends_with('.') { path.starts_with(p) } else { path == p };
+    !set.iter().any(|p| p.strip_prefix('!').is_some_and(takes)) && set.iter().any(|p| !p.starts_with('!') && takes(p))
 }
 
 /// The flags of `S`'s settings, in the table's order, each opposite switch with its switch.

@@ -256,11 +256,11 @@ mod tests {
         for (alg, name) in [("harperella", "sti"), ("iharperella", "whole")] {
             let cli = parse(&["bgremove", alg, "f.nii", "-m", "m.nii", "-o", "o.nii", "--rim", name]);
             let got = match cli.command {
-                Command::Bgremove { command: BgremoveCommand::Harperella(a) } => a.rim,
-                Command::Bgremove { command: BgremoveCommand::Iharperella(a) } => a.rim,
+                Command::Bgremove { command: BgremoveCommand::Harperella(a) } => a.settings.values("harperella-rim").map(|v| v.join(" ")),
+                Command::Bgremove { command: BgremoveCommand::Iharperella(a) } => a.settings.values("iharperella-rim").map(|v| v.join(" ")),
                 _ => panic!("expected bgremove {alg}"),
             };
-            assert_eq!(got.map(|r| r.as_str()), Some(name));
+            assert_eq!(got.as_deref(), Some(name));
         }
         let cli = parse(&["invert", "ndi", "f.nii", "-m", "m.nii", "-o", "o.nii", "--magnitude", "mag.nii",
             "--field-strength", "3", "--echo-times", "0.02", "--weight-norm", "mask-p999"]);

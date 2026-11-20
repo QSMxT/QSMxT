@@ -32,7 +32,7 @@ fn test_separate_r2star_qsm() {
         r2star: Some(r2star),
         magnitude: vec![],
         echo_times: vec![],
-        r_const_3t: None,
+        settings: Default::default(),
     }))
     .unwrap();
 
@@ -74,7 +74,7 @@ fn test_separate_r2star_qsm_needs_an_input() {
         r2star: None,
         magnitude: vec![],
         echo_times: vec![],
-        r_const_3t: None,
+        settings: Default::default(),
     }))
     .unwrap_err();
     let msg = format!("{err}");
@@ -92,14 +92,8 @@ fn test_separate_wavesep() {
     super::separate::execute(SeparateCommand::Wavesep(SeparateWavesepArgs {
         common: separate_common(dir.path(), "wv"),
         r2prime,
-        dr_pos: None,
-        dr_neg: None,
-        alpha: None,
-        lambda: None,
-        wavelet_order: None,
         // Two iterations: this is a plumbing test, not a convergence one.
-        max_iter: Some(2),
-        tol: None,
+        settings: SettingsOf::from_flags(&["--wavesep-max-iter", "2"]),
     }))
     .unwrap();
     assert!(dir.path().join("wv_desc-paramagnetic_Chimap.nii").exists());
@@ -125,17 +119,7 @@ fn test_separate_decompose() {
         magnitude: mags.clone(),
         qsm_per_echo,
         echo_times: vec![0.004, 0.008, 0.012],
-        n_inner: Some(1),
-        chi_bound: None,
-        unwrap_phase: None,
-        fit: None,
-        max_iterations: Some(1),
-        max_function_evaluations: None,
-        function_tolerance: None,
-        step_tolerance: None,
-        optimality_tolerance: None,
-        finite_difference_step: None,
-        typical_x: None,
+        settings: SettingsOf::from_flags(&["--decompose-n-inner", "1", "--decompose-max-iterations", "1"]),
     };
     // The per-echo QSM needs one map per echo.
     let err = super::separate::execute(SeparateCommand::Decompose(args(vec![common.qsm.clone(); 2])))
@@ -161,18 +145,8 @@ fn test_separate_chi_sep_ilsqr() {
         common: separate_common(dir.path(), "il"),
         local_field,
         r2prime,
-        dr_pos: None,
-        dr_neg: None,
-        pad: Some(vec![2, 2, 2]),
-        cg_max_iter_lsqr: Some(1),
-        cg_tol_lsqr: None,
-        cg_max_iter_sa: Some(1),
-        cg_tol_sa: None,
-        d2_thr: None,
-        prc_w_i_min: None,
-        prc_w_i_max: None,
-        prc_w_g_min: None,
-        prc_w_g_max: None,
+        settings: SettingsOf::from_flags(&["--chi-sep-ilsqr-pad", "2", "2", "2", "--chi-sep-ilsqr-cg-max-iter-lsqr", "1",
+            "--chi-sep-ilsqr-cg-max-iter-sa", "1"]),
     }))
     .unwrap();
     assert!(dir.path().join("il_desc-paramagnetic_Chimap.nii").exists());
@@ -196,9 +170,8 @@ fn test_separate_chi_sep_medi() {
         r2prime: r2prime.clone(),
         magnitude: vec![mag.clone(); 3],
         echo_times,
-        csf_mask, csf_r2star: None,
-        lambda: None, lambda_csf: None, dr_pos: None, dr_neg: None, pad: Some(0),
-        tol: None, max_iter: Some(1), cg_tol: None, cg_max_iter: Some(1),
+        csf_mask,
+        settings: SettingsOf::from_flags(&["--chi-sep-medi-pad", "0", "--chi-sep-medi-max-iter", "1", "--chi-sep-medi-cg-max-iter", "1"]),
     };
     let tes = vec![0.004, 0.008, 0.012];
     let err = super::separate::execute(SeparateCommand::ChiSepMedi(args(vec![0.004, 0.008], None, "me"))).unwrap_err().to_string();
@@ -206,7 +179,8 @@ fn test_separate_chi_sep_medi() {
     super::separate::execute(SeparateCommand::ChiSepMedi(args(tes.clone(), None, "me"))).unwrap();
     assert!(dir.path().join("me_desc-paramagnetic_Chimap.nii").exists());
     // `--csf-r2star nnls`: the CSF mask from the χ-separation toolbox's NNLS R2*.
-    let nnls = SeparateChiSepMediArgs { csf_r2star: Some(qsmxt_engine::ChiSepCsfR2star::Nnls), ..args(tes.clone(), None, "nnls") };
+    let mut nnls = args(tes.clone(), None, "nnls");
+    nnls.settings.0.extend(SettingsOf::<crate::cli::ChiSepMediFlags>::from_flags(&["--chi-sep-medi-csf-r2star", "nnls"]).0);
     super::separate::execute(SeparateCommand::ChiSepMedi(nnls)).unwrap();
     assert!(dir.path().join("nnls_desc-paramagnetic_Chimap.nii").exists());
 
