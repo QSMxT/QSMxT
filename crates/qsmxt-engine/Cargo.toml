@@ -34,3 +34,6 @@ parallel = ["qsm-core/parallel"]
 # Enables qsm-core's Serialize derives so the param-coverage test can introspect
 # every *Params field. Test-only; not enabled by normal/release builds.
 introspection = ["qsm-core/introspection"]
+
+[dev-dependencies]
+regex = "1"

@@ -103,7 +103,7 @@ impl Flag {
 #[derive(Default)]
 pub(super) struct FlagSpec {
     id: Option<&'static str>,
-    help: Option<&'static str>,
+    pub(super) help: Option<&'static str>,
     value_names: Option<&'static [&'static str]>,
     num_args: Option<(usize, usize)>,
     parse: Option<FlagParse>,

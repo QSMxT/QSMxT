@@ -28,6 +28,8 @@ mod ranges;
 mod regular;
 mod table;
 mod view;
+#[cfg(test)]
+mod default_wording_tests;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -717,3 +719,4 @@ pub fn set(config: &mut PipelineConfig, path: &str, value: Value) -> Result<(), 
     *config = serde_json::from_value(v).map_err(|e| format!("{path}: {e}"))?;
     Ok(())
 }
+
