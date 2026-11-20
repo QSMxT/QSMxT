@@ -1,6 +1,6 @@
 Minimally regularised LSQR
 
-Usage: qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... <INPUT>
+Usage: qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> --magnitude <MAGNITUDE>... --b0 <B0> <INPUT>
 
 Arguments:
   <INPUT>
@@ -29,8 +29,6 @@ Options:
 
       --b0 <B0>
           B0 field strength in Tesla — sets the default residual weighting
-
-          [default: 3]
 
       --lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>
           LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly
