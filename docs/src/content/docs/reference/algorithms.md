@@ -526,9 +526,12 @@ or QSMnetME, shows this as the original authors' setting, and `--pipeline chi-se
 With `laplacian`, each echo is unwrapped on its own (the phase is set to zero outside
 the brain mask first) and the echoes are then combined by
 `--b0-estimation` / `--b0-weight-type`, the same options as with ROMEO. Phase offset
-removal and bipolar correction are not applied, so use it on phase that is already
-offset-free (single-channel or prescan-normalised reconstructions, MCPC-3D-S combined
-coils).
+removal (MCPC-3D-S; Eckstein et al., 2018) and bipolar correction apply as with ROMEO:
+Laplacian unwrapping removes only the harmonic part of each echo's phase offset, and PDF and
+LBV keep the rest. With `--phase-offset-removal false` each echo is unwrapped as it is, as
+STI Suite and QSMART do. Keeping the field over the whole volume (`--laplacian-keep-outside`,
+or `--laplacian-unmasked` with `--b0-estimation qsmart-echofit`) needs offset removal off:
+MCPC-3D-S defines the corrected phase only inside its mask.
 
 `--laplacian-unmasked` (off by default) unwraps the raw phase over the whole volume
 instead, as QSMART does. The combined field is still kept inside the mask, except with
