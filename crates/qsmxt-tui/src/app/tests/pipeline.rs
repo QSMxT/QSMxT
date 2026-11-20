@@ -73,13 +73,13 @@ fn test_switch_to_separation_resets_focus_to_first_row() {
 #[test]
 fn test_pipeline_left_right_algo_select() {
     let mut app = App::new();
-    assert!(app.goto_field("qsm_algorithm"));
+    assert!(app.goto_field("inversion.algorithm"));
     // Find the focus index for the QSM Inversion AlgoSelect
     let rows = app.rows();
     let focusable = app.focusable_rows();
     let mut qsm_inv_focus = None;
     for (fi, &ri) in focusable.iter().enumerate() {
-        if let PipelineRow::AlgoSelect { field: "qsm_algorithm", .. } = &rows[ri] {
+        if let PipelineRow::AlgoSelect { field: "inversion.algorithm", .. } = &rows[ri] {
             qsm_inv_focus = Some(fi);
             break;
         }
@@ -97,59 +97,59 @@ fn test_pipeline_left_right_algo_select() {
 #[test]
 fn test_pipeline_enter_opens_the_unwrapping_picker() {
     let mut app = App::new();
-    assert!(app.goto_field("unwrapping_algorithm"));
+    assert!(app.goto_field("field_mapping.unwrapping_algorithm"));
     // Navigate to unwrapping_algorithm AlgoSelect
     let rows = app.rows();
     let focusable = app.focusable_rows();
     let mut uw_focus = None;
     for (fi, &ri) in focusable.iter().enumerate() {
-        if let PipelineRow::AlgoSelect { field: "unwrapping_algorithm", .. } = &rows[ri] {
+        if let PipelineRow::AlgoSelect { field: "field_mapping.unwrapping_algorithm", .. } = &rows[ri] {
             uw_focus = Some(fi);
             break;
         }
     }
     let fi = uw_focus.expect("unwrapping_algorithm row not found");
     app.pipeline_state.focus = fi;
-    assert_eq!(app.field_select("unwrapping_algorithm"), 0); // romeo
+    assert_eq!(app.field_select("field_mapping.unwrapping_algorithm"), 0); // romeo
 
     // Enter opens the selection modal for this field (does not cycle).
     app.handle_key(key(KeyCode::Enter));
     assert!(matches!(
         app.algo_modal.as_ref().unwrap().target,
-        AlgoModalTarget::Select(ref f) if f == "unwrapping_algorithm"
+        AlgoModalTarget::Select(ref f) if f == "field_mapping.unwrapping_algorithm"
     ));
-    assert_eq!(app.field_select("unwrapping_algorithm"), 0); // still unchanged
+    assert_eq!(app.field_select("field_mapping.unwrapping_algorithm"), 0); // still unchanged
     // Pick the next option (laplacian) and confirm.
     app.handle_key(key(KeyCode::Down));
     app.handle_key(key(KeyCode::Enter));
     assert!(app.algo_modal.is_none());
-    assert_eq!(app.field_select("unwrapping_algorithm"), 1); // laplacian
+    assert_eq!(app.field_select("field_mapping.unwrapping_algorithm"), 1); // laplacian
 
     // Focus is restored to the selector after confirming: → changes nothing, Enter reopens it.
     app.handle_key(key(KeyCode::Right));
-    assert_eq!(app.field_select("unwrapping_algorithm"), 1);
+    assert_eq!(app.field_select("field_mapping.unwrapping_algorithm"), 1);
     assert!(app.algo_modal.is_none());
     app.handle_key(key(KeyCode::Enter));
     assert!(matches!(
         app.algo_modal.as_ref().unwrap().target,
-        AlgoModalTarget::Select(ref f) if f == "unwrapping_algorithm"
+        AlgoModalTarget::Select(ref f) if f == "field_mapping.unwrapping_algorithm"
     ));
     app.handle_key(key(KeyCode::Up));
     app.handle_key(key(KeyCode::Enter));
-    assert_eq!(app.field_select("unwrapping_algorithm"), 0);
+    assert_eq!(app.field_select("field_mapping.unwrapping_algorithm"), 0);
 }
 
 #[test]
 fn test_pipeline_edit_text_param() {
     let mut app = App::new();
     app.form.settings.set("pipeline.axial_resampling", true);
-    assert!(app.goto_field("obliquity_threshold"));
+    assert!(app.goto_field("pipeline.obliquity_threshold"));
     // Find the obliquity_threshold Param row
     let rows = app.rows();
     let focusable = app.focusable_rows();
     let mut obl_focus = None;
     for (fi, &ri) in focusable.iter().enumerate() {
-        if let PipelineRow::Param { field: "obliquity_threshold", .. } = &rows[ri] {
+        if let PipelineRow::Param { field: "pipeline.obliquity_threshold", .. } = &rows[ri] {
             obl_focus = Some(fi);
             break;
         }
@@ -163,11 +163,11 @@ fn test_pipeline_edit_text_param() {
     app.handle_key(key(KeyCode::Home));
     app.handle_key(key(KeyCode::End));
     // Backspace to clear
-    for _ in 0..app.field_text("obliquity_threshold").len() {
+    for _ in 0..app.field_text("pipeline.obliquity_threshold").len() {
         app.handle_key(key(KeyCode::Backspace));
     }
     app.handle_key(key(KeyCode::Char('5')));
-    assert_eq!(app.field_text("obliquity_threshold"), "5");
+    assert_eq!(app.field_text("pipeline.obliquity_threshold"), "5");
     // Escape exits editing
     app.handle_key(key(KeyCode::Esc));
     assert!(!app.pipeline_state.editing);
@@ -192,22 +192,22 @@ fn test_pipeline_toggle_do_qsm() {
 #[test]
 fn test_pipeline_toggle_inhomogeneity_correction() {
     let mut app = App::new();
-    assert!(app.goto_field("inhomogeneity_correction"));
+    assert!(app.goto_field("masking.inhomogeneity_correction"));
     // Find inhomogeneity_correction toggle
     let rows = app.rows();
     let focusable = app.focusable_rows();
     let mut ic_focus = None;
     for (fi, &ri) in focusable.iter().enumerate() {
-        if let PipelineRow::Toggle { field: "inhomogeneity_correction", .. } = &rows[ri] {
+        if let PipelineRow::Toggle { field: "masking.inhomogeneity_correction", .. } = &rows[ri] {
             ic_focus = Some(fi);
             break;
         }
     }
     let fi = ic_focus.expect("inhomogeneity_correction not found");
     app.pipeline_state.focus = fi;
-    assert!(app.field_toggle("inhomogeneity_correction"));
+    assert!(app.field_toggle("masking.inhomogeneity_correction"));
     app.handle_key(key(KeyCode::Enter));
-    assert!(!app.field_toggle("inhomogeneity_correction"));
+    assert!(!app.field_toggle("masking.inhomogeneity_correction"));
 }
 
 #[test]
@@ -238,14 +238,14 @@ fn test_pipeline_f5_from_pipeline_tab() {
 #[test]
 fn test_pipeline_reset_field() {
     let mut app = App::new();
-    assert!(app.goto_field("qsm_algorithm"));
+    assert!(app.goto_field("inversion.algorithm"));
     app.set_qsm_algorithm(5);
     // Find qsm_algorithm focus
     let rows = app.rows();
     let focusable = app.focusable_rows();
     let mut fi_found = None;
     for (fi, &ri) in focusable.iter().enumerate() {
-        if let PipelineRow::AlgoSelect { field: "qsm_algorithm", .. } = &rows[ri] {
+        if let PipelineRow::AlgoSelect { field: "inversion.algorithm", .. } = &rows[ri] {
             fi_found = Some(fi);
             break;
         }
@@ -260,14 +260,14 @@ fn test_pipeline_reset_field() {
 fn test_pipeline_reset_tab() {
     let mut app = App::new();
     app.set_qsm_algorithm(5);
-    app.set_field_select("bf_algorithm", 3);
-    *app.field_text_mut("tikhonov_lambda").unwrap() = "9".into();
-    assert!(app.goto_field("qsm_algorithm"));
+    app.set_field_select("bg_removal.algorithm", 3);
+    *app.field_text_mut("inversion.tikhonov.lambda").unwrap() = "9".into();
+    assert!(app.goto_field("inversion.algorithm"));
     app.handle_key(key(KeyCode::Char('R')));
     // The page's settings, the ones a reset reveals among them, and nothing on other pages.
     assert_eq!(QSM_ALGO_OPTIONS[app.qsm_algorithm()], "ilsqr");
-    assert_eq!(app.field_text("tikhonov_lambda"), App::new().field_text("tikhonov_lambda"));
-    assert_eq!(app.field_select("bf_algorithm"), 3, "Background is another page");
+    assert_eq!(app.field_text("inversion.tikhonov.lambda"), App::new().field_text("inversion.tikhonov.lambda"));
+    assert_eq!(app.field_select("bg_removal.algorithm"), 3, "Background is another page");
 }
 
 #[test]
@@ -283,13 +283,13 @@ fn test_pipeline_visible_rows_change_on_toggle() {
 fn test_pipeline_editing_left_right_cursor() {
     let mut app = App::new();
     app.form.settings.set("pipeline.axial_resampling", true);
-    assert!(app.goto_field("obliquity_threshold"));
+    assert!(app.goto_field("pipeline.obliquity_threshold"));
     // Find obliquity_threshold param and edit it
     let rows = app.rows();
     let focusable = app.focusable_rows();
     let mut fi = 0;
     for (f, &ri) in focusable.iter().enumerate() {
-        if let PipelineRow::Param { field: "obliquity_threshold", .. } = &rows[ri] {
+        if let PipelineRow::Param { field: "pipeline.obliquity_threshold", .. } = &rows[ri] {
             fi = f;
             break;
         }
@@ -298,7 +298,7 @@ fn test_pipeline_editing_left_right_cursor() {
     app.handle_key(key(KeyCode::Enter));
     assert!(app.pipeline_state.editing);
     // Move cursor left and right
-    let len = app.field_text("obliquity_threshold").len();
+    let len = app.field_text("pipeline.obliquity_threshold").len();
     assert_eq!(app.pipeline_state.cursor, len);
     app.handle_key(key(KeyCode::Left));
     assert_eq!(app.pipeline_state.cursor, len - 1);
@@ -315,23 +315,23 @@ fn test_pipeline_editing_left_right_cursor() {
 fn test_reset_pipeline_param_field() {
     let mut app = App::new();
     app.form.settings.set("pipeline.axial_resampling", true);
-    assert!(app.goto_field("obliquity_threshold"));
+    assert!(app.goto_field("pipeline.obliquity_threshold"));
     // Find obliquity_threshold param
     let rows = app.rows();
     let focusable = app.focusable_rows();
     let mut fi = 0;
     for (f, &ri) in focusable.iter().enumerate() {
-        if let PipelineRow::Param { field: "obliquity_threshold", .. } = &rows[ri] {
+        if let PipelineRow::Param { field: "pipeline.obliquity_threshold", .. } = &rows[ri] {
             fi = f;
             break;
         }
     }
     app.pipeline_state.focus = fi;
     // Modify the value
-    *app.field_text_mut("obliquity_threshold").unwrap() = "999".to_string();
+    *app.field_text_mut("pipeline.obliquity_threshold").unwrap() = "999".to_string();
     // Reset
     app.handle_key(key(KeyCode::Char('r')));
-    assert_eq!(app.field_text("obliquity_threshold"), App::new().field_text("obliquity_threshold"));
+    assert_eq!(app.field_text("pipeline.obliquity_threshold"), App::new().field_text("pipeline.obliquity_threshold"));
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn test_pipeline_bf_algorithm_params() {
     let mut app = App::new();
     // Switch through every BG removal algorithm (incl. BFRnet/iQFM) and verify rows change.
     for algo in 0..BF_OPTIONS.len() {
-        app.set_field_select("bf_algorithm", algo);
+        app.set_field_select("bg_removal.algorithm", algo);
         let rows = app.page_rows(Page::Background);
         assert!(!rows.is_empty());
     }
@@ -387,7 +387,7 @@ fn test_pipeline_separation_algorithm_all_params() {
     app.form.settings.set("pipeline.do_chi_separation", true);
     // Every separation method incl. SUSEP-Net / χ-sepnet.
     for algo in 0..super::super::super::settings_rows::options("separation.algorithm").0.len() {
-        app.set_field_select("separation_algorithm", algo);
+        app.set_field_select("separation.algorithm", algo);
         assert!(app.page_rows(Page::Separation).len() > 3);
     }
 }
@@ -546,11 +546,11 @@ fn bet_settings_are_listed_together_under_the_bet_step() {
         PipelineRow::Param { field, .. } | PipelineRow::AlgoSelect { field, .. } => field.to_string(),
         other => format!("{other:?}"),
     }).collect();
-    assert_eq!(block, ["generator", "frac", "scale", "bet_smoothness", "bet_gradient_threshold",
-        "bet_iterations", "bet_subdivisions", "bet_orientation"]);
+    assert_eq!(block, ["generator", "frac", "scale", "bet.smoothness", "bet.gradient_threshold",
+        "bet.iterations", "bet.subdivisions", "bet.orientation"]);
     // Listed once, however many BET steps share them.
     let count = |app: &App| app.rows().iter()
-        .filter(|r| matches!(r, PipelineRow::Param { field: "bet_smoothness", .. })).count();
+        .filter(|r| matches!(r, PipelineRow::Param { field: "bet.smoothness", .. })).count();
     assert_eq!(count(&app), 1);
     let bet_and_phase = MASK_PRESET_OPTIONS.iter().position(|o| *o == "bet-and-phase").unwrap();
     app.apply_mask_preset(bet_and_phase);
@@ -643,7 +643,7 @@ fn basic_medi() -> App {
     let mut app = App::new();
     app.advanced = false;
     let medi = QSM_PICKER_OPTIONS.iter().position(|o| *o == "medi").unwrap();
-    app.set_field_select("qsm_algorithm", medi);
+    app.set_field_select("inversion.algorithm", medi);
     goto_page(&mut app, Page::Inversion);
     app.subtab_focus = false;
     app
@@ -657,16 +657,16 @@ fn fields(rows: &[PipelineRow]) -> Vec<&'static str> {
 fn basic_mode_shows_the_choices_and_counts_the_rest() {
     let app = basic_medi();
     let rows = app.rows();
-    assert_eq!(fields(&rows), ["qsm_algorithm", "medi_smv", "medi_msmv", "medi_csf", "heidi_enabled"]);
+    assert_eq!(fields(&rows), ["inversion.algorithm", "inversion.medi.smv", "inversion.medi.msmv", "inversion.medi.csf", "inversion.heidi.enabled"]);
     assert_eq!(rows.last(), Some(&PipelineRow::AdvancedFooter { hidden: 15 }));
 }
 
 #[test]
 fn a_changed_advanced_setting_shows_in_basic_mode() {
     let mut app = basic_medi();
-    *app.field_text_mut("medi_lambda").unwrap() = "2000".into();
+    *app.field_text_mut("inversion.medi.lambda").unwrap() = "2000".into();
     let rows = app.rows();
-    assert!(fields(&rows).contains(&"medi_lambda"));
+    assert!(fields(&rows).contains(&"inversion.medi.lambda"));
     assert_eq!(rows.last(), Some(&PipelineRow::AdvancedFooter { hidden: 14 }));
 }
 
@@ -677,7 +677,7 @@ fn a_shows_every_setting_and_is_remembered() {
     app.handle_key(key(KeyCode::Char('A')));
     assert!(app.advanced && crate::prefs::advanced());
     let rows = app.rows();
-    assert!(fields(&rows).contains(&"medi_lambda"));
+    assert!(fields(&rows).contains(&"inversion.medi.lambda"));
     assert!(!rows.iter().any(|r| matches!(r, PipelineRow::AdvancedFooter { .. })));
     app.handle_key(key(KeyCode::Char('A')));
     assert!(!app.advanced && !crate::prefs::advanced());
@@ -699,9 +699,9 @@ fn enter_on_the_footer_shows_every_setting_and_keeps_the_section() {
 fn a_keeps_focus_on_the_same_setting() {
     let _s = crate::tips::TestSettings::new();
     let mut app = basic_medi();
-    assert!(app.focus_field("medi_csf"));
+    assert!(app.focus_field("inversion.medi.csf"));
     app.handle_key(key(KeyCode::Char('A')));
-    assert_eq!(app.focused_row().as_ref().and_then(row_field), Some("medi_csf"));
+    assert_eq!(app.focused_row().as_ref().and_then(row_field), Some("inversion.medi.csf"));
 }
 
 #[test]

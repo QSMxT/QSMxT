@@ -79,7 +79,7 @@ pub struct AlgoModal {
 /// single-choice selector in the TUI regardless of how that selector stores its value.
 #[derive(Debug, Clone)]
 pub enum AlgoModalTarget {
-    /// A named select (an `AlgoSelect` row of any row-based tab, e.g. "qsm_algorithm").
+    /// A named select (an `AlgoSelect` row of any row-based tab, e.g. "inversion.algorithm").
     Select(String),
     /// The masking input source of a mask section.
     MaskInput(usize),

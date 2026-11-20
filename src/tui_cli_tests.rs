@@ -87,7 +87,7 @@ fn test_slurm_command_string_parses() {
     app.form.execution_mode = 1;
     app.form.slurm_account = "acct".to_string();
     app.set_qsm_algorithm(4); // tgv
-    *app.field_text_mut("tgv_erosions").unwrap() = "2".into();
+    *app.field_text_mut("inversion.tgv.erosions").unwrap() = "2".into();
 
     let cmd = build_command_string(&app);
     let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();

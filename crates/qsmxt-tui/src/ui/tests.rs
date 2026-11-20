@@ -7,7 +7,7 @@ use ratatui::{backend::TestBackend, Terminal};
 fn medi_app() -> App {
     let mut app = App::new();
     let medi = crate::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == "medi").unwrap();
-    app.set_field_select("qsm_algorithm", medi);
+    app.set_field_select("inversion.algorithm", medi);
     app.active_tab = crate::app::TAB_RECONSTRUCTION;
     app.sub_page[crate::app::TAB_RECONSTRUCTION] = Some(crate::app::Page::Inversion);
     app.sync_pipeline_mode();
@@ -104,19 +104,19 @@ fn settings_are_indented_under_their_checkbox() {
     app.form.settings.set("pipeline.do_swi", true);
     app.form.settings.set("pipeline.do_smwi", true);
     app.form.settings.set("pipeline.do_segmentation", true);
-    assert!(app.goto_field("do_smwi"));
+    assert!(app.goto_field("pipeline.do_smwi"));
     let text = screen_text(&render_app_sized(&mut app, 120, 60));
     let smwi = indent_of(&text, "Compute SMWI");
     for child in ["Threshold", "Power"] {
         assert!(indent_of(&text, child) > smwi, "{child} should be indented:\n{text}");
     }
-    assert!(app.goto_field("do_swi"));
+    assert!(app.goto_field("pipeline.do_swi"));
     let text = screen_text(&render_app_sized(&mut app, 120, 60));
     let swi = indent_of(&text, "Compute SWI");
     for child in ["Strength", "HP sigma (x y z)"] {
         assert!(indent_of(&text, child) > swi, "{child} should be indented:\n{text}");
     }
-    assert!(app.goto_field("synthseg_version"));
+    assert!(app.goto_field("segmentation.version"));
     let text = screen_text(&render_app_sized(&mut app, 120, 60));
     let seg = indent_of(&text, "Segmentation:");
     let source = indent_of(&text, "Source");
@@ -259,7 +259,7 @@ fn a_list_scrolls_only_when_the_cursor_leaves_it() {
     let mut app = App::new();
     let options: Vec<String> = (0..30).map(|i| format!("option-{i:02}")).collect();
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".into()),
+        target: AlgoModalTarget::Select("inversion.algorithm".into()),
         title: "QSM inversion".into(),
         help: options.iter().map(|o| format!("help for {o}")).collect(),
         options,
@@ -401,7 +401,7 @@ fn update_modal_draws_on_top_of_an_algorithm_modal() {
     use crate::app::{AlgoModalTarget, UpdateModal};
     let mut app = App::new();
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".into()),
+        target: AlgoModalTarget::Select("inversion.algorithm".into()),
         title: "QSM inversion".into(),
         options: (0..20).map(|i| format!("algo-{i}")).collect(),
         help: (0..20).map(|i| format!("help {i}")).collect(),
@@ -439,7 +439,7 @@ fn test_algo_modal_scrollbar_and_legend() {
     options.extend(["xqsm", "qsmnet", "autoqsm", "nextqsm"].iter().map(|s| s.to_string()));
     let help: Vec<String> = options.iter().map(|o| format!("help for {o}")).collect();
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".into()),
+        target: AlgoModalTarget::Select("inversion.algorithm".into()),
         title: "QSM inversion".into(),
         options,
         help,

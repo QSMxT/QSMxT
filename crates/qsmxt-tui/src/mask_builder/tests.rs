@@ -51,9 +51,9 @@ fn the_run_takes_the_recipe_as_the_command_line_spells_it() {
 #[test]
 fn unreadable_masking_values_are_refused() {
     let mut app = App::new_for_trial();
-    *app.field_text_mut("custom_mask_tool").unwrap() = " bet ".into();
+    *app.field_text_mut("masking.custom_mask_tool").unwrap() = " bet ".into();
     assert_eq!(config_from_app(&app).unwrap().masking.custom_mask_tool.as_deref(), Some("bet"));
-    *app.field_text_mut("homogeneity_sigma_mm").unwrap() = "wide".into();
+    *app.field_text_mut("homogeneity.sigma_mm").unwrap() = "wide".into();
     let err = config_from_app(&app).expect_err("refused").to_string();
     assert!(err.contains("--homogeneity-sigma-mm wide: not a number"), "{err}");
 }

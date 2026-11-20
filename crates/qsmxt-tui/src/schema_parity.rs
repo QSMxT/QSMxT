@@ -34,7 +34,7 @@ fn row_paths(app: &App, row: &PipelineRow) -> Vec<&'static str> {
             }
             let path = path_of(field).unwrap_or_else(|| panic!("TUI row {field} is not mapped to a schema setting"));
             // The TUI's reference picker lists the regions with the two methods.
-            if *field == "qsm_reference" && app.field_select(field) >= 2 {
+            if *field == "qsm.reference" && app.field_select(field) >= 2 {
                 return vec![path, "qsm.reference_region"];
             }
             vec![path]

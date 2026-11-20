@@ -13,8 +13,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Whether `field` has a row on `tab` now (switches to it, syncing the pipeline rows).
 /// SynthSeg's own settings, under the segmentation checkbox.
-const SYNTHSEG_ROWS: [&str; 6] = ["synthseg_version", "synthseg_crop", "synthseg_patch", "synthseg_flip_averaging",
-                                  "synthseg_topology_cleanup", "synthseg_sigma"];
+const SYNTHSEG_ROWS: [&str; 6] = ["segmentation.version", "segmentation.crop", "segmentation.patch", "segmentation.flip_averaging",
+                                  "segmentation.topology_cleanup", "segmentation.sigma_smoothing#value"];
 
 fn shows(app: &mut App, tab: usize, field: &str) -> bool {
     app.active_tab = tab;

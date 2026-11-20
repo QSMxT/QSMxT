@@ -45,8 +45,8 @@ fn test_field_visibility_slurm_mode() {
 #[test]
 fn test_field_visibility_other_tabs() {
     let mut app = App::new();
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "do_swi"));
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "do_r2starmap"));
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "pipeline.do_swi"));
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "pipeline.do_r2starmap"));
 }
 
 // --- SLURM form fields ---
@@ -146,7 +146,7 @@ fn test_navigation_skips_hidden_slurm_fields() {
 fn test_supplementary_toggle_swi() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_swi");
     assert!(!app.form.settings.toggle("pipeline.do_swi"));
     app.handle_key(key(KeyCode::Enter));
     assert!(app.form.settings.toggle("pipeline.do_swi"));
@@ -158,7 +158,7 @@ fn test_supplementary_toggle_swi() {
 fn test_supplementary_toggle_t2star() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_t2starmap");
     assert!(!app.form.settings.toggle("pipeline.do_t2starmap"));
     app.handle_key(key(KeyCode::Enter));
     assert!(app.form.settings.toggle("pipeline.do_t2starmap"));
@@ -168,7 +168,7 @@ fn test_supplementary_toggle_t2star() {
 fn test_supplementary_toggle_r2star() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_r2starmap");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_r2starmap");
     assert!(!app.form.settings.toggle("pipeline.do_r2starmap"));
     app.handle_key(key(KeyCode::Char(' ')));
     assert!(app.form.settings.toggle("pipeline.do_r2starmap"));
@@ -179,7 +179,7 @@ fn test_supplementary_swi_scaling_select() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
     app.form.settings.set("pipeline.do_swi", true); // make SWI fields visible
-    focus_on(&mut app, TAB_RECONSTRUCTION, "swi_scaling");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "swi.scaling");
     let scaling = |app: &App| app.form.settings.get("swi.scaling");
     assert_eq!(scaling(&app), "tanh");
     step(&mut app, 1);
@@ -193,7 +193,7 @@ fn test_supplementary_edit_swi_strength() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
     app.form.settings.set("pipeline.do_swi", true);
-    focus_on(&mut app, TAB_RECONSTRUCTION, "swi_strength");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "swi.strength");
     app.handle_key(key(KeyCode::Enter));
     assert!(app.pipeline_state.editing);
     // Type something
@@ -207,25 +207,25 @@ fn test_supplementary_edit_swi_strength() {
 fn test_supplementary_navigate_fields() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_swi");
     // SWI fields are hidden when do_swi is false: Compute SWI is the section's only row.
     app.handle_key(key(KeyCode::Down));
-    assert_eq!(app.focused_field_name().as_deref(), Some("do_swi"));
+    assert_eq!(app.focused_field_name().as_deref(), Some("pipeline.do_swi"));
     app.form.settings.set("pipeline.do_swi", true);
     app.handle_key(key(KeyCode::Down));
-    assert_eq!(app.focused_field_name().as_deref(), Some("swi_unwrap"));
+    assert_eq!(app.focused_field_name().as_deref(), Some("swi.unwrap"));
     app.handle_key(key(KeyCode::Up));
-    assert_eq!(app.focused_field_name().as_deref(), Some("do_swi"));
+    assert_eq!(app.focused_field_name().as_deref(), Some("pipeline.do_swi"));
 }
 
 #[test]
 fn test_supplementary_swi_visible_when_enabled() {
     let mut app = App::new();
     app.form.settings.set("pipeline.do_swi", true);
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_scaling")); // SWI Scaling
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_strength")); // SWI Strength
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_mip_window")); // SWI MIP Window
-    assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi_filtered_phase"));
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi.scaling")); // SWI Scaling
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi.strength")); // SWI Strength
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi.mip_window")); // SWI MIP Window
+    assert!(shows(&mut app, TAB_RECONSTRUCTION, "swi.filtered_phase"));
 }
 
 /// The filtered phase is ticked under SWI, and then listed for DICOM export.
@@ -245,14 +245,14 @@ fn swi_filtered_phase_is_an_swi_output_and_exportable() {
     // Without SWI there is no phase, and the row is hidden.
     app.form.settings.set("pipeline.do_swi", false);
     assert!(!app.dicom_map_made(phase));
-    assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi_filtered_phase"));
+    assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi.filtered_phase"));
 }
 
 #[test]
 fn test_supplementary_swi_hidden_when_disabled() {
     let mut app = App::new();
-    assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi_scaling"));
-    assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi_mip_window"));
+    assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi.scaling"));
+    assert!(!shows(&mut app, TAB_RECONSTRUCTION, "swi.mip_window"));
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn test_supplementary_tab_switch() {
 fn test_supplementary_reset_field() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_swi");
     app.form.settings.set("pipeline.do_swi", true);
     app.handle_key(key(KeyCode::Char('r')));
     assert!(!app.form.settings.toggle("pipeline.do_swi")); // reset to default
@@ -287,7 +287,7 @@ fn test_supplementary_reset_tab() {
     assert!(!app.form.settings.toggle("pipeline.do_swi"));
     assert_eq!(app.form.settings.get("swi.scaling"), "tanh");
     assert!(app.form.settings.toggle("pipeline.do_t2starmap") && app.form.settings.toggle("pipeline.do_r2starmap"), "Relaxometry is another page");
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_t2starmap");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_t2starmap");
     app.handle_key(key(KeyCode::Char('R')));
     assert!(!app.form.settings.toggle("pipeline.do_t2starmap") && !app.form.settings.toggle("pipeline.do_r2starmap"));
 }
@@ -732,10 +732,10 @@ fn test_reset_supplementary_fields() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION;
     app.form.settings.set("pipeline.do_swi", true);
-    focus_on(&mut app, TAB_RECONSTRUCTION, "swi_strength");
-    *app.field_text_mut("swi_strength").unwrap() = "999".to_string();
+    focus_on(&mut app, TAB_RECONSTRUCTION, "swi.strength");
+    *app.field_text_mut("swi.strength").unwrap() = "999".to_string();
     app.handle_key(key(KeyCode::Char('r')));
-    assert_eq!(app.field_text("swi_strength"), RunForm::default().settings.text("swi.strength"));
+    assert_eq!(app.field_text("swi.strength"), RunForm::default().settings.text("swi.strength"));
 }
 
 #[test]
@@ -756,7 +756,7 @@ fn test_supplementary_edit_swi_hp_sigma() {
     let mut app = App::new();
     app.form.settings.set("pipeline.do_swi", true);
     // One row for the three axes.
-    focus_on(&mut app, TAB_RECONSTRUCTION, "swi_hp_sigma");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "swi.hp_sigma");
     let sigma = |app: &App| super::super::super::command::config_from_app(app).unwrap().swi.hp_sigma;
     assert_eq!(sigma(&app), qsmxt_engine::SwiConfig::default().hp_sigma, "the default parses");
     app.handle_key(key(KeyCode::Enter));
@@ -766,7 +766,7 @@ fn test_supplementary_edit_swi_hp_sigma() {
     app.handle_key(key(KeyCode::Enter));
     assert!(!app.pipeline_state.editing);
     assert_eq!(sigma(&app), [4.0, 4.0, 0.0]);
-    *app.field_text_mut("swi_hp_sigma").unwrap() = "3 3".into();
+    *app.field_text_mut("swi.hp_sigma").unwrap() = "3 3".into();
     assert!(super::super::super::command::config_from_app(&app).is_err(), "three values or none: two are refused");
 }
 

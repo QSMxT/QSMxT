@@ -182,9 +182,9 @@ fn test_enter_exits_editing() {
 #[test]
 fn test_pipeline_phase_offset_removal() {
     let mut app = App::new();
-    assert!(app.field_toggle("phase_offset_removal"));
-    app.toggle_field("phase_offset_removal");
-    assert!(!app.field_toggle("phase_offset_removal"));
+    assert!(app.field_toggle("field_mapping.phase_offset_removal"));
+    app.toggle_field("field_mapping.phase_offset_removal");
+    assert!(!app.field_toggle("field_mapping.phase_offset_removal"));
 }
 
 // --- F5 triggers run ---
@@ -223,9 +223,9 @@ fn test_f5_requires_slurm_account() {
 fn test_pipeline_algorithm_selects() {
     let mut app = App::new();
     assert_eq!(QSM_ALGO_OPTIONS[app.qsm_algorithm()], "ilsqr"); // the default inversion
-    app.set_field_select("qsm_algorithm", 1);
+    app.set_field_select("inversion.algorithm", 1);
     assert_eq!(app.qsm_algorithm(), 1); // tv
-    app.set_field_select("qsm_algorithm", 3);
+    app.set_field_select("inversion.algorithm", 3);
     assert_eq!(app.qsm_algorithm(), 3); // tgv
 }
 
@@ -234,8 +234,8 @@ fn test_pipeline_algorithm_selects() {
 #[test]
 fn test_pipeline_get_param() {
     let mut app = App::new();
-    *app.field_text_mut("bet_smoothness").unwrap() = "0.2".to_string();
-    assert_eq!(app.field_text("bet_smoothness"), "0.2");
+    *app.field_text_mut("bet.smoothness").unwrap() = "0.2".to_string();
+    assert_eq!(app.field_text("bet.smoothness"), "0.2");
 }
 
 
@@ -243,7 +243,7 @@ fn test_pipeline_get_param() {
 fn test_text_value_unknown_returns_empty() {
     let mut app = App::new();
     app.active_tab = TAB_RECONSTRUCTION; // Algorithms tab - no text fields
-    focus_on(&mut app, TAB_RECONSTRUCTION, "do_swi");
+    focus_on(&mut app, TAB_RECONSTRUCTION, "pipeline.do_swi");
     assert_eq!(app.text_value(), "");
 }
 
@@ -321,15 +321,15 @@ fn test_edit_config_file() {
 #[test]
 fn test_pipeline_param_mutation() {
     let mut app = App::new();
-    assert!(!app.field_text("bet_smoothness").is_empty()); // has QSM.rs default
-    if let Some(s) = app.field_text_mut("bet_smoothness") {
+    assert!(!app.field_text("bet.smoothness").is_empty()); // has QSM.rs default
+    if let Some(s) = app.field_text_mut("bet.smoothness") {
         *s = "0.25".to_string();
     }
-    assert_eq!(app.field_text("bet_smoothness"), "0.25");
+    assert_eq!(app.field_text("bet.smoothness"), "0.25");
 
     // Test select (qsm_algorithm)
-    app.set_field_select("qsm_algorithm", 2);
-    assert_eq!(app.field_select("qsm_algorithm"), 2);
+    app.set_field_select("inversion.algorithm", 2);
+    assert_eq!(app.field_select("inversion.algorithm"), 2);
 }
 
 #[test]
@@ -392,19 +392,19 @@ fn qsm_sections_stay_and_say_whether_their_stage_runs() {
     assert_eq!(state(&app, Page::Background), SectionState::NotApplicable);
     let rows = |app: &App, p| app.page_rows(p);
     assert!(rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("No background removal"))));
-    assert!(!rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. })));
+    assert!(!rows(&app, Page::Background).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "bg_removal.algorithm", .. })));
     assert!(rows(&app, Page::FieldMap).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("No field mapping"))));
     // Without a group, COSMOS/STI says where groups are chosen; with one, it has its settings.
     assert_eq!(state(&app, Page::MultiOrientation), SectionState::NotApplicable);
-    assert!(!rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
+    assert!(!rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "multi_orientation.algorithm", .. })));
     assert!(rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::Note { text } if text.contains("1 Input → Orientations"))));
     app.filter_state.orientation_group = "acq".into();
     assert_eq!(state(&app, Page::MultiOrientation), SectionState::On);
-    assert!(rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "orientation_algorithm", .. })));
+    assert!(rows(&app, Page::MultiOrientation).iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "multi_orientation.algorithm", .. })));
     // QSM's switch is a section of its own, and nowhere else.
     assert_eq!(state(&app, Page::ComputeQsm), SectionState::On);
     for p in Page::RECONSTRUCTION {
-        let has = app.page_rows(p).iter().any(|r| row_field(r) == Some("do_qsm"));
+        let has = app.page_rows(p).iter().any(|r| row_field(r) == Some("pipeline.do_qsm"));
         assert_eq!(has, p == Page::ComputeQsm, "{p:?}");
     }
     // QSM off: every QSM stage is off and says where QSM is turned on; its section says
@@ -433,8 +433,8 @@ fn the_qsm_group_holds_what_needs_qsm() {
     assert_eq!(group("Other outputs"), [Page::Magnitude, Page::Swi, Page::Relaxometry, Page::Segmentation]);
     let app = App::new();
     let fields = |p| app.page_rows(p).iter().filter_map(row_field).collect::<Vec<_>>();
-    assert!(fields(Page::Swi).contains(&"do_swi") && !fields(Page::Swi).contains(&"do_smwi"));
-    assert!(fields(Page::Smwi).contains(&"do_smwi") && !fields(Page::Smwi).contains(&"do_swi"));
+    assert!(fields(Page::Swi).contains(&"pipeline.do_swi") && !fields(Page::Swi).contains(&"pipeline.do_smwi"));
+    assert!(fields(Page::Smwi).contains(&"pipeline.do_smwi") && !fields(Page::Smwi).contains(&"pipeline.do_swi"));
     assert_eq!(app.section_state(Page::Smwi), SectionState::Off);
     assert_eq!(app.section_state(Page::Swi), SectionState::Off);
 }

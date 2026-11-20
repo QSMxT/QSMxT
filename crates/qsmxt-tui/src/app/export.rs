@@ -80,12 +80,12 @@ impl App {
             "SWI" => self.form.settings.toggle("pipeline.do_swi"),
             "SWI phase" => self.form.settings.toggle("pipeline.do_swi") && self.form.settings.toggle("swi.filtered_phase"),
             "SMWI" => self.form.settings.toggle("pipeline.do_smwi"),
-            "T2*" => self.output_made("do_t2starmap"),
-            "R2*" => self.output_made("do_r2starmap"),
-            "R2" => self.output_made("do_r2map"),
-            "R2′" => self.output_made("do_r2primemap"),
+            "T2*" => self.output_made("pipeline.do_t2starmap"),
+            "R2*" => self.output_made("pipeline.do_r2starmap"),
+            "R2" => self.output_made("pipeline.do_r2map"),
+            "R2′" => self.output_made("pipeline.do_r2primemap"),
             "χ-separation" => self.form.settings.toggle("pipeline.do_chi_separation"),
-            "segmentation" => self.output_made("do_segmentation"),
+            "segmentation" => self.output_made("pipeline.do_segmentation"),
             _ => false,
         }
     }

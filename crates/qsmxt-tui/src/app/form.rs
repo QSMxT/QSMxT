@@ -220,7 +220,7 @@ impl App {
     /// [`Self::row_context`], for the config the form builds now.
     pub(super) fn row_context_with(&self, config: Option<&qsmxt_engine::PipelineConfig>) -> RowContext {
         let group = self.filter_state.orientation_group_by();
-        let algorithm = self.field_select("orientation_algorithm");
+        let algorithm = self.field_select("multi_orientation.algorithm");
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
         // The config as the form gives it, and as the run takes it: QSM another output needs is
         // a required change the run makes itself when it is left off.

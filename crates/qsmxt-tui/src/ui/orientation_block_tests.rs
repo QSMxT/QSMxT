@@ -56,7 +56,7 @@ fn a_pattern_that_matches_nothing_says_so() {
 fn a_group_too_small_for_sti_is_flagged() {
     let (mut app, _d) = app_with_orientations();
     app.filter_state.orientation_group = "*acq-dir*".into();
-    app.set_field_select("orientation_algorithm", 1); // sti
+    app.set_field_select("multi_orientation.algorithm", 1); // sti
     let text = screen_text(&render_app_sized(&mut app, 140, 60));
     assert!(text.contains("fewer than the 6 STI needs"), "{text}");
     assert!(text.contains("3 of the 6 needed"), "{text}");
@@ -68,12 +68,12 @@ fn a_group_too_small_for_sti_is_flagged() {
 fn the_reference_orientation_is_marked_and_checked() {
     let (mut app, _d) = app_with_orientations();
     app.filter_state.orientation_group = "*acq-dir*".into();
-    *app.field_text_mut("orientation_reference").unwrap() = "dir3".into();
+    *app.field_text_mut("multi_orientation.reference").unwrap() = "dir3".into();
     let text = screen_text(&render_app_sized(&mut app, 200, 60));
     let line = text.lines().find(|l| l.contains("(group 1; reference)")).unwrap_or_else(|| panic!("{text}"));
     assert!(line.contains("acq-dir3_MEGRE"), "{line}");
     assert_eq!(text.matches("reference)").count(), 1, "{text}");
-    *app.field_text_mut("orientation_reference").unwrap() = "dir9".into();
+    *app.field_text_mut("multi_orientation.reference").unwrap() = "dir9".into();
     let text = screen_text(&render_app_sized(&mut app, 200, 60));
     assert!(text.contains("matches none"), "{text}");
 }
@@ -110,11 +110,11 @@ fn orientation_settings_are_on_the_qsm_tab() {
     let (mut app, _d) = app_with_orientations();
     app.filter_state.orientation_group = "*acq-dir*".into();
     app.active_tab = crate::app::TAB_RECONSTRUCTION;
-    assert!(app.goto_field("orientation_algorithm"));
+    assert!(app.goto_field("multi_orientation.algorithm"));
     let text = screen_text(&render_app_sized(&mut app, 140, 60));
     assert!(text.contains("COSMOS/STI") && text.contains("Combine as"), "{text}");
     assert!(text.contains("COSMOS — scalar susceptibility"), "help follows the choice:\n{text}");
-    app.set_field_select("orientation_algorithm", 1);
+    app.set_field_select("multi_orientation.algorithm", 1);
     let text = screen_text(&render_app_sized(&mut app, 140, 60));
     assert!(text.contains("STI — rank-2"), "{text}");
 }
@@ -137,8 +137,8 @@ fn long_numbers_read_rounded() {
 fn heidi_defaults_read_rounded_and_stay_exact() {
     use ratatui::{backend::TestBackend, Terminal};
     let mut app = crate::app::App::new();
-    app.set_field_select("qsm_algorithm", crate::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == crate::app::LSQR_HEIDI).unwrap());
-    assert!(app.goto_field("heidi_gradient_threshold"));
+    app.set_field_select("inversion.algorithm", crate::app::QSM_PICKER_OPTIONS.iter().position(|o| *o == crate::app::LSQR_HEIDI).unwrap());
+    assert!(app.goto_field("inversion.heidi.gradient_threshold"));
     let mut t = Terminal::new(TestBackend::new(200, 60)).unwrap();
     app.prepare_frame();
     t.draw(|f| super::draw(f, &mut app)).unwrap();

@@ -235,7 +235,7 @@ fn test_algo_modal_opens_on_enter_over_algoselect() {
 fn test_algo_modal_selects_option() {
     let mut app = App::new();
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
+        target: AlgoModalTarget::Select("inversion.algorithm".to_string()),
         title: "QSM inversion".to_string(),
         options: QSM_ALGO_OPTIONS.iter().map(|s| s.to_string()).collect(),
         help: vec![String::new(); QSM_ALGO_OPTIONS.len()],
@@ -247,15 +247,15 @@ fn test_algo_modal_selects_option() {
     assert_eq!(app.algo_modal.as_ref().unwrap().cursor, 2);
     app.handle_key(key(KeyCode::Enter));
     assert!(app.algo_modal.is_none());
-    assert_eq!(app.field_select("qsm_algorithm"), 2);
+    assert_eq!(app.field_select("inversion.algorithm"), 2);
 }
 
 #[test]
 fn test_algo_modal_cancel_leaves_value() {
     let mut app = App::new();
-    let before = app.field_select("qsm_algorithm");
+    let before = app.field_select("inversion.algorithm");
     app.algo_modal = Some(AlgoModal {
-        target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
+        target: AlgoModalTarget::Select("inversion.algorithm".to_string()),
         title: "QSM inversion".to_string(),
         options: vec!["a".to_string(), "b".to_string()],
         help: vec![String::new(), String::new()],
@@ -264,7 +264,7 @@ fn test_algo_modal_cancel_leaves_value() {
     });
     app.handle_key(key(KeyCode::Esc));
     assert!(app.algo_modal.is_none());
-    assert_eq!(app.field_select("qsm_algorithm"), before);
+    assert_eq!(app.field_select("inversion.algorithm"), before);
 }
 
 #[test]
