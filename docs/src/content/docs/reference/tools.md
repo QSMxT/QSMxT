@@ -247,6 +247,10 @@ Split a susceptibility map into paramagnetic and diamagnetic sources, writing
 | `susep-net` | SUSEP-Net (deep learning) — QSM + R2′ + local field |
 | `chi-sepnet` | χ-sepnet (deep learning) — local field + R2′ or R2* (the authors' route; `--chi-sepnet-route native` takes a QSM too) |
 
+Every method that uses the field strength requires `--field-strength`: all but `wavesep`
+and `susep-net`, and `chi-sepnet` only with `--r2star` (R2PRIMEnet checks it against its 3 T
+training).
+
 ## Supplementary maps
 
 | Command | Output |

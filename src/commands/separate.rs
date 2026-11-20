@@ -39,16 +39,23 @@ fn save_result(output: &Path, result: &SeparationResult, reference: &NiftiData) 
     Ok(())
 }
 
-/// Load the QSM + mask and build scan metadata from the common args + echo times.
+/// The field strength a method needs. Clap requires `--field-strength` for these methods; this
+/// keeps a programmatic caller from running one without it.
+fn field_strength(c: &SeparateCommonArgs, method: &str) -> qsmxt_io::Result<f64> {
+    c.field_strength.ok_or_else(|| QsmxtError::Config(format!("{method} needs --field-strength")))
+}
+
+/// Load the QSM + mask and build scan metadata from the common args, echo times and field
+/// strength (NaN for a method that does not use it).
 fn load_common(
-    c: &SeparateCommonArgs, echo_times: &[f64],
+    c: &SeparateCommonArgs, echo_times: &[f64], field_strength: f64,
 ) -> qsmxt_io::Result<(NiftiData, Vec<u8>, ScanMetadata, usize)> {
     let qsm = load_nifti(&c.qsm)?;
     let (mask, _) = load_mask(&c.mask)?;
     let n_voxels = qsm.data.len();
     let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
     let metadata = qsmxt_engine::bridge::to_scan_metadata(
-        qsm.dims, qsm.voxel_size, echo_times, c.field_strength, bdir, Some(qsm.affine),
+        qsm.dims, qsm.voxel_size, echo_times, field_strength, bdir, Some(qsm.affine),
     );
     Ok((qsm, mask, metadata, n_voxels))
 }
@@ -105,7 +112,7 @@ pub fn execute(cmd: SeparateCommand) -> qsmxt_io::Result<()> {
 
 fn r2star_qsm(args: SeparateR2starQsmArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
-    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
+    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times, field_strength(c, "r2star-qsm")?)?;
     info!("Chi-separation (r2star-qsm, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
     let r2star = args.r2star.as_ref().map(|p| load_nifti(p)).transpose()?;
     let mag = if args.magnitude.is_empty() {
@@ -132,7 +139,7 @@ fn r2star_qsm(args: SeparateR2starQsmArgs) -> qsmxt_io::Result<Separated> {
 
 fn decompose(args: SeparateDecomposeArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
-    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
+    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times, field_strength(c, "decompose")?)?;
     info!("Chi-separation (decompose, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
     let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
     check_echoes(ne, &metadata, "decompose")?;
@@ -154,7 +161,7 @@ fn decompose(args: SeparateDecomposeArgs) -> qsmxt_io::Result<Separated> {
 
 fn chi_sep_ilsqr(args: SeparateChiSepIlsqrArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
-    let (qsm, mask, metadata, _) = load_common(c, &[])?;
+    let (qsm, mask, metadata, _) = load_common(c, &[], field_strength(c, "chi-sep-ilsqr")?)?;
     info!("Chi-separation (chi-sep-ilsqr, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
     let local_field = load_nifti(&args.local_field)?;
     let r2prime = load_nifti(&args.r2prime)?;
@@ -171,7 +178,7 @@ fn chi_sep_ilsqr(args: SeparateChiSepIlsqrArgs) -> qsmxt_io::Result<Separated> {
 
 fn chi_sep_medi(args: SeparateChiSepMediArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
-    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
+    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times, field_strength(c, "chi-sep-medi")?)?;
     info!("Chi-separation (chi-sep-medi, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
     let local_field = load_nifti(&args.local_field)?;
     let r2prime = load_nifti(&args.r2prime)?;
@@ -223,7 +230,8 @@ fn chi_sep_medi(args: SeparateChiSepMediArgs) -> qsmxt_io::Result<Separated> {
 
 fn wavesep(args: SeparateWavesepArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
-    let (qsm, mask, metadata, _) = load_common(c, &[])?;
+    // WaveSep and SUSEP-Net do not use the field strength.
+    let (qsm, mask, metadata, _) = load_common(c, &[], c.field_strength.unwrap_or(f64::NAN))?;
     info!("Chi-separation (wavesep, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
     let r2prime = load_nifti(&args.r2prime)?;
     let cfg = separation(qsmxt_engine::SeparationAlgorithm::WaveSep, &args.settings.0)?;
@@ -239,7 +247,7 @@ fn wavesep(args: SeparateWavesepArgs) -> qsmxt_io::Result<Separated> {
 
 fn hc_chisep(args: SeparateHcChisepArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
-    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times)?;
+    let (qsm, mask, metadata, n) = load_common(c, &args.echo_times, field_strength(c, "hc-chisep")?)?;
     info!("Chi-separation (hc-chisep, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
     let r2prime = load_nifti(&args.r2prime)?;
     let (multi, ne) = load_multiecho_voxel_major(&args.magnitude, n)?;
@@ -264,7 +272,8 @@ fn hc_chisep(args: SeparateHcChisepArgs) -> qsmxt_io::Result<Separated> {
 
 fn susep_net(args: SeparateSusepNetArgs) -> qsmxt_io::Result<Separated> {
     let c = &args.common;
-    let (qsm, mask, metadata, _) = load_common(c, &[])?;
+    // WaveSep and SUSEP-Net do not use the field strength.
+    let (qsm, mask, metadata, _) = load_common(c, &[], c.field_strength.unwrap_or(f64::NAN))?;
     info!("Chi-separation (susep-net, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
     qsmxt_io::pipeline::runner::prefetch_weights("susep-net", "susep-net")?;
     let local_field = load_nifti(&args.local_field)?;
@@ -291,8 +300,13 @@ fn chi_sep_net(args: SeparateChiSepNetArgs) -> qsmxt_io::Result<Separated> {
     let local_field = load_nifti(&args.local_field)?;
     let (mask, _) = load_mask(&args.mask)?;
     let bdir = (args.b0_direction[0], args.b0_direction[1], args.b0_direction[2]);
+    // Only R2PRIMEnet (from --r2star) uses the field strength, to check it against its 3 T
+    // training; clap requires it there.
+    if args.r2star.is_some() && args.field_strength.is_none() {
+        return Err(QsmxtError::Config("chi-sepnet --r2star needs --field-strength".into()));
+    }
     let metadata = qsmxt_engine::bridge::to_scan_metadata(
-        local_field.dims, local_field.voxel_size, &[], args.field_strength, bdir, Some(local_field.affine),
+        local_field.dims, local_field.voxel_size, &[], args.field_strength.unwrap_or(f64::NAN), bdir, Some(local_field.affine),
     );
     info!("Chi-separation (chi-sepnet, {} route, {}x{}x{})", match route {
         ChiSepNetRoute::Toolbox => "toolbox", ChiSepNetRoute::Native => "native" },
