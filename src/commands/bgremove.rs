@@ -1,8 +1,7 @@
 use log::info;
 use super::common::{load_nifti, load_mask, save_nifti, save_mask};
 use crate::cli::{
-    BgremoveCommand, BgremoveCommonArgs, BgremoveBfrnetArgs, BgremoveIsmvArgs, BgremoveLbvArgs,
-    BgremovePdfArgs, BgremoveResharpArgs, BgremoveSharpArgs, BgremoveVsharpArgs,
+    BgremoveCommand, BgremoveCommonArgs, BgremoveBfrnetArgs, BgremoveSharpArgs, BgremoveVsharpArgs,
 };
 
 /// A local field (ppm), the geometry it is written with, and the mask it is defined on.
@@ -52,9 +51,15 @@ fn remove_with(
     Ok((result.local_field_ppm, field_nifti, result.eroded_mask))
 }
 
-/// A background-removal config for `algorithm`, with qsm-core's settings for every other method.
-fn config_for(algorithm: qsm_core::pipeline::BgRemovalAlgorithm) -> qsm_core::pipeline::BgRemovalConfig {
-    qsm_core::pipeline::BgRemovalConfig { algorithm, ..Default::default() }
+/// The background-removal config `qsmxt run` builds for `algorithm` with these settings flags
+/// applied.
+fn config(
+    algorithm: qsmxt_engine::BfAlgorithm, settings: &[qsmxt_engine::schema::cli_apply::Given],
+) -> qsmxt_io::Result<qsm_core::pipeline::BgRemovalConfig> {
+    let mut cfg = qsmxt_engine::PipelineConfig::default();
+    cfg.bg_removal.algorithm = algorithm;
+    qsmxt_io::settings::apply(&mut cfg, settings)?;
+    Ok(qsmxt_engine::to_pipeline_stages(&cfg).1)
 }
 
 /// HARPERELLA or iHARPERELLA of `args.input`: a total field in ppm through qsm-core's pipeline
@@ -95,8 +100,7 @@ struct HarperellaArgs {
 }
 
 pub fn execute(cmd: BgremoveCommand) -> qsmxt_io::Result<()> {
-    use qsm_core::bgremove as bg;
-    use qsm_core::pipeline::BgRemovalAlgorithm as A;
+    use qsmxt_engine::BfAlgorithm as B;
     // iQFM reads every echo's phase rather than a field, so it does not share the match below.
     let cmd = match cmd {
         BgremoveCommand::Iqfm(args) => {
@@ -106,42 +110,35 @@ pub fn execute(cmd: BgremoveCommand) -> qsmxt_io::Result<()> {
     };
     let (common, (local_field_data, field_nifti, eroded_mask)) = match cmd {
         BgremoveCommand::Vsharp(args) => vsharp(args)?,
-        BgremoveCommand::Pdf(args) => pdf(args)?,
-        BgremoveCommand::Lbv(args) => lbv(args)?,
-        BgremoveCommand::Ismv(args) => ismv(args)?,
+        BgremoveCommand::Pdf(args) => {
+            let out = remove_with(&args.common, config(B::Pdf, &args.settings.0)?, Some(&args.scan), &args.magnitude, "PDF")?;
+            (args.common, out)
+        }
+        // LBV's tolerance is in radians over the echo spacing, so it takes the scan's field
+        // strength and echo times.
+        BgremoveCommand::Lbv(args) => {
+            let out = remove_with(&args.common, config(B::Lbv, &args.settings.0)?, Some(&args.scan), &[], "LBV")?;
+            (args.common, out)
+        }
+        BgremoveCommand::Ismv(args) => {
+            let out = remove_with(&args.common, config(B::Ismv, &args.settings.0)?, None, &[], "iSMV")?;
+            (args.common, out)
+        }
         BgremoveCommand::Sharp(args) => sharp(args)?,
-        BgremoveCommand::Resharp(args) => resharp(args)?,
+        BgremoveCommand::Resharp(args) => {
+            let out = remove_with(&args.common, config(B::Resharp, &args.settings.0)?, None, &[], "RESHARP")?;
+            (args.common, out)
+        }
         BgremoveCommand::Bfrnet(args) => bfrnet(args)?,
         BgremoveCommand::Iqfm(_) => unreachable!("handled above"),
-        BgremoveCommand::Harperella(args) => {
-            let d = bg::HarperellaParams::default();
-            let harperella = bg::HarperellaParams {
-                radius: args.radius.unwrap_or(d.radius),
-                max_iter: args.max_iter.unwrap_or(d.max_iter),
-                tol: args.tol.unwrap_or(d.tol),
-                pad: args.pad.as_deref().map_or(d.pad, |p| [p[0], p[1], p[2]]),
-                rim: args.rim.map_or(d.rim, Into::into),
-            };
-            let config = qsm_core::pipeline::BgRemovalConfig { harperella, ..config_for(A::Harperella) };
-            harperella_with(&HarperellaArgs {
-                input: args.input, mask: args.mask, output: args.output, output_mask: args.output_mask,
-                te: args.te, field_strength: args.field_strength,
-            }, config, "HARPERELLA")?
-        }
-        BgremoveCommand::Iharperella(args) => {
-            let d = bg::IharperellaParams::default();
-            let iharperella = bg::IharperellaParams {
-                max_iter: args.max_iter.unwrap_or(d.max_iter),
-                tol: args.tol.unwrap_or(d.tol),
-                pad: args.pad.as_deref().map_or(d.pad, |p| [p[0], p[1], p[2]]),
-                rim: args.rim.map_or(d.rim, Into::into),
-            };
-            let config = qsm_core::pipeline::BgRemovalConfig { iharperella, ..config_for(A::Iharperella) };
-            harperella_with(&HarperellaArgs {
-                input: args.input, mask: args.mask, output: args.output, output_mask: args.output_mask,
-                te: args.te, field_strength: args.field_strength,
-            }, config, "iHARPERELLA")?
-        }
+        BgremoveCommand::Harperella(args) => harperella_with(&HarperellaArgs {
+            input: args.input, mask: args.mask, output: args.output, output_mask: args.output_mask,
+            te: args.te, field_strength: args.field_strength,
+        }, config(B::Harperella, &args.settings.0)?, "HARPERELLA")?,
+        BgremoveCommand::Iharperella(args) => harperella_with(&HarperellaArgs {
+            input: args.input, mask: args.mask, output: args.output, output_mask: args.output_mask,
+            te: args.te, field_strength: args.field_strength,
+        }, config(B::Iharperella, &args.settings.0)?, "iHARPERELLA")?,
     };
 
     save_nifti(&common.output, &local_field_data, &field_nifti)?;
@@ -156,121 +153,34 @@ pub fn execute(cmd: BgremoveCommand) -> qsmxt_io::Result<()> {
 }
 
 fn vsharp(args: BgremoveVsharpArgs) -> qsmxt_io::Result<Removal> {
-    use qsm_core::bgremove as bg;
-    use qsm_core::pipeline::BgRemovalAlgorithm as A;
-    // QSMxT's defaults (qsm-core's), the same as `qsmxt run`'s.
-    let d = qsmxt_engine::VsharpConfig::default();
-    let grid_cfg = qsmxt_engine::VsharpConfig {
-        grid: args.grid.map(Into::into).unwrap_or(d.grid),
-        grid_spacing: args.grid_spacing.unwrap_or(d.grid_spacing),
-        ..d.clone()
-    };
-    let vsharp = bg::VsharpParams {
-        threshold: args.threshold.unwrap_or(d.threshold),
-        max_radius: args.max_radius.unwrap_or(d.max_radius),
-        min_radius: args.min_radius.unwrap_or(d.min_radius),
-        radius_step: args.radius_step.unwrap_or(d.radius_step),
-        deconvolve: args.deconvolve.unwrap_or(d.deconvolve),
-        ball: args.ball.map_or(bg::VsharpBall::default(), Into::into),
-        grid: grid_cfg.core_grid(),
-    };
-    let config = qsm_core::pipeline::BgRemovalConfig { vsharp, ..config_for(A::Vsharp) };
+    let mut config = config(qsmxt_engine::BfAlgorithm::Vsharp, &args.settings.0)?;
+    // The SMV ball of one implementation or the other, for comparison with it: not a setting.
+    if let Some(ball) = args.ball { config.vsharp.ball = ball.into(); }
     let out = remove_with(&args.common, config, None, &[], "V-SHARP")?;
     Ok((args.common, out))
 }
 
-fn pdf(args: BgremovePdfArgs) -> qsmxt_io::Result<Removal> {
-    use qsm_core::bgremove as bg;
-    use qsm_core::pipeline::BgRemovalAlgorithm as A;
-    let d = bg::PdfParams::default();
-    let pdf = bg::PdfParams {
-        tol: args.tol.unwrap_or(d.tol),
-        n_cg: args.n_cg.unwrap_or(d.n_cg),
-        space: args.space.map_or(d.space, Into::into),
-        n_pad: args.n_pad.unwrap_or(d.n_pad),
-    };
-    let config = qsm_core::pipeline::BgRemovalConfig { pdf, ..config_for(A::Pdf) };
-    let out = remove_with(&args.common, config, Some(&args.scan), &args.magnitude, "PDF")?;
-    Ok((args.common, out))
-}
-
-fn lbv(args: BgremoveLbvArgs) -> qsmxt_io::Result<Removal> {
-    use qsm_core::bgremove as bg;
-    use qsm_core::pipeline::BgRemovalAlgorithm as A;
-    // LBV's tolerance is in radians over the echo spacing, so it takes the scan's field
-    // strength and echo times.
-    let d = bg::LbvParams::default();
-    let lbv = bg::LbvParams {
-        tol: args.tol.unwrap_or(d.tol),
-        depth: args.depth.or(d.depth),
-        peel: args.peel.unwrap_or(d.peel),
-        n1: args.n1.unwrap_or(d.n1),
-        n2: args.n2.unwrap_or(d.n2),
-        n3: args.n3.unwrap_or(d.n3),
-        precision: args.precision.map_or(d.precision, Into::into),
-        ..d
-    };
-    let config = qsm_core::pipeline::BgRemovalConfig { lbv, ..config_for(A::Lbv) };
-    let out = remove_with(&args.common, config, Some(&args.scan), &[], "LBV")?;
-    Ok((args.common, out))
-}
-
-fn ismv(args: BgremoveIsmvArgs) -> qsmxt_io::Result<Removal> {
-    use qsm_core::bgremove as bg;
-    use qsm_core::pipeline::BgRemovalAlgorithm as A;
-    let d = bg::IsmvParams::default();
-    let ismv = bg::IsmvParams {
-        variant: args.variant.map_or(d.variant, Into::into),
-        tol: args.tol.unwrap_or(d.tol),
-        max_iter: args.max_iter.or(d.max_iter),
-        radius: args.radius.or(d.radius),
-    };
-    let config = qsm_core::pipeline::BgRemovalConfig { ismv, ..config_for(A::Ismv) };
-    let out = remove_with(&args.common, config, None, &[], "iSMV")?;
-    Ok((args.common, out))
-}
-
 fn sharp(args: BgremoveSharpArgs) -> qsmxt_io::Result<Removal> {
-    use qsm_core::bgremove as bg;
-    use qsm_core::pipeline::BgRemovalAlgorithm as A;
-    // Each variant's own defaults: SEPIA's (4 mm, 0.03), or QSM.jl's (18 × the smallest
-    // voxel dimension, 0.05), which depend on the grid.
-    let d = match args.variant {
-        Some(crate::cli::SharpVariantArg::Qsmjl) => {
-            bg::SharpParams::qsmjl(&super::common::nifti_grid(&load_nifti(&args.common.input)?))
-        }
-        _ => bg::SharpParams::default(),
-    };
-    let sharp = bg::SharpParams {
-        threshold: args.threshold.unwrap_or(d.threshold),
-        radius: args.radius.unwrap_or(d.radius),
-        variant: d.variant,
-    };
-    let config = qsm_core::pipeline::BgRemovalConfig { sharp, ..config_for(A::Sharp) };
+    let mut config = config(qsmxt_engine::BfAlgorithm::Sharp, &args.settings.0)?;
+    // QSM.jl's variant, for comparison with it: not a setting. Its own defaults (18 × the
+    // smallest voxel dimension, 0.05), which depend on the grid, stand for what is not given.
+    if let Some(crate::cli::SharpVariantArg::Qsmjl) = args.variant {
+        let d = qsm_core::bgremove::SharpParams::qsmjl(&super::common::nifti_grid(&load_nifti(&args.common.input)?));
+        let given = |long: &str| args.settings.0.iter().any(|g| g.flag.long == long);
+        config.sharp = qsm_core::bgremove::SharpParams {
+            threshold: if given("sharp-threshold") { config.sharp.threshold } else { d.threshold },
+            radius: if given("sharp-radius") { config.sharp.radius } else { d.radius },
+            variant: d.variant,
+        };
+    }
     let out = remove_with(&args.common, config, None, &[], "SHARP")?;
     Ok((args.common, out))
 }
 
-fn resharp(args: BgremoveResharpArgs) -> qsmxt_io::Result<Removal> {
-    use qsm_core::bgremove as bg;
-    use qsm_core::pipeline::BgRemovalAlgorithm as A;
-    let d = bg::ResharpParams::default();
-    let resharp = bg::ResharpParams {
-        radius: args.radius.unwrap_or(d.radius),
-        tik_reg: args.tik_reg.unwrap_or(d.tik_reg),
-        tol: args.tol.unwrap_or(d.tol),
-        max_iter: args.max_iter.unwrap_or(d.max_iter),
-    };
-    let config = qsm_core::pipeline::BgRemovalConfig { resharp, ..config_for(A::Resharp) };
-    let out = remove_with(&args.common, config, None, &[], "RESHARP")?;
-    Ok((args.common, out))
-}
-
 fn bfrnet(args: BgremoveBfrnetArgs) -> qsmxt_io::Result<Removal> {
-    use qsm_core::pipeline::BgRemovalAlgorithm as A;
     // Fetch the ONNX weights with a download bar (cached under $QSM_MODEL_DIR / the cache).
     // On a build without the `dl` feature this errors here with a clear message.
     qsmxt_io::pipeline::runner::prefetch_weights("bfrnet", "bfrnet")?;
-    let out = remove_with(&args.common, config_for(A::Bfrnet), None, &[], "BFRnet")?;
+    let out = remove_with(&args.common, config(qsmxt_engine::BfAlgorithm::Bfrnet, &[])?, None, &[], "BFRnet")?;
     Ok((args.common, out))
 }

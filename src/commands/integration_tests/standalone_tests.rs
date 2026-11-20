@@ -65,7 +65,7 @@ fn test_bgremove_pdf() {
         common: common_bgremove(input.clone(), mask.clone(), output.clone()),
         scan: scan(&[0.02]),
         magnitude: vec![magnitude.clone()],
-        tol: None, n_cg: None, space: None, n_pad: None,
+        settings: Default::default(),
     })).unwrap();
     assert!(output.exists());
     // One magnitude for two echo times is refused before PDF runs.
@@ -73,7 +73,7 @@ fn test_bgremove_pdf() {
         common: common_bgremove(input, mask, output),
         scan: scan(&[0.01, 0.02]),
         magnitude: vec![magnitude],
-        tol: None, n_cg: None, space: None, n_pad: None,
+        settings: Default::default(),
     })).unwrap_err().to_string();
     assert!(e.contains("magnitude of every echo"), "{e}");
 }
