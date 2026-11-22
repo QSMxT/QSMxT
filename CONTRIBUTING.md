@@ -1,8 +1,15 @@
 # Contributing to QSMxT
 
-QSMxT is a BIDS-native QSM pipeline: the `qsmxt` command line and TUI, and `qsmxt-engine`, the
-I/O-free crate with the configuration, planning, run logic, settings schema, command line and
-methods text. Usage documentation is on the [documentation site](https://qsmxt.github.io/QSMxT/).
+QSMxT is a BIDS-native QSM pipeline. The workspace has four crates:
+
+| Crate | Holds |
+|---|---|
+| `qsmxt-engine` (`crates/qsmxt-engine`) | No file I/O; builds for wasm32 and is what qsmbly runs. Configuration, the settings registry, plan, step graph, run logic, advice, command line, methods text. |
+| `qsmxt-io` (`crates/qsmxt-io`) | The file side: BIDS, DICOM and NIfTI I/O, executors, the pipeline runner, update and news. |
+| `qsmxt-tui` (`crates/qsmxt-tui`) | The TUI. |
+| `qsmxt` (`src/`) | The binary: the command line (`src/cli/`) and one file per subcommand (`src/commands/`). |
+
+Usage documentation is on the [documentation site](https://qsmxt.github.io/QSMxT/).
 
 ## Where code belongs
 
@@ -29,35 +36,51 @@ the owner's repository. If both need changes, file it in QSM.rs and note the QSM
    and move the pin; no QSMxT-side workaround. Simple numerics are fine here (region statistics,
    referencing, T2\* = 1/R2\*, unit conversions), as are test-only reference implementations.
 2. **Defaults come from qsm-core's `*Params::default()`**, not copied literals. QSMxT's own
-   recommended values are QSM.rs rules, not hidden defaults.
+   recommended values are QSM.rs rules, not hidden defaults. Method names and citations come
+   from QSM.rs's method catalogue (`qsm_core::catalogue`): fix a citation there.
+   `methods/citations.rs` holds only works that are not a method's (QSMxT itself, consensus
+   papers).
 3. **Never change a setting silently.** Choosing one setting must not rewrite another. Don't add
-   "this default depends on another setting" logic: express it as a QSM.rs rule.
-   - The TUI offers rule findings in the advice pop-up, a checklist of changes. A recommendation
-     is preselected; an original authors' setting preselects **Keep mine**; nothing is
-     preselected when equally strong recommendations disagree.
+   "this default depends on another setting" logic: express it as a QSM.rs rule. What a front
+   end offers, and what starts ticked, is decided once in `qsmxt_engine::advice` for the TUI,
+   qsmbly and `--accept-*`.
+   - The advice pop-up is a checklist of changes. A recommendation is preselected; an original
+     authors' setting or a suggestion preselects **Keep mine**; nothing is preselected when
+     equally strong advice disagrees.
    - The setting the user just changed stands: the pop-up helps correct the *other* setting
      (choosing QSMART with HEIDI on offers turning HEIDI off, not undoing QSMART).
    - The CLI runs exactly the settings given, reports differences from the reference in the log
-     and methods Note, and refuses a hard requirement at plan time with a message naming the
-     setting.
-4. **Every option reaches every surface** in the same PR (see [Change surfaces](#change-surfaces)).
+     and methods Note, applies them only with `--accept-recommendations` or
+     `--accept-reference-settings`, and refuses a `Required` rule at plan time with a message
+     naming the setting.
+4. **One description of each setting.** The settings registry
+   (`crates/qsmxt-engine/src/schema/table/<section>.rs`) gives each setting's label, help,
+   bounds, level, place in the TUI and `qsmxt run` flag. The run and standalone flags, the TUI
+   rows, qsmbly's forms and the docs' settings reference are derived from it; don't restate a
+   setting anywhere else. Every option reaches every surface in the same PR (see
+   [Change surfaces](#change-surfaces)).
 5. **Nothing is skipped silently.** An output the data can't produce is an error before the first
-   run starts; one turned on by another option is a warning naming that option.
+   run starts. An output another setting needs is offered in the TUI's Required-change pop-up;
+   a run not given it turns it on and logs which setting needs it.
 6. **Old installs can still update.** `qsmxt update` must keep working from every release where it
    ever worked: keep the asset names (`qsmxt-<tag>-<target>.tar.gz`/`.zip`) and archive layout.
    `tests/release_asset_contract.rs` guards this.
 7. **Settings files are read as written.** Don't add a migration or schema bump just to carry a
    new default; the release notes mention it. Where `migrate.rs` does change what it reads
    (renames, removals), each change is a note or warning.
-8. **Toolbox pipelines replicate a reference toolbox** (parity checked on QSM-CI). They are not
-   QSMxT recommendations.
+8. **Toolbox pipelines replicate a reference toolbox** (parity checked on QSM-CI). They are
+   defined in QSM.rs (`pipeline::reference_pipelines`) and applied by `pipelines.rs`; they are
+   not QSMxT recommendations.
 
 ## Conventions
 
-- **Layout.** The engine (`crates/qsmxt-engine/src`) has no file I/O and builds for wasm32, with
-  and without `onnx`. The binary (`src/`) holds `cli.rs`, `commands/` (one file per
-  subcommand), `tui/`, BIDS/DICOM/NIfTI I/O and the executors. Standalone subcommands call the
-  same qsm-core dispatchers as `qsmxt run`.
+- **Layout.** The engine builds for wasm32 with and without `onnx` (a CI job checks both).
+  Standalone subcommands call the same qsm-core dispatchers as `qsmxt run` and take its flag
+  names (flag sets by config-path prefix, `flag_set!` in `src/cli/`).
+- **Size budgets**, enforced in CI (`.github/scripts/size_budget.py --enforce`): a file's
+  non-test code 800 lines, a test file 1,500, a function 120. Split a file or function that
+  would go over; a ceiling in `.github/size-budget.json` (empty today) is added only in its own
+  commit, with the reason in the commit message.
 - **Names.** Config keys are snake_case by section (`bg_removal.vsharp.radius_step`); run flags
   are kebab-case with the method prefix (`--vsharp-radius-step`). Units go in names (`_mm`, `_s`,
   `_hz`); when a unit or meaning changes, rename the setting.
@@ -89,14 +112,23 @@ Tests check wiring, not algorithms; QSM.rs's CI guarantees algorithm correctness
 - Test the plan, `--dry`, the step graph, cache keys, config → params mapping, output names,
   sidecars and methods text. None of these needs an algorithm to run.
 - Never assert algorithm numerics here; move such a check to QSM.rs if it isn't covered there.
-- Keep only a handful of end-to-end runs, on tiny synthetic data (`src/testutils.rs`) with the
-  fastest choices (TKD, simple thresholds). Use mocks where data must flow.
+- Keep only a handful of end-to-end runs, on tiny synthetic data
+  (`crates/qsmxt-io/src/testutils.rs`) with the fastest choices (TKD, simple thresholds). Use
+  mocks where data must flow.
 - Test names are sentences (`a_skipped_step_differs`). Never delete or weaken what a test checks;
   rewrite it to check the same thing more cheaply.
 - Coverage stays at or above the 70% gate. CI should stay well under 5 minutes; fix the slow
   tail (over about 1 s), not only the slowest test.
-- Locally, build, run clippy and run only the new or changed tests (quick ones). Push early and
-  let CI run the full suite and any repeats.
+- **Snapshots** (each crate's `tests/snapshots/`) record help text, flags, command lines,
+  methods text, step cache keys, dry runs and TUI forms. A change that shows in one is a
+  behaviour change: regenerate with `QSMXT_UPDATE_SNAPSHOTS=1`, in its own commit, and say why
+  in the PR. A changed cache key recomputes every user's cached steps.
+- **Push early.** Locally, build and run clippy (`-D warnings`) on the crates you changed, and
+  run only the new or changed tests, if they take about 2 minutes at most. Don't run the whole
+  `qsmxt` test suite locally; CI runs everything and any repeats. After a CI failure, rerun that
+  test locally only if it is quick; otherwise push the fix. Regenerate docs and snapshots once,
+  at the end. A re-measurement a doc asks for (e.g. memory calibration) does not hold up a PR:
+  note it in the body.
 - A test too slow to wait for locally (over about 2 minutes) gets
   `#[ignore = "slow: ..."]`: a local `cargo test` skips it and CI runs it with the rest of the
   suite (`--run-ignored all`, see `.github/scripts/nextest_filter.py`). Other `#[ignore]`d tests
@@ -104,16 +136,21 @@ Tests check wiring, not algorithms; QSM.rs's CI guarantees algorithm correctness
 
 ## Change surfaces
 
-For every option added, renamed, removed or re-defaulted, check in the same PR:
+For every option added, renamed, removed or re-defaulted, check in the same PR (paths under
+`crates/qsmxt-engine/src/` unless given):
 
-- [ ] `qsmxt run` flag (`src/cli.rs`) and the standalone subcommand (`src/commands/*.rs`)
-- [ ] TUI (`src/tui/`, with `schema_parity` passing)
-- [ ] engine `config.rs`, `bridge.rs` (each setting passed explicitly), `schema/table.rs` (label,
-      help, bounds, visibility) and `schema/regular.rs` (basic or advanced), `command.rs`, `methods.rs`, cache/step keys,
-      `requirements.rs`, `memory.rs`
-- [ ] docs `docs/src/content/docs/reference/*.md`, and `cli.md` regenerated with
-      `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference`
-- [ ] coverage tests: `param_coverage`, `schema_coverage`, `run_args_coverage`
+- [ ] config struct (`config/<section>.rs`), and `enums.rs` for a new choice
+- [ ] registry entry (`schema/table/<section>.rs`: label, help, bounds, `.of(..)`, `.flag(..)`)
+      and `schema/regular.rs` (basic or advanced). The run and standalone flags and the TUI row
+      follow from these.
+- [ ] `bridge/` (each setting passed explicitly), `methods/`, `cache.rs` and step keys, the
+      stage's provenance `params()` (`stages/<stage>.rs`), `requirements/`, `memory.rs`
+- [ ] TUI only where a setting is not a plain registry row
+      (`crates/qsmxt-tui/src/app/field_paths.rs`), with `schema_parity` passing
+- [ ] coverage tests: `param_coverage`, `schema_coverage`, `config_path_literals`, and
+      `catalogue_coverage` for a new method
+- [ ] snapshots and generated docs regenerated (see [Documentation](#documentation)); the
+      hand-written prose in `docs/` that names the setting
 - [ ] qsmbly: anything beyond the schema, listed under "For qsmbly" in the PR body
 
 Grep for every changed name and old default before opening the PR.
@@ -128,24 +165,30 @@ Grep for every changed name and old default before opening the PR.
 - Open as a draft. A PR is ready only when CI is green. Once it is marked ready, put further
   changes in a new PR unless the reviewer agrees.
 - **Stacked PRs:** retarget children to `main` before the parent is merged.
-- **qsm-core pin:** both `Cargo.toml` files pin the same QSM.rs `rev` (a `tag` for releases);
-  `tests/qsm_core_pin.rs` checks it. A temporary pin to an unmerged QSM.rs PR must be moved to
-  QSM.rs `main` before the QSMxT PR is ready.
+- **qsm-core pin:** one pin in the root `Cargo.toml`'s `[workspace.dependencies]`, a QSM.rs
+  `main` `rev` between releases and a `tag` for releases; `tests/qsm_core_pin.rs` checks it. A
+  temporary pin to an unmerged QSM.rs PR must be moved to QSM.rs `main` before the QSMxT PR is
+  ready.
 - The maintainer merges, by squash.
 - No `CHANGELOG.md` or release-notes files. The PR body is the record; release notes are drafted
   from it and published on the GitHub release.
 
 ## Releases
 
-- Both `Cargo.toml` versions stay `0.0.0`; `release.yml` sets the version from the tag, builds
-  every target and publishes `SHA256SUMS`.
+- Versions stay `0.0.0` (`[workspace.package]`); `release.yml` sets the version from the tag,
+  builds every target and publishes `SHA256SUMS`.
 - Releases are cut only with the maintainer's go, with QSM.rs pinned to a tag and parity checked
   on QSM-CI for whatever computation changed. Prefer one complete release over a quick
   follow-up or patch release.
 
 ## Documentation
 
-- The site is Astro Starlight under `docs/`. `reference/cli.md` is generated; never edit it by
-  hand. `src/cli_reference.rs` fails when a page names a flag, command or algorithm that doesn't
-  exist.
-- `README.md` covers what QSMxT is, install, quick start and pointers to the site.
+- The site is Astro Starlight under `docs/`. `src/cli_reference.rs` fails when a page names a
+  flag, command or algorithm that doesn't exist.
+- Generated, never edited by hand: `reference/cli.md`, and the blocks between
+  `<!-- generated:NAME start … -->` and `<!-- generated:NAME end -->` in `configuration.md`
+  (from the registry), `algorithms.md` and `README.md` (method tables from QSM.rs's catalogue). Regenerate with
+  `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference` and
+  `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs`.
+- `README.md` covers what QSMxT is, install, quick start, the method tables and pointers to the
+  site. No counts ("50+ algorithms").
