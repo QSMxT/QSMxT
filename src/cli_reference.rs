@@ -215,8 +215,8 @@ mod tests {
 
     /// The pages that describe the methods: the methods index first, then the guides and
     /// background pages that hold a stage's options.
-    const METHOD_PAGES: [&str; 6] = ["reference/methods.md", "how-to/build-mask.md", "background/geometry.md",
-        "how-to/source-separation.md", "how-to/multi-orientation.md", "how-to/reference-and-stats.md"];
+    const METHOD_PAGES: [&str; 6] = ["reference/methods.md", "reference/masking.md", "background/geometry.md",
+        "reference/source-separation.md", "reference/multi-orientation.md", "reference/referencing-and-stats.md"];
 
     fn method_pages() -> String {
         METHOD_PAGES.map(doc).join("\n")
@@ -298,7 +298,7 @@ mod tests {
     /// are exactly the recipe the preset runs.
     #[test]
     fn mask_preset_expansions_in_the_docs_are_the_recipes() {
-        let algorithms = doc("how-to/build-mask.md");
+        let algorithms = doc("reference/masking.md");
         for (name, recipe) in qsmxt_engine::mask_presets() {
             let mut flags: Vec<String> = recipe.sections.iter()
                 .map(|s| format!("--mask {}", s.compact_spec())).collect();
@@ -307,7 +307,7 @@ mod tests {
             }
             flags.extend(recipe.refinements.iter().map(|r| format!("--mask-refine {}", r.compact_spec())));
             let row = format!("| `{name}` | `{}` |", flags.join(" "));
-            assert!(algorithms.contains(&row), "how-to/build-mask.md lacks the expansion row\n{row}");
+            assert!(algorithms.contains(&row), "reference/masking.md lacks the expansion row\n{row}");
         }
     }
 

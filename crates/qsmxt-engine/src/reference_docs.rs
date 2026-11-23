@@ -33,7 +33,7 @@ pub const CONFIGURATION: &str = "docs/src/content/docs/reference/configuration.m
 /// The methods index: every stage's method table but source separation's.
 pub const METHODS: &str = "docs/src/content/docs/reference/methods.md";
 /// The source-separation guide, which holds the separation methods' table.
-pub const SOURCE_SEPARATION: &str = "docs/src/content/docs/how-to/source-separation.md";
+pub const SOURCE_SEPARATION: &str = "docs/src/content/docs/reference/source-separation.md";
 /// The README.
 pub const README: &str = "README.md";
 
