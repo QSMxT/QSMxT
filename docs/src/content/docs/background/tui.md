@@ -1,48 +1,11 @@
 ---
-title: Using the TUI
-description: "QSMxT's interactive terminal interface: what it does, its layout, keys and mouse."
+title: TUI layout and keys
+description: "The interactive terminal interface's tabs, keys and mouse."
 ---
 
-The interactive terminal interface (TUI) is the recommended way to use QSMxT. It
-takes you through the whole workflow — converting DICOMs, configuring the
-pipeline, and running it — without writing a single command flag or config file.
-
-```sh
-qsmxt tui
-```
-
-## What you can do
-
-- **Convert DICOMs to BIDS** — point at a DICOM directory, review the automatic
-  series classification, relabel anything that needs it, and convert. (See
-  [DICOM conversion](/QSMxT/reference/dicom-conversion/#what-it-handles) for what the classifier handles.)
-  Tick *Keep DICOM UIDs* above *Convert to BIDS* to keep the study's UIDs for a
-  later DICOM export ([not for sharing](/QSMxT/reference/dicom-conversion/#keeping-the-studys-dicom-uids)).
-- **Point at a dataset** and let QSMxT discover the phase/magnitude runs.
-- **Download an example dataset** — no data of your own to hand? Set
-  **Input mode → Example dataset**, tick one or more real in-vivo acquisitions,
-  and press Download. The TUI fetches them, writes a BIDS dataset, and drops you
-  straight into BIDS mode pointed at it. (See
-  [Fetch an example](/QSMxT/start/tutorial-tui/#no-data-yet-fetch-an-example).)
-- **Start from a pipeline** — QSMxT's defaults, or an original toolbox's whole
-  pipeline (the MEDI toolbox, STI Suite, QSMART, ...) on the Pipeline tab. (See
-  [Pipelines](/QSMxT/toolbox-pipelines/#pipelines).)
-- **Choose algorithms** for masking, unwrapping, background-field removal, and
-  dipole inversion from menus — no need to memorise flag names or valid values.
-- **Adjust parameters** for each stage, with sensible defaults pre-filled.
-- **Copy the equivalent command** — as you configure, the TUI shows the matching
-  `qsmxt run` command and updates it live. It's the easiest way to build a run
-  command without memorising flags. The TUI does not write a config file itself,
-  but every run (from the TUI or the CLI) records its resolved settings in
-  `derivatives/qsmxt/pipeline_config.toml`, which `--config` (or the TUI's
-  *Config file* field) loads back.
-- **Export results as DICOM** — tick *Export DICOM* in the Reconstruction tab's
-  DICOM section, and the maps to export, to write them as DICOM series alongside
-  the NIfTIs, ready for a PACS or a clinical viewer. (See
-  [Exporting results as DICOM](/QSMxT/how-to/export-dicom/).)
-- **Run the pipeline** and watch progress without leaving the terminal.
-- **Submit to a cluster** — generate and launch SLURM jobs for large cohorts
-  directly from the TUI; scaling out doesn't require the command line.
+`qsmxt tui` starts the interactive terminal interface. The [Quick start](/QSMxT/start/quick-start/)
+and the [guides](/QSMxT/how-to/run-qsm/) say how to use it for each task; this page is its layout
+and keys.
 
 ## Tips
 
@@ -186,13 +149,6 @@ The Methods › Graph drawing is written to the system's temporary folder. Over 
 display, QSMxT does not try to open it and shows where it was written instead, so you can copy
 it to your own computer. A run writes the same drawing next to its results (`pipeline.svg`).
 
-The TUI builds the same configuration the CLI consumes, so anything you set up
-interactively can be reproduced [noninteractively](/QSMxT/how-to/run-qsm/)
-with `qsmxt run --config` — or by copying the generated command.
-
-:::note
-The TUI is ideal for exploring a new dataset and dialling in parameters. Once
-you're happy, capture the configuration to a TOML file and reuse it
-[noninteractively](/QSMxT/how-to/run-qsm/) for scripted batch
-processing.
-:::
+The TUI shows the `qsmxt run` command for the current settings as you change them, and every
+run saves its settings to `derivatives/qsmxt/pipeline_config.toml`, which `--config` (or the
+Input tab's *Config file*) loads back.

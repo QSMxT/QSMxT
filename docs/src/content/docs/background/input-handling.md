@@ -91,3 +91,55 @@ ppm with the scanner's centre frequency, `ImagingFrequency`, when a sidecar give
 writes it), and with γ̄ times `MagneticFieldStrength` otherwise. The centre frequency is the
 field the scanner actually ran at (2.89 T on many Siemens "3 T" scanners), so it is the
 more accurate of the two. The methods text says which one each run used.
+
+## DICOM conversion
+
+`qsmxt dicom-convert` classifies every series with no prompts, then hands the images to
+dcm2niix. It de-identifies with dcm2niix's `-ba y`; `--keep-dicom-uids` uses `-ba o`, which keeps
+`StudyInstanceUID`, `SeriesInstanceUID`, `StudyID` and the dates, and adds the
+`FrameOfReferenceUID`, under the DICOM keywords as BIDS recommends for metadata it does not
+define.
+
+### What it handles
+
+- **Gradient-echo magnitude, phase, real and imaginary images** — from the DICOM
+  image type, GE's private image-type tag, or the Enhanced DICOM frame type; split
+  correctly even when a vendor packs them under a single `SeriesInstanceUID`
+  (some Philips and GE exports). Only gradient-echo sequences are labelled this way.
+- **Echoes** — a single-echo acquisition is named `T2starw`, a multi-echo one
+  `MEGRE` with `echo-N`. Series exported one echo at a time are numbered by echo
+  time.
+- **Runs and acquisitions** — series of one protocol acquired together are one
+  run. A repeat with the same settings is `run-2`; a repeat with different
+  settings (echo times, TR, flip angle, matrix, slice thickness, voxel size,
+  receive coil) is a separate acquisition, `acq-<protocol>2`.
+- **The scanner's own reconstructions** — kept next to the images they came from,
+  each with its own name: susceptibility map `rec-scanner_Chimap`, T2\*/R2\* maps
+  `rec-scanner_T2starmap`/`rec-scanner_R2starmap`, SWI `rec-swi_part-mag_T2starw`,
+  minimum-intensity projection `rec-mip_T2starw`, filtered magnitude
+  `rec-filtered`. Other reconstructions of the same images get a `rec-` label from
+  their image type or description; the magnitude from the same reconstruction as
+  the phase is the main one.
+- **T1-weighted structurals** — MPRAGE, SPACE/TFE T1, MP2RAGE `UNI` images and
+  other T1w series are `T1w`; MP2RAGE inversion images are `inv-1`/`inv-2`
+  `MP2RAGE`, and its T1 map `T1map`.
+- **Individual coil images** — each coil element of an uncombined acquisition is
+  converted separately with a `coil-NN` label (`rec-uncombined` when the
+  scanner-combined images are there too). A series with a single coil element is
+  the combined image.
+- **Duplicates** — the same images exported twice are converted once; two
+  different original reconstructions of one acquisition keep the first and put
+  the other in `extra_data/`.
+- **Everything else** — scouts, reformats, FLAIR, diffusion, Dixon and other
+  vendor maps are kept in `sub-*/[ses-*/]extra_data/` as dcm2niix names them,
+  outside BIDS (listed in `.bidsignore`). Reports, presentation states and other
+  non-image files are listed and skipped.
+- **DICOM files without the DICOM file header** (older exports) are read as well.
+
+No two series are ever written to the same file: all names are decided before
+anything is written, and a name two series would share is reported as an error
+naming both. A series dcm2niix cannot convert leaves nothing behind.
+
+Output is a BIDS tree of `sub-*/[ses-*/]anat/` NIfTIs with JSON sidecars
+(`EchoTime` in seconds), a `dataset_description.json`, a README and a
+`.bidsignore`, ready for the pipeline.

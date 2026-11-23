@@ -51,5 +51,23 @@ log is `derivatives/qsmxt/logs/<run>.log`; SLURM's own output is beside the job 
 - Without `--submit`, the scripts are written but not submitted; submit them later with
   `bash derivatives/qsmxt/slurm/submit.sh`.
 
-How the jobs divide the work, and what the aggregation job does, is in
-[SLURM jobs](/QSMxT/reference/slurm/).
+Every option is in [Command line](/QSMxT/reference/cli/#qsmxt-slurm).
+
+## What the jobs do
+
+`qsmxt slurm` checks the settings, and every scan against them, before it writes anything, so
+a bad setting is reported once rather than by every job. It writes the resolved settings to
+`derivatives/qsmxt/pipeline_config.toml`, and the jobs to `derivatives/qsmxt/slurm/`:
+
+- **One job per scan** (`qsmxt_<run>.sh`) runs `qsmxt run --no-dataset-steps --include <run>`:
+  that scan's pipeline and nothing else.
+- **One aggregation job** (`qsmxt_aggregate.sh`) starts once every scan's job has succeeded
+  (`--dependency=afterok`). It runs `qsmxt aggregate`, which does what a local `qsmxt run`
+  does after its scans: multi-orientation reconstruction, the dataset's tables and figures,
+  `methods.md`, the provenance records, the combined `qsmxt.log`, and
+  `--clean-intermediates` if you asked for it. It refuses a scan that has not finished under
+  the same settings, and names it.
+
+The result is the dataset a local `qsmxt run` makes. Each job asks for memory estimated from
+its scan's size; the aggregation job is sized for the largest multi-orientation group. A job
+that is requeued or restarted carries on from its last finished step.

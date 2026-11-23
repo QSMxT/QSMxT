@@ -20,7 +20,7 @@ automatically, what it doesn't do, and what you can do.
 | Echoes read out in alternating directions | [Bipolar readouts](/QSMxT/data/bipolar/) |
 | 7 T, 1.5 T or lower | [7 T and low field](/QSMxT/data/field-strength/) |
 | Rodents, other animals, ex vivo | [Rodent and other non-human data](/QSMxT/data/non-human/) |
-| A multi-echo spin-echo (MESE) scan, for R2′ and source separation | [MESE and R2′](/QSMxT/data/mese-r2prime/) |
+| Paramagnetic and diamagnetic χ, or a multi-echo spin-echo (MESE) scan | [Source separation and MESE](/QSMxT/data/source-separation/) |
 | The same head at several orientations | [Multiple head orientations](/QSMxT/data/multi-orientation/) |
 | NIfTI files, missing sidecars, or maps from other tools | [Non-BIDS or partial data](/QSMxT/data/non-bids/) |
 

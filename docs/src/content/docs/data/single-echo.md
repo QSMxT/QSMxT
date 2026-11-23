@@ -27,5 +27,5 @@ QSM works on a single echo, but several steps need more than one.
   and TGV (`--qsm-algorithm tgv`), which unwraps, removes the background and inverts in one step.
 - For new acquisitions, several echoes give a better field map and allow R2\*.
 
-See [Choose methods](/QSMxT/how-to/choose-methods/) and what each output needs in
+What each output needs is in
 [Input data layout](/QSMxT/reference/inputs/#what-each-output-needs).

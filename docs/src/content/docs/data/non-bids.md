@@ -48,6 +48,6 @@ the tool:
 | `--use-custom-dseg <TOOL>` | parcellation | `_dseg.nii` |
 
 **Single files, no dataset:** each pipeline step is also a command that works on NIfTI files
-directly (`qsmxt invert`, `qsmxt bgremove`, …): see [Standalone tools](/QSMxT/reference/tools/).
+directly (`qsmxt invert`, `qsmxt bgremove`, …): see [Command line](/QSMxT/reference/cli/).
 
 More: [Input data layout](/QSMxT/reference/inputs/).

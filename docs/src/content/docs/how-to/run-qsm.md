@@ -1,5 +1,5 @@
 ---
-title: Run QSM
+title: Run QSM on your data
 description: "Make susceptibility maps from a BIDS dataset, in the TUI or on the command line."
 ---
 
@@ -50,6 +50,8 @@ check.
   use *Include* and *Exclude* on the Input tab.
 - **Re-running** skips the steps that already finished, so changing a late setting is quick.
   `--force` starts again from scratch.
+- **Memory:** QSMxT runs several scans at once, as many as the memory allows (inside a Slurm
+  job or a container, its limit). `--mem-limit-gb` sets the limit yourself.
 - **Save the settings:** every run writes them to `derivatives/qsmxt/pipeline_config.toml`.
   Run them again with `qsmxt run other/bids --config pipeline_config.toml`; flags given
   beside `--config` win.

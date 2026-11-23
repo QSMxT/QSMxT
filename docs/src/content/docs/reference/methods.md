@@ -687,7 +687,7 @@ command — is the [TUI](/QSMxT/background/tui/): it exposes every
 option with sensible defaults and shows the equivalent `qsmxt run` command live as
 you change them. You can also set them in a
 [configuration file](/QSMxT/reference/configuration/), or run the matching
-[standalone tool](/QSMxT/reference/tools/) (e.g. `qsmxt invert tgv --help`) to
+[step command](/QSMxT/reference/cli/) (e.g. `qsmxt invert tgv --help`) to
 experiment directly.
 
 ### MEDI's CSF zero reference and TFI's data term

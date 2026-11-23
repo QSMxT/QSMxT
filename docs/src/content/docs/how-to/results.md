@@ -41,9 +41,42 @@ undefined in the thin rim the background removal takes off the edge of the mask.
 ## Other outputs
 
 Other maps appear only when you ask for them: SWI (`--do-swi`), T2\* and R2\*
-(`--do-t2starmap`, `--do-r2starmap`), paramagnetic and diamagnetic χ (`--do-chisep`), a
-segmentation and per-structure statistics (`--do-segmentation --do-analysis`). Every file and
+(`--do-t2starmap`, `--do-r2starmap`), paramagnetic and diamagnetic χ ([`--do-chisep`](/QSMxT/data/source-separation/)), a
+segmentation and per-structure statistics ([below](#measure-χ-in-brain-structures)). Every file and
 its name is in [Output files](/QSMxT/reference/outputs/).
+
+## Measure χ in brain structures
+
+For a table of mean χ (and the other maps) in each brain structure, ready for a group
+analysis:
+
+1. Run with segmentation and statistics turned on:
+
+   ```sh
+   qsmxt run study/bids --do-segmentation --do-analysis
+   ```
+
+   The segmentation (SynthSeg) is made from the GRE magnitude, so no T1-weighted scan is
+   needed.
+
+2. To compare values between subjects, reference χ to a structure rather than to the mean of
+   the brain, for example:
+
+   ```sh
+   qsmxt run study/bids --do-segmentation --do-analysis --qsm-reference ventricles
+   ```
+
+3. Open `derivatives/qsmxt/desc-segmentation_stats.tsv`: one row per scan, map and structure,
+   with the mean, SD, median and percentiles.
+
+In the TUI: **Reconstruction › Other outputs › Segmentation**, and **QSM › Reference**.
+
+Check that each scan's `*_dseg.nii` sits on the anatomy when overlaid on the magnitude. The table
+covers every map the run made (R2\*, the χ-separation maps, …). SynthSeg is trained on human
+brains ([non-human data](/QSMxT/data/non-human/)); to use your own parcellation, see
+[Non-BIDS or partial data](/QSMxT/data/non-bids/). The regions you can name are in
+[How the pipeline works](/QSMxT/background/pipeline/#naming-a-region), and the table's columns
+in [Output files](/QSMxT/reference/outputs/#segmentation-and-per-structure-statistics).
 
 ## If something looks wrong
 

@@ -43,8 +43,8 @@ the NIfTI files.
 
 - Every map the run made is exported. To export only some, list them:
   `--dicom-outputs chimap,swi`.
-- Converted with `qsmxt dicom-convert --keep-dicom-uids`? Then the series file into the
+- Converted with [`qsmxt dicom-convert --keep-dicom-uids`](/QSMxT/how-to/convert-dicom/#keeping-the-studys-dicom-uids)? Then the series file into the
   original study even without `--source-dicom`.
 
 What is exported, the names to use with `--dicom-outputs`, and how the series are identified
-are in [DICOM export](/QSMxT/reference/dicom-export/).
+are in [Output files](/QSMxT/reference/outputs/#dicom-series).

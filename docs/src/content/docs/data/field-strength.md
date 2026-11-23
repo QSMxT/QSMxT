@@ -31,7 +31,7 @@ as an input.
 
 - Check that `qsmxt validate` reports the field strength you expect.
 - For R2′-based source separation away from 3 T, acquire a MESE
-  ([MESE and R2′](/QSMxT/data/mese-r2prime/)) or supply an R2′ map
+  ([Source separation and MESE](/QSMxT/data/source-separation/)) or supply an R2′ map
   ([Non-BIDS or partial data](/QSMxT/data/non-bids/)).
   `--r2primenet-ignore-field-mismatch` runs R2PRIMEnet anyway, with a warning; treat the
   results as uncalibrated.

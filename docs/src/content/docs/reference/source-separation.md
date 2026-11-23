@@ -176,7 +176,7 @@ Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
 `desc-total_Chimap`.
 
 Separation is fitted over the voxels the susceptibility map is defined on — its
-support, written as `desc-qsm_mask` (see [Referencing](/QSMxT/reference/referencing-and-stats/#referencing)) — not over
+support, written as `desc-qsm_mask` (see [Referencing](/QSMxT/background/pipeline/#referencing)) — not over
 the whole brain mask: the rim that background-field removal eroded has no χ to
 separate. The methods that also fit the local field are limited to where that
 field is defined. R2' and R2\* are restricted to the same voxels before fitting,
