@@ -11,7 +11,7 @@ config:
   /pipeline/do_smwi: false -> true
 command:
   + --do-smwi
-methods: 56b55ff2d942a14d (20 lines)
+methods: ae01e06cede27584 (20 lines)
 
 ## toggle pipeline.do_qsm, toggle pipeline.do_analysis
 config:
@@ -19,5 +19,5 @@ config:
   /pipeline/do_analysis: false -> true
 command:
   + --do-analysis
-methods: eedb28879c3b7f00 (21 lines)
+methods: 29554eb88a45f371 (21 lines)
 

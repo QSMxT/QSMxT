@@ -3,7 +3,7 @@ config:
   /pipeline/export_dicom: false -> true
 command:
   + --export-dicom
-methods: 21eb9f236a9edfc2 (13 lines)
+methods: 2469d153a04edb39 (13 lines)
 
 ## toggle export_dicom, toggle pipeline.do_t2starmap
 config:
@@ -12,5 +12,5 @@ config:
 command:
   + --do-t2starmap
   + --export-dicom
-methods: c6ff3f6702729162 (14 lines)
+methods: 448f4d4df8a94afd (14 lines)
 

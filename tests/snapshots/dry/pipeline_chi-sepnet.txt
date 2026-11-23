@@ -7,6 +7,7 @@ Pipeline:
   QSM reference:     Mean
 
   sub-1_MEGRE (3 echo(es), 8x8x8, B0=3.0T, no ImagingFrequency: ppm from the nominal field, est. 774 MB)
+    Temporal uncertain: 0.5 → 0.0 (the pipeline's on this scan)
     Weight type: Phase SNR → Assumed decay (the pipeline's on this scan)
 
 Memory: 4.0 GB available (--mem-limit-gb), max 1 concurrent run(s)
@@ -31,6 +32,7 @@ Pipeline graph (a run writes it to <tmp>/out/derivatives/qsmxt/pipeline.mmd and 
   6 Field map · ROMEO
      phase offsets removed
      phase linearity disabled
+     temporal uncertain unwrapping = 0
      B0 by weighted average
      ← 2 Phase scaling: Phase
      ← 1 Load: Magnitude

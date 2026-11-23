@@ -3,7 +3,7 @@ config:
   /pipeline/do_r2map: false -> true
 command:
   + --do-r2map
-methods: 664231f3af357bbc (14 lines)
+methods: 40bfa3f6df953097 (14 lines)
 
 ## toggle pipeline.do_r2map, toggle export_dicom
 config:
@@ -12,5 +12,5 @@ config:
 command:
   + --do-r2map
   + --export-dicom
-methods: 81f091179800ee14 (14 lines)
+methods: 8a90338c3bb44a45 (14 lines)
 

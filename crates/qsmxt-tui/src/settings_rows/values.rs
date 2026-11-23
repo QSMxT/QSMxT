@@ -53,9 +53,6 @@ pub(super) type OnValue = fn() -> Value;
 
 /// The value a checkbox with a value takes when it is ticked, for one off by default.
 pub(super) const ON_VALUES: &[(&str, OnValue)] = &[
-    // ROMEO's own threshold for re-unwrapping, which QSMxT leaves off.
-    ("field_mapping.romeo.temporal_uncertain_unwrapping",
-     || Value::from(qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping)),
     // Tiles of 128 voxels.
     ("inversion.tile_size", || Value::from(128)),
 ];

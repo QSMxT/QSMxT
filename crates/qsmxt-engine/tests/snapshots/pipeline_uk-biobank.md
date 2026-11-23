@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline uk-biobank
 
 ## Config hash
 
-bb7a98395202099c
+d20000471e173d7f
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -14,7 +14,7 @@ inhomog                  will_run   b537e5cae9ec9938
 magnitude                will_run   41493901271c0f06
 mask                     will_run   8c5f8723d1fd4a86
 motion                   skipped    -
-unwrap                   will_run   67be2ead593e0529
+unwrap                   will_run   d2fc5b97668df7d2
 bgremove                 will_run   e9bee72a29bd2135
 invert                   will_run   ab3524c6b8584451
 reference                will_run   965ae69dfcceed4f

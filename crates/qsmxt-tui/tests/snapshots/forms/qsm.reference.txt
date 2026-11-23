@@ -5,7 +5,7 @@ config:
 command:
   + --qsm-reference ventricles
   + --do-segmentation
-methods: 5e80f7620f6776e8 (33 lines)
+methods: 76d0c92202e39d85 (33 lines)
 
 ## qsm.reference = ventricles, segmentation_source = custom dseg
 config:
@@ -15,7 +15,7 @@ config:
 command:
   + --qsm-reference ventricles
   + --use-custom-dseg
-methods: 22262053447aff03 (28 lines)
+methods: 9f3bfc0be2613110 (28 lines)
 
 ## qsm.reference = ventricles, toggle export_dicom
 config:
@@ -26,5 +26,5 @@ command:
   + --qsm-reference ventricles
   + --do-segmentation
   + --export-dicom
-methods: c91895122abb5bc0 (33 lines)
+methods: 13cdd5839c65af63 (33 lines)
 

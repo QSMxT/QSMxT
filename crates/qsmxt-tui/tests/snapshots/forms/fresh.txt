@@ -1,7 +1,7 @@
 # A fresh form; every other file lists changes from this.
 
 command: qsmxt run <bids_dir>
-methods: dbd976bb6ada754e (13 lines)
+methods: 1f3c116bf70c7a93 (13 lines)
 config:
 {
   "description": "",
@@ -64,7 +64,7 @@ config:
       "mag_weight": false,
       "mag_weight2": false,
       "bestpath": false,
-      "temporal_uncertain_unwrapping": 0.0,
+      "temporal_uncertain_unwrapping": 0.5,
       "max_seeds": 1,
       "merge_regions": false,
       "correct_regions": false,

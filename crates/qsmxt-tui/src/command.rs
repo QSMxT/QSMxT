@@ -991,14 +991,20 @@ mod tests {
         app.form.settings.set("pipeline.axial_resampling", false);
         assert!(!build_command_string(&app).contains("--obliquity-threshold"), "no threshold without resampling");
 
-        // Off is ROMEO's default here; turned on, the threshold shown is passed.
+        // On at ROMEO.jl's 0.5 by default; turned off, the CLI's off (0) is passed, and turned
+        // back on, the threshold shown.
         app.toggle_field("field_mapping.romeo.temporal_uncertain_unwrapping");
         app.form.settings.switch("segmentation.sigma_smoothing", false);
         app.form.settings.set("pipeline.do_segmentation", true);
         let cmd = build_command_string(&app);
-        for f in ["--romeo-temporal-uncertain-unwrapping 0.5", "--synthseg-sigma 0"] {
-            assert!(cmd.contains(f), "{f} missing: {cmd}");
+        for f in ["--romeo-temporal-uncertain-unwrapping 0", "--synthseg-sigma 0"] {
+            assert!(format!("{cmd} ").contains(&format!("{f} ")), "{f} missing: {cmd}");
         }
+        app.toggle_field("field_mapping.romeo.temporal_uncertain_unwrapping");
+        *app.field_text_mut("field_mapping.romeo.temporal_uncertain_unwrapping#value").unwrap() = "0.3".into();
+        assert!(build_command_string(&app).contains("--romeo-temporal-uncertain-unwrapping 0.3"));
+        *app.field_text_mut("field_mapping.romeo.temporal_uncertain_unwrapping#value").unwrap() = "0.5".into();
+        assert!(!build_command_string(&app).contains("--romeo-temporal-uncertain-unwrapping"), "back at the default");
         app.set_qsm_algorithm(crate::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "xqsm").unwrap());
         assert!(!build_command_string(&app).contains("--tile-size"));
         app.toggle_field("inversion.tile_size");

@@ -32,6 +32,7 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 |  | Orientation (`--bet-orientation`) | As stored | As FSL reads it | The χ-separation toolbox runs brain extraction on the image as stored, while FSL's own tool flips a neurologically stored image first. |
 |  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | The χ-separation toolbox runs brain extraction on the magnitude as read, with no bias-field correction. |
 | Field map | Phase linearity (`--no-romeo-phase-linearity`) | off | on | The χ-separation toolbox runs ROMEO with its default weights, which leave out phase linearity. |
+|  | Temporal uncertain unwrapping (`--romeo-temporal-uncertain-unwrapping`) | 0, for scans with two or more echoes | 0.5 | The χ-separation toolbox's ROMEO leaves uncertain voxels as unwrapping along the echoes gives them. |
 |  | Echo weighting (`--b0-weight-type`) | Assumed decay, for scans with two or more echoes | Phase SNR | The χ-separation toolbox weights the echoes by TE·exp(−TE/T2\*) with T2\* = 40 ms. |
 | χ-separation | Compute χ-separation (`--do-chisep`) | on | off | A χ-separation method runs with χ-separation on. |
 |  | χ-separation method (`--chisep`) | χ-sepnet | R2\*-QSM | The χ-separation toolbox's script separates the sources with its χ-sepnet network. |

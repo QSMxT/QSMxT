@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline medi-toolbox
 
 ## Config hash
 
-c60ab831e5e482f
+2dd4932c20e44bb4
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -13,7 +13,7 @@ scale_phase              will_run   565f39e380eb4906
 magnitude                will_run   d82b40a650fa4990
 mask                     will_run   be81155c6b6e0d6f
 motion                   skipped    -
-unwrap                   will_run   3df22523c40d3af2
+unwrap                   will_run   4ae7bc5735883f49
 bgremove                 will_run   f9355b4b840602c3
 invert                   will_run   d7b0b854e7bf9b6f
 reference                will_run   965ae69dfcceed4f

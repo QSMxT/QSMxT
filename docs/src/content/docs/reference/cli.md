@@ -148,7 +148,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--no-romeo-mag-weight` | ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility) |
 | `--romeo-mag-weight2` | ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off) |
 | `--romeo-bestpath` | ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off) |
-| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0) |
+| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: Maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
@@ -1081,7 +1081,7 @@ qsmxt unwrap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--no-romeo-mag-weight` | ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility) |
 | `--romeo-mag-weight2` | ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off) |
 | `--romeo-bestpath` | ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off) |
-| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0) |
+| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: Maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
@@ -1215,7 +1215,7 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--no-romeo-mag-weight` | ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility) |
 | `--romeo-mag-weight2` | ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off) |
 | `--romeo-bestpath` | ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off) |
-| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0) |
+| `--romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>` | ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5) |
 | `--romeo-max-seeds <ROMEO_MAX_SEEDS>` | ROMEO: Maximum number of seed regions (default: 1) |
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |

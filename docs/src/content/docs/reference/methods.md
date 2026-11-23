@@ -113,8 +113,9 @@ pipeline unwraps with `laplacian` (see [QSMART](#qsmart)).
 
 With several echoes, ROMEO unwraps as it does by default: the first echo is unwrapped
 spatially and the others temporally from it (`--romeo-template` picks another echo), with no
-global 2π correction and no re-unwrapping of uncertain voxels
-(`--romeo-temporal-uncertain-unwrapping 0`). `--romeo-individual` unwraps each echo on its own
+global 2π correction, re-unwrapping voxels whose temporal unwrapping is uncertain
+(`--romeo-temporal-uncertain-unwrapping 0.5`, ROMEO.jl's default; 0 turns it off, as the
+`romeo` command line does). `--romeo-individual` unwraps each echo on its own
 instead, for data with motion between echoes or time series; `--romeo-correct-global` then
 corrects each echo's 2π offset and the offsets between echoes. Individual unwrapping is less
 robust: with the default phase-quality mask, part of the brain can end up a whole 2π cycle

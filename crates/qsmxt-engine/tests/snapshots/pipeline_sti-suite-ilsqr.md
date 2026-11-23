@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline sti-suite-ilsqr
 
 ## Config hash
 
-7950360caf1a4c62
+ac99dcabf62a23cf
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -13,7 +13,7 @@ scale_phase              will_run   565f39e380eb4906
 magnitude                will_run   d82b40a650fa4990
 mask                     will_run   3b99652d9088e6da
 motion                   skipped    -
-unwrap                   will_run   b61ce283bf05d071
+unwrap                   will_run   a4313a686df285a
 bgremove                 will_run   6fd8ee4747dee677
 invert                   will_run   1572db122c3e6ce5
 reference                will_run   965ae69dfcceed4f
