@@ -626,7 +626,7 @@ mod tests {
         let text = screen(&mut app);
         assert!(text.contains("▸ About") && text.contains("About toolbox pipelines"), "{text}");
         assert!(text.contains("https://qsmxt.github.io/QSM-CI/parity.html") && text.contains("not QSMxT's recommendations")
-            && text.contains("QSM-CI compares them with the original"), "{text}");
+            && text.contains("QSM-CI measures how closely each matches") && !text.contains("reproduc"), "{text}");
         key(&mut app, KeyCode::Enter);
         assert!(app.pipelines.preview.is_none());
         assert_eq!(app.pipeline_status().text(), "QSMxT defaults");
