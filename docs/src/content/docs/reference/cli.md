@@ -495,7 +495,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 
 <!-- generated:cli-run end -->
 
-The steps are in [Run QSM on your data](/QSMxT/how-to/run-qsm/). `qsmxt run`, `slurm`, `aggregate` and `validate` exit with status 1 when the BIDS directory does not exist or has no runs to process (none at all, or none that match `--include`, `--exclude` and `--num-echoes`).
+The steps are in [Run QSMxT on your data](/QSMxT/how-to/run-qsm/). `qsmxt run`, `slurm`, `aggregate` and `validate` exit with status 1 when the BIDS directory does not exist or has no runs to process (none at all, or none that match `--include`, `--exclude` and `--num-echoes`).
 
 ## `qsmxt init`
 

@@ -1,5 +1,5 @@
 ---
-title: Run QSM on your data
+title: Run QSMxT on your data
 description: "Make susceptibility maps from a BIDS dataset, in the TUI or on the command line."
 ---
 

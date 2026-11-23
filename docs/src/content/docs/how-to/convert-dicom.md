@@ -81,4 +81,4 @@ dataset back to it, and through it to the patient. Keep a dataset converted with
 `--keep-dicom-uids` inside your site; convert again without it to share.
 :::
 
-**Next:** [Run QSM on your data](/QSMxT/how-to/run-qsm/).
+**Next:** [Run QSMxT on your data](/QSMxT/how-to/run-qsm/).

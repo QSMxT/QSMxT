@@ -146,7 +146,7 @@ export default defineConfig({
 					label: 'Guides',
 					items: [
 						{ label: 'Convert DICOM to BIDS', slug: 'how-to/convert-dicom' },
-						{ label: 'Run QSM on your data', slug: 'how-to/run-qsm' },
+						{ label: 'Run QSMxT on your data', slug: 'how-to/run-qsm' },
 						{ label: 'Look at your results', slug: 'how-to/results' },
 						{ label: 'Export results as DICOM', slug: 'how-to/export-dicom' },
 						{ label: 'Run on a cluster', slug: 'how-to/slurm' },

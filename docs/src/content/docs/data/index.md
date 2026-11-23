@@ -5,7 +5,7 @@ description: "What QSMxT does for particular kinds of data, and what you may wan
 
 For most data there is nothing to do: you convert your scans to BIDS and run QSM, the same way
 for every scanner ([Convert DICOM to BIDS](/QSMxT/how-to/convert-dicom/),
-[Run QSM](/QSMxT/how-to/run-qsm/)). QSMxT reads what it needs from the scan and adapts to it.
+[Run QSMxT on your data](/QSMxT/how-to/run-qsm/)). QSMxT reads what it needs from the scan and adapts to it.
 
 These pages are for when something about your data is different. Each says what QSMxT does
 automatically, what it doesn't do, and what you can do.
