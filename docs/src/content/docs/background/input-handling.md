@@ -57,12 +57,8 @@ the scanner's phase combination is generally not suitable for QSM. Pass
 
 ## GE data
 
-GE real/imaginary series (`part-real`/`part-imag`) are read by `qsmxt run`: each
-echo is converted to magnitude and phase, slice chopping is undone, and the phase
-is negated, as GE records it with the opposite sign (see
-[Real and imaginary images](#real-and-imaginary-images)).
-
-GE phase series (`part-phase`) are not yet corrected for handedness or slice
+GE real/imaginary series are handled as [above](#real-and-imaginary-images), with the phase
+negated. GE phase series (`part-phase`) are not yet corrected for handedness or slice
 chopping, and `qsmxt dicom-convert` warns on each one. Until that correction lands
 (QSM.rs#171), use the real/imaginary export where there is one, or check the sign
 of χ from GE phase against a known structure, such as iron-rich deep grey matter,

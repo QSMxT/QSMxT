@@ -8,6 +8,8 @@ and no toolbox to assemble.
 
 ## Quick install
 
+One command installs `qsmxt` and the `dcm2niix` it uses for DICOM conversion.
+
 ### Linux / macOS
 
 ```sh

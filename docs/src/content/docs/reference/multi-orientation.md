@@ -3,8 +3,6 @@ title: Multi-orientation (COSMOS and STI)
 description: "Combine acquisitions at several head orientations with COSMOS or STI."
 ---
 
-## Multi-orientation (COSMOS and STI)
-
 Single-orientation dipole inversion is ill-posed because the dipole kernel
 vanishes on a pair of cones at the magic angle. Re-imaging the same object at a
 different orientation moves those cones, so combining orientations conditions the
@@ -21,7 +19,7 @@ says "where a session held several head orientations". A browser page holds one 
 so it has no groups: it clears these settings when it reads a settings file, and tells
 you.
 
-### Naming the orientation group
+## Naming the orientation group
 
 BIDS has no entity meaning "the same object at a different orientation", so
 nothing in the dataset can declare the intention to do COSMOS — you do, with
@@ -57,7 +55,7 @@ Published multi-orientation datasets use `acq-` (for example OpenNeuro
 [ds007958](https://openneuro.org/datasets/ds007958), an in-vivo 7T COSMOS set
 named `acq-dir1/2/3`).
 
-### B0 directions, and what will be refused
+## B0 directions, and what will be refused
 
 Each orientation contributes its B0 direction **in the common grid's voxel
 frame**. There are exactly three ways to know it, and the direction table prints
@@ -113,7 +111,7 @@ What QSMxT still refuses rather than guesses:
 `--multi-orientation-force` overrides the check. Prefer fixing the metadata:
 declare `B0_dir` in each orientation's sidecar.
 
-### Registration
+## Registration
 
 COSMOS and STI need the orientations on one grid, and QSMxT puts them there. One
 member of each group is the reference, and every other member is rigidly
@@ -194,7 +192,7 @@ externally and do not want interpolated a second time. A group that then still
 needs registration is refused, which is what QSMxT did before it could register at
 all.
 
-### Running it
+## Running it
 
 `--multi-orientation-algorithm` picks the reconstruction: `cosmos` (the default)
 or `sti`.
@@ -255,7 +253,7 @@ removal writes. A grouping with an inversion that has no such step (TFI, TGV,
 QSMART, AutoQSM, NeXtQSM, iQSM, iQSM+) or with `--no-qsm` is refused
 before processing.
 
-### Outputs
+## Outputs
 
 Each member run still produces its own single-orientation `Chimap` — the first
 thing to check when a COSMOS map looks wrong is whether the orientations were
@@ -291,7 +289,7 @@ The STI outputs are not referenced (a tensor has no single offset), and stay on 
 working grid: returning a tensor to an oblique acquired grid needs it rotated as well
 as resampled, which is not implemented, so a warning says so.
 
-### Standalone
+## Standalone
 
 If you already have local field maps, skip BIDS entirely:
 

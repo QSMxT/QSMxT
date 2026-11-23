@@ -239,7 +239,7 @@ qsmxt run study/bids --do-chisep --export-dicom \
 In the TUI, the Reconstruction tab's DICOM section lists the maps the settings
 make, each ticked; untick the ones to leave out.
 
-The [multi-orientation](/QSMxT/reference/multi-orientation/#multi-orientation-cosmos-and-sti)
+The [multi-orientation](/QSMxT/reference/multi-orientation/)
 reconstructions stay NIfTI-only.
 
 ### The segmentation as a DICOM SEG
@@ -341,58 +341,22 @@ given a run's basename as the prefix they write exactly the pipeline's names:
 | `qsmxt swi … --mip -o <name>_swi.nii` | `<name>_minIP.nii` beside it, unless `--mip-output` says otherwise |
 | `qsmxt swi … --filtered-phase -o <name>_swi.nii` | `<name>_desc-swi_phase.nii` beside it, unless `--filtered-phase-output` says otherwise |
 
-## Output
+## The methods text and pipeline graph
 
-```
-study/bids/derivatives/qsmxt/
-└── sub-01/
-    ├── anat/
-    │   ├── sub-01_…_Chimap.nii
-    │   ├── sub-01_…_Chimap.json
-    │   ├── sub-01_…_mask.nii
-    │   ├── sub-01_…_desc-qsm_mask.nii
-    │   └── sub-01_…_part-mag_T2starw.nii
-    └── fmap/
-        ├── sub-01_…_desc-total_fieldmap.nii
-        └── sub-01_…_desc-total_magnitude.nii
-```
+`methods.md` and `pipeline.svg` are written once every run is done, from what the runs did,
+not only from the settings. Some things are only decided as a run goes: a mask supplied with
+`--use-custom-masks` that cannot be used is computed instead, and R2′ is measured where a
+multi-echo spin-echo scan allows and estimated otherwise. A choice every run made is stated as
+done, and the graph's boxes say how many runs skipped a step or decided something in it. They
+cover every run in the output directory that completed with the current settings, whichever
+command processed it, so re-running one subject with `--include` does not narrow them; a run
+last processed with other settings, or whose last attempt did not finish, is left out. A run
+processed differently from the rest gets its own methods text and graph in `changes/`. Each
+run's methods text, a record of what each step did and why (`*_runrecord.json`), and its graph
+are also kept in its `workflow/` directory. `qsmxt run --dry` prints the graph and the methods
+text as planned, without running anything.
 
-Outputs are uncompressed NIfTI (`.nii`), each with a JSON sidecar recording how it
-was made (`GeneratedBy`, units, and for susceptibility maps the reference). The
-total field is published in Hz under `fmap/`. Every file and its name is listed
-in [Output files](/QSMxT/reference/outputs/).
-
-`mask` is the brain mask; `desc-qsm_mask` is the part of it the susceptibility map
-is defined on — the brain mask less the rim that background-field removal eroded.
-The `Chimap` is referenced over, and is 0 outside, `desc-qsm_mask`; the χ-separation
-maps (`--do-chisep`) are fitted over it and are 0 outside it too.
-
-At the top of `derivatives/qsmxt/`, `methods.md` describes the processing in
-prose ready for a methods section, with citations for the exact methods used for
-your data and parameters; `pipeline.svg` draws the same pipeline, one box per
-step (`pipeline.mmd` is the same graph in [Mermaid](https://mermaid.js.org/));
-`pipeline_config.toml` holds the resolved settings (reusable with `--config`),
-and `qsmxt.log` the log.
-
-Some things are only decided as a run goes: a mask supplied with
-`--use-custom-masks` that cannot be used is computed instead, R2′ is measured
-where a multi-echo spin-echo scan allows and estimated otherwise. Once every run
-is done, `methods.md` and the graph are written from what the runs did: a choice
-every run made is stated as done, and the graph's boxes say how many runs
-skipped a step or decided something in it. They cover every run in the output
-directory that completed with the current settings, whichever command
-processed it, so re-running one subject with `--include` does not narrow them;
-a run last processed with other settings, or whose last attempt did not finish,
-is left out. A run processed differently from the
-rest gets its own methods text and graph in `changes/` (`<run>_methods.md`,
-`<run>_desc-ran_pipeline.mmd` and `.svg`); the folder is only there when some
-run differs. Each run's methods text, a record of what each step did and why
-(`*_runrecord.json`), and its graph are also kept in its `workflow/` directory.
-
-`qsmxt run --dry` prints the pipeline graph and the methods text as planned,
-without running anything or writing any file.
-
-### The reference summary
+## The reference summary
 
 Every susceptibility map is referenced (see
 [Referencing](/QSMxT/background/pipeline/#referencing)), and each map's sidecar

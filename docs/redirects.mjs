@@ -50,12 +50,12 @@ export const moved = {
 			'hpc--slurm': '/how-to/slurm/',
 			'keeping-the-studys-dicom-uids': '/how-to/convert-dicom/#keeping-the-studys-dicom-uids',
 			'multi-echo-phase-handling': '/data/bipolar/',
-			'output': '/reference/outputs/#output',
+			'output': '/reference/outputs/#the-methods-text-and-pipeline-graph',
 			'parallelism-on-a-single-node': '/how-to/run-qsm/#optional',
 			'pipelines': '/toolbox-pipelines/#pipelines-1',
 			'preview-first-with---dry-run': '/how-to/convert-dicom/#steps',
 			're-running': '/how-to/run-qsm/#optional',
-			'recommendations': '/background/recommendations/#recommendations-1',
+			'recommendations': '/background/recommendations/#on-the-command-line',
 			'running-the-pipeline': '/how-to/run-qsm/#on-the-command-line',
 			'selecting-runs': '/how-to/run-qsm/#optional',
 			'the-reference-summary': '/reference/outputs/#the-reference-summary',
@@ -76,7 +76,7 @@ export const moved = {
 			'figures': '/reference/outputs/#figures',
 			'grid-padding-and-cropping': '/background/geometry/#grid-padding-and-cropping',
 			'masking': '/reference/masking/#masking',
-			'multi-orientation-cosmos-and-sti': '/reference/multi-orientation/#multi-orientation-cosmos-and-sti',
+			'multi-orientation-cosmos-and-sti': '/reference/multi-orientation/',
 			'naming-a-region': '/background/pipeline/#naming-a-region',
 			'naming-the-orientation-group': '/reference/multi-orientation/#naming-the-orientation-group',
 			'oblique-acquisitions': '/background/geometry/#oblique-acquisitions',
@@ -88,7 +88,7 @@ export const moved = {
 			'running-it': '/reference/multi-orientation/#running-it',
 			'segmentation-and-per-structure-statistics': '/reference/outputs/#segmentation-and-per-structure-statistics',
 			'standalone': '/reference/multi-orientation/#standalone',
-			'susceptibility-source-separation': '/reference/source-separation/#susceptibility-source-separation',
+			'susceptibility-source-separation': '/reference/source-separation/#methods',
 			'two-pass-modes': '/reference/masking/#two-pass-modes',
 			'where-r2-comes-from': '/reference/source-separation/#where-r2-comes-from',
 			'which-methods-need-axial-data': '/background/geometry/#which-methods-need-axial-data',
@@ -98,7 +98,7 @@ export const moved = {
 		to: '/background/tui/',
 		anchors: {
 			'pipelines': '/toolbox-pipelines/#pipelines',
-			'recommendations': '/background/recommendations/#recommendations',
+			'recommendations': '/background/recommendations/#in-the-tui',
 			'updates-and-announcements': '/how-to/update/#announcements',
 			'what-you-can-do': '/start/quick-start/',
 		},
@@ -169,6 +169,17 @@ Object.assign(moved, {
 // Pages that still exist but gave some sections to other pages; a link to one of those sections
 // is sent on to its new page.
 export const split = {
+	'/reference/source-separation/': {
+		anchors: {
+			'susceptibility-source-separation': '/reference/source-separation/#methods',
+		},
+	},
+	'/background/recommendations/': {
+		anchors: {
+			'recommendations': '/background/recommendations/#in-the-tui',
+			'recommendations-1': '/background/recommendations/#on-the-command-line',
+		},
+	},
 	'/reference/inputs/': {
 		anchors: {
 			'ge-data': '/data/ge-real-imaginary/',

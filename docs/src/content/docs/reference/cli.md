@@ -1674,7 +1674,7 @@ from the array's edge too, and returns χ inside the eroded mask only.
 
 `cosmos` and `sti` take several `--input` field maps plus one `--b0-direction` per
 orientation, and expect them already co-registered onto a common grid. See
-[multi-orientation](/QSMxT/reference/multi-orientation/#multi-orientation-cosmos-and-sti).
+[multi-orientation](/QSMxT/reference/multi-orientation/).
 
 <!-- generated:cli-invert-subcommands start (from the qsmxt binary's argument definitions: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference) -->
 

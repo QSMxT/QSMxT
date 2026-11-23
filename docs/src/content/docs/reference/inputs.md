@@ -98,7 +98,7 @@ rounded to 0.01 ms in a sidecar (4.92, 9.84, 14.77, 19.68 ms) are accepted.
 
 A run that cannot give these is refused before processing.
 
-[Source separation](/QSMxT/reference/source-separation/#susceptibility-source-separation)
+[Source separation](/QSMxT/reference/source-separation/#methods)
 (`--do-chisep`) splits into two groups. The `r2star-qsm` and `decompose` methods
 work from multi-echo GRE magnitude alone (`r2star-qsm` needs what R2\* needs). The
 other six are based on R2', so they need a MESE acquisition as well, or R2PRIMEnet

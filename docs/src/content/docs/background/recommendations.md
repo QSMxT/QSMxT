@@ -3,7 +3,27 @@ title: Recommendations and reference settings
 description: "Recommendations, reference settings and required changes, in the TUI and on the command line."
 ---
 
-## Recommendations
+Many methods only work as intended with certain other settings: the ones their authors used.
+QSMxT checks the configuration against what each chosen method's reference pipeline does (the
+pipeline rules in QSM.rs, each with its source) and says where it departs. It never changes a
+setting on its own.
+
+- **Required**: the method cannot run otherwise (MEDI-mSMV on fewer than three echoes). The
+  run is refused, with the change that resolves it.
+- **Recommended** or **discouraged**: there is a stated reason another value is better. The
+  authors give it, QSM.rs measured it, or the combination is known to fail. Each is logged as
+  a warning before the runs start, a dismissed one too (marked "dismissed, kept").
+  `--accept-recommendations` applies them.
+- **Suggested**: measured to be better on some data but not all (for example in vivo, but not on
+  the simulated head). Logged with its reason like a recommendation, but `--accept-recommendations`
+  leaves it, and it is not listed in the methods Note. Apply it by setting the value yourself.
+- **Original authors' setting**: the method's authors used another value (their code, paper or
+  README does it), and no reason is given that it is better. It is not a recommendation. It is
+  logged as information, listed in the methods Note, and applied only with
+  `--accept-reference-settings`. It has nothing to dismiss (`--dismiss-recommendation` refuses
+  it).
+
+## In the TUI
 
 When a change makes a setting depart from what a chosen method recommends (or requires, or
 discourages), a pop-up lists the changes on offer, under the section each setting is on: the
@@ -53,27 +73,7 @@ A recommendation starts ticked, and an authors' setting does not. The line under
 the help gives each covered setting's reference value and whose it is, whether or not the setting
 differs.
 
-## Recommendations
-
-Many methods only work as intended with certain other settings: the ones their authors used.
-QSMxT checks the configuration against what each chosen method's reference pipeline does (the
-pipeline rules in QSM.rs, each with its source) and says where it departs. It never changes a
-setting on its own.
-
-- **Required**: the method cannot run otherwise (MEDI-mSMV on fewer than three echoes). The
-  run is refused, with the change that resolves it.
-- **Recommended** or **discouraged**: there is a stated reason another value is better. The
-  authors give it, QSM.rs measured it, or the combination is known to fail. Each is logged as
-  a warning before the runs start, a dismissed one too (marked "dismissed, kept").
-  `--accept-recommendations` applies them.
-- **Suggested**: measured to be better on some data but not all (for example in vivo, but not on
-  the simulated head). Logged with its reason like a recommendation, but `--accept-recommendations`
-  leaves it, and it is not listed in the methods Note. Apply it by setting the value yourself.
-- **Original authors' setting**: the method's authors used another value (their code, paper or
-  README does it), and no reason is given that it is better. It is not a recommendation. It is
-  logged as information, listed in the methods Note, and applied only with
-  `--accept-reference-settings`. It has nothing to dismiss (`--dismiss-recommendation` refuses
-  it).
+## On the command line
 
 ```sh
 # List every recommendation for this configuration and dataset, and each covered

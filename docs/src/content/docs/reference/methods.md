@@ -257,7 +257,7 @@ every echo's map is defined, referenced as any QSM is.
 
 Nothing combines or compares the echoes, so `--b0-estimation` and its settings, phase offset
 removal and bipolar correction do not run (the TUI hides them). DECOMPOSE takes the echoes'
-maps (see [Susceptibility source separation](/QSMxT/reference/source-separation/#susceptibility-source-separation)), and choosing
+maps (see [Susceptibility source separation](/QSMxT/reference/source-separation/#methods)), and choosing
 DECOMPOSE recommends this option. A single-echo scan's QSM is its echo's. Per-echo QSM is
 refused before processing with the routes that reconstruct from every echo at once (TGV,
 QSMART, iQSM, iQSM+ and iQFM), with two-pass artefact reduction, and with the χ-separation

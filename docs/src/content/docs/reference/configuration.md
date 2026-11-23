@@ -20,7 +20,7 @@ No default depends on the method: a file runs the methods and settings it says, 
 choosing a method never changes another setting. Where a chosen method's reference
 pipeline uses something else (PDF background removal for MEDI, for example), QSMxT says so
 in the log, in `qsmxt run --dry` and in the methods text's Note, and the TUI offers it (see
-[Recommendations](/QSMxT/background/recommendations/#recommendations-1)).
+[Recommendations](/QSMxT/background/recommendations/#on-the-command-line)).
 
 Multi-orientation reconstruction lives in its own `[multi_orientation]` section,
 off unless `group_by` names a pattern:
@@ -33,7 +33,7 @@ algorithm = "cosmos"     # or "sti"
 lambda = 0.0
 ```
 
-See [multi-orientation](/QSMxT/reference/multi-orientation/#multi-orientation-cosmos-and-sti)
+See [multi-orientation](/QSMxT/reference/multi-orientation/)
 for what the pattern matches and what will be refused.
 
 The combined magnitude is published unless `pipeline.do_magnitude = false`
@@ -162,7 +162,7 @@ that is off by default (iSMV's `max_iter`, DECOMPOSE's
 `lsqcurvefit.max_function_evaluations`).
 
 Recommendations you chose not to follow (see
-[Recommendations](/QSMxT/background/recommendations/#recommendations-1)) are kept in the
+[Recommendations](/QSMxT/background/recommendations/#on-the-command-line)) are kept in the
 file, each with the value of its setting at the time. Only recommended, suggested and discouraged
 findings are kept; one for a reference-pipeline difference is dropped when the file is read. A change to the setting brings the
 recommendation back:

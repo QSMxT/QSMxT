@@ -50,7 +50,7 @@ The sidebar lists every section whatever the settings, and marks how each stands
 when its output is not made, such as χ-separation until it is ticked (the QSM heading reads `off`
 when QSM is); `–` (dimmed) when the settings skip its stage, such as background removal for an
 inversion that takes the total field, which the section then explains; `⚑` when a setting in it
-has advice offered as a change, and `ⓘ` for information only (see [Recommendations](/QSMxT/background/recommendations/#recommendations)). On a short
+has advice offered as a change, and `ⓘ` for information only (see [Recommendations](/QSMxT/background/recommendations/#in-the-tui)). On a short
 terminal the sidebar drops its blank lines, then turns its headings into rules, then scrolls
 around the current section (`▲`/`▼`). Narrower than 78 columns, the sections become a strip of
 sub-tabs along the top of the panel instead, chosen with `←`/`→`, with `↓` going into them and
