@@ -30,7 +30,7 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 | Geometry | Tukey window in k-space (`--tukey-window`) | 0.4, for scans not from Philips | 0 | The χ-separation toolbox smooths the echoes with a Tukey window in k-space (taper 0.4) before anything else, except on Philips data. |
 | Masking | Mask | `magnitude,bet:0.50` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | The χ-separation toolbox masks with brain extraction. (note 1) |
 |  | Orientation (`--bet-orientation`) | As stored | As FSL reads it | The χ-separation toolbox runs brain extraction on the image as stored, while FSL's own tool flips a neurologically stored image first. |
-|  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | The χ-separation toolbox runs BET on the magnitude as read, with no bias-field correction. |
+|  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | The χ-separation toolbox runs brain extraction on the magnitude as read, with no bias-field correction. |
 | Field map | Phase linearity (`--no-romeo-phase-linearity`) | off | on | The χ-separation toolbox runs ROMEO with its default weights, which leave out phase linearity. |
 |  | Echo weighting (`--b0-weight-type`) | Assumed decay, for scans with two or more echoes | Phase SNR | The χ-separation toolbox weights the echoes by TE·exp(−TE/T2\*) with T2\* = 40 ms. |
 | χ-separation | Compute χ-separation (`--do-chisep`) | on | off | A χ-separation method runs with χ-separation on. |
@@ -38,7 +38,7 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 Notes on the table:
 
-1. The χ-separation toolbox runs brain extraction on the magnitude combined over echoes. The χ-separation toolbox uses BET's mask as it is, without eroding it.
+1. The χ-separation toolbox runs brain extraction on the magnitude combined over echoes. It uses the brain mask as it is, without eroding it.
 
 ## Intentional differences from the original
 

@@ -223,6 +223,40 @@ fn sentences(text: &str) -> Vec<String> {
     out
 }
 
+/// Nouns that end a sentence's subject ("The MEDI toolbox", "DECOMPOSE's authors").
+const SUBJECT_NOUNS: [&str; 5] = ["toolbox", "package", "GUI", "authors", "pipeline"];
+
+/// The subject a sentence opens with: its shortest opening that is a name or ends in one of
+/// [`SUBJECT_NOUNS`] and is followed by a verb ("QSMART runs", "STI Suite's GUI keeps").
+fn subject(sentence: &str) -> Option<String> {
+    let words: Vec<&str> = sentence.split(' ').collect();
+    (1..words.len()).find_map(|n| {
+        let last = words[n - 1];
+        let next = words[n];
+        let names = last.starts_with(|c: char| c.is_uppercase()) || SUBJECT_NOUNS.contains(&last);
+        let verb_next = next.starts_with(|c: char| c.is_lowercase()) && !SUBJECT_NOUNS.contains(&next);
+        let article = n == 1 && matches!(last, "The" | "A" | "An");
+        (names && verb_next && !article && !last.ends_with("'s")).then(|| words[..n].join(" "))
+    })
+}
+
+/// Sentences joined, each that opens with the subject of the one before it saying "It" or "They"
+/// instead of naming the toolbox again.
+fn join_sentences(sentences: &[String]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for (k, x) in sentences.iter().enumerate() {
+        let before = k.checked_sub(1).and_then(|j| subject(&sentences[j]));
+        match before.filter(|s| subject(x).as_deref() == Some(s.as_str())) {
+            Some(s) => {
+                let pronoun = if s.ends_with("authors") { "They" } else { "It" };
+                out.push(format!("{pronoun}{}", &x[s.len()..]));
+            }
+            None => out.push(x.clone()),
+        }
+    }
+    out.join(" ")
+}
+
 /// The most a table cell says itself; a longer reason goes to a note under the table.
 const CELL_SENTENCES: usize = 2;
 
@@ -267,9 +301,9 @@ fn steps_table(steps: &[Step]) -> (String, Vec<String>) {
             let rows: Vec<String> = earlier.iter().map(|r| format!("*{}*", cell(r))).collect();
             format!("The same reason as {} above.", rows.join(" and "))
         } else if fresh.len() <= CELL_SENTENCES {
-            cell(&fresh.join(" "))
+            cell(&join_sentences(&fresh))
         } else {
-            notes.push(fresh[1..].join(" "));
+            notes.push(join_sentences(&fresh[1..]));
             format!("{} (note {})", cell(&fresh[0]), notes.len())
         };
         vec![stage_cell, format!("{}{flag}", cell(label)), value, value_text(c.path, &c.from), why]
@@ -380,6 +414,20 @@ mod tests {
     #[test]
     fn reasons_split_into_sentences() {
         assert_eq!(sentences("One at 2.89 T. Two, e.g. this"), ["One at 2.89 T.", "Two, e.g. this."]);
+    }
+
+    /// A note names its toolbox once: a sentence with the same subject as the one before says "It".
+    #[test]
+    fn joined_sentences_name_the_subject_once() {
+        let s = |x: &[&str]| x.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(join_sentences(&s(&["QSMART runs it.", "QSMART smooths it.", "QSMART closes it."])),
+            "QSMART runs it. It smooths it. It closes it.");
+        assert_eq!(join_sentences(&s(&["The MEDI toolbox runs it.", "The MEDI toolbox uses it."])),
+            "The MEDI toolbox runs it. It uses it.");
+        assert_eq!(join_sentences(&s(&["DECOMPOSE's authors run it.", "DECOMPOSE's authors describe it."])),
+            "DECOMPOSE's authors run it. They describe it.");
+        assert_eq!(join_sentences(&s(&["MEDI's PDF runs it.", "The MEDI toolbox runs it."])),
+            "MEDI's PDF runs it. The MEDI toolbox runs it.");
     }
 
     /// No steps table repeats a reason, and no cell runs past two sentences.

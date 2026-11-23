@@ -42,7 +42,7 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 Notes on the table:
 
-1. STI Suite's GUI thresholds the last echo's magnitude. STI Suite's GUI keeps the largest connected piece of the thresholded mask. STI Suite's GUI fills every hole in that piece. STI Suite's GUI does not erode its mask; V-SHARP erodes it later.
+1. STI Suite's GUI thresholds the last echo's magnitude. It keeps the largest connected piece of the thresholded mask. It fills every hole in that piece. It does not erode its mask; V-SHARP erodes it later.
 
 ## Intentional differences from the original
 

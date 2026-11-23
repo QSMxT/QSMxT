@@ -29,7 +29,7 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 | --- | --- | --- | --- | --- |
 | Masking | Mask | `magnitude,bet:0.50` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | MEDI's pipeline masks with FSL's brain extraction (fractional threshold 0.5) on the combined magnitude. (note 1) |
 |  | Orientation (`--bet-orientation`) | As stored | As FSL reads it | The MEDI toolbox runs brain extraction on the image as stored, while FSL's own tool flips a neurologically stored image first; the two masks differ slightly at the brain's edge. |
-|  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | The MEDI toolbox runs BET on the magnitude as read, with no bias-field correction. |
+|  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | The MEDI toolbox runs brain extraction on the magnitude as read, with no bias-field correction. |
 | Field map | Phase unwrapping (`--unwrapping-algorithm`) | MEDI region growing | ROMEO | MEDI's pipeline unwraps its complex echo fit's field with its region-growing unwrapping, guided by the combined magnitude. |
 |  | B0 estimation (`--b0-estimation`) | Complex fit | Weighted average | MEDI's field map and its noise map both come from its complex echo fit. PDF weights the field by the noise map from MEDI's complex echo fit. |
 | Background | Background removal (`--bf-algorithm`) | PDF | V-SHARP | MEDI's pipeline inverts the PDF local field. |
@@ -38,7 +38,7 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 Notes on the table:
 
-1. MEDI's PDF runs inside the brain extraction's mask. The MEDI toolbox runs its brain extraction on the magnitude combined over echoes. The MEDI toolbox uses BET's mask as it is, without eroding it.
+1. MEDI's PDF runs inside the brain extraction's mask. The MEDI toolbox runs its brain extraction on the magnitude combined over echoes. It uses the brain mask as it is, without eroding it.
 
 ## Intentional differences from the original
 

@@ -28,14 +28,14 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 | Stage | Setting | This pipeline | QSMxT default | Why |
 | --- | --- | --- | --- | --- |
 | Masking | Mask | `magnitude-first,bet:0.50` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | DECOMPOSE's authors mask with FSL's brain extraction. (note 1) |
-|  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | DECOMPOSE's authors run BET on the first echo's magnitude; no bias-field correction is described. |
-| Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | DECOMPOSE's pipeline uses Laplacian unwrapping. STI Suite unwraps each echo with its Laplacian unwrapping. |
+|  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | DECOMPOSE's authors describe no bias-field correction before brain extraction. |
+| Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | DECOMPOSE's authors unwrap each echo with STI Suite's Laplacian unwrapping. |
 |  | Laplacian solver (`--laplacian-solver`) | FFT | DCT | STI Suite's Laplacian unwrapping is FFT-based, with 12 voxels of padding. |
 |  | Laplacian FFT padding (`--laplacian-fft-pad`) | 12 voxels | 64 voxels | The same reason as *Laplacian solver* above. |
 |  | Laplacian unwrapping of the raw phase (`--laplacian-unmasked`) | on | off | STI Suite's Laplacian unwrapping runs on the raw wrapped phase, not on phase masked first. |
 |  | Per-echo QSM (`--qsm-per-echo`) | on | off | DECOMPOSE's authors reconstruct a susceptibility map for each echo, and state that this is necessary. |
 | Background | Polish mask (`--bf-polish-mask`) | on | off | STI Suite keeps the largest connected piece of V-SHARP's mask, with its holes filled, and inverts the field inside it. |
-| Inversion | QSM inversion (`--qsm-algorithm`) | STAR-QSM | iLSQR | DECOMPOSE's χ of each echo was reconstructed with STAR-QSM. |
+| Inversion | QSM inversion (`--qsm-algorithm`) | STAR-QSM | iLSQR | DECOMPOSE's authors invert each echo's field with STAR-QSM. |
 |  | Padding (`--star-pad`) | 0 voxels | 8 8 20 voxels | DECOMPOSE's paper gives no settings for STAR-QSM, so it runs with STAR-QSM's own default of no padding. |
 | χ-separation | Compute χ-separation (`--do-chisep`) | on | off | A χ-separation method runs with χ-separation on. |
 |  | χ-separation method (`--chisep`) | DECOMPOSE-QSM | R2\*-QSM | DECOMPOSE separates the sources by fitting a three-compartment model to the multi-echo signal. |
@@ -43,7 +43,7 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 Notes on the table:
 
-1. DECOMPOSE's authors run BET on the first echo's GRE magnitude. DECOMPOSE's authors extract the brain with BET; no erosion of its mask is described.
+1. DECOMPOSE's authors run brain extraction on the first echo's magnitude. They describe no erosion of the brain mask.
 
 ## Intentional differences from the original
 

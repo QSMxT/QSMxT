@@ -297,7 +297,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-gradient-threshold <HEIDI_GRADIENT_THRESHOLD>` | Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous (default: 3.924908970520748e-3) |
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | HEIDI: Field-Laplacian threshold (ppm per voxel²) (default: 5.943433583931419e-2) |
-| `--heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>` | TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks) (default: 0) |
+| `--heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>` | TV weight kept where every direction reads as an edge (0 gives the binarised masks upstream ships) (default: 0) |
 | `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | HEIDI: NESTA continuation steps on μ (default: 8) |
 | `--heidi-inner-iterations <HEIDI_INNER_ITERATIONS>` | HEIDI: Accelerated-gradient iterations per continuation step (default: 500) |
 | `--heidi-mu-min <HEIDI_MU_MIN>` | HEIDI: Final (smallest) smoothing parameter μ (default: 2.220446049250313e-16) |
@@ -1782,7 +1782,7 @@ qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
-| `--reference-divergence` | Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion and --reference-output-box it reproduces that package, for comparison with it. |
+| `--reference-divergence` | Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels; with --reference-edge-erosion and --reference-output-box it follows that package's steps, for comparison with it. |
 | `--reference-edge-erosion` | Erode the mask as QuantitativeSusceptibilityMappingTGV.jl does, not from the array's edge. Changes the result only where the mask reaches an array face. |
 | `--reference-output-box` | Return χ over QuantitativeSusceptibilityMappingTGV.jl's whole output box, not only inside the eroded mask: adds the rim of up to two voxels just outside it, where no data constrain χ. |
 | `--tgv-iterations <TGV_ITERATIONS>` | TGV iterations (default: from the voxel size, as the reference does) |
@@ -2009,7 +2009,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `--heidi-gradient-threshold <HEIDI_GRADIENT_THRESHOLD>` | Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous (default: 3.924908970520748e-3) |
 | `--no-heidi-laplacian-correction` | Do not open the homogeneity masks where the field's Laplacian is large. |
 | `--heidi-laplacian-threshold <HEIDI_LAPLACIAN_THRESHOLD>` | HEIDI: Field-Laplacian threshold (ppm per voxel²) (default: 5.943433583931419e-2) |
-| `--heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>` | TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks) (default: 0) |
+| `--heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>` | TV weight kept where every direction reads as an edge (0 gives the binarised masks upstream ships) (default: 0) |
 | `--heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>` | HEIDI: NESTA continuation steps on μ (default: 8) |
 | `--heidi-inner-iterations <HEIDI_INNER_ITERATIONS>` | HEIDI: Accelerated-gradient iterations per continuation step (default: 500) |
 | `--heidi-mu-min <HEIDI_MU_MIN>` | HEIDI: Final (smallest) smoothing parameter μ (default: 2.220446049250313e-16) |

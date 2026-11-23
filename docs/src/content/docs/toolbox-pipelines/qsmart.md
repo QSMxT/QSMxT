@@ -36,13 +36,13 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 |  | Phase offset removal (`--phase-offset-removal`) | off, for scans with two or more echoes | on | QSMART unwraps each echo's raw phase, with no phase-offset removal first. |
 |  | B0 estimation (`--b0-estimation`) | QSMART echo fit | Weighted average | QSMART's echo fit gives the reliability map QSMART uses at the brain's edge, which it keeps in its mask. |
 | Inversion | QSM inversion (`--qsm-algorithm`) | QSMART | iLSQR | QSMART inverts the total field in two stages, one for the brain's edge and veins and one for the rest. |
-|  | Precision (`--ilsqr-precision`) | Single | Double | QSMART's iLSQR, STI Suite's, runs its least-squares solves in single precision. |
+|  | Precision (`--ilsqr-precision`) | Single | Double | QSMART inverts with STI Suite's iLSQR, which runs its least-squares solves in single precision. |
 |  | Offset adjustment grid (`--qsmart-offset-grid`) | QSMART's | FFT | QSMART's final offset adjustment builds its dipole kernel half a step off the FFT grid on odd matrix sizes. |
 | Reference | QSM reference (`--qsm-reference`) | None | Mean | QSMART's result is its combined susceptibility map, which nothing references afterwards. |
 
 Notes on the table:
 
-1. QSMART runs brain extraction on the first echo's magnitude. QSMART runs brain extraction with a fractional threshold of 0.2. QSMART removes mask voxels whose bias-corrected magnitude is below 100. QSMART smooths its mask with a 3×3×3 majority filter. QSMART closes its mask with a ball of radius 2 voxels. QSMART keeps the brain's edge rather than eroding it, and relies on Laplacian unwrapping and its echo fit to handle the unreliable phase there.
+1. QSMART runs brain extraction on the first echo's magnitude. It runs brain extraction with a fractional threshold of 0.2. It removes mask voxels whose bias-corrected magnitude is below 100. It smooths its mask with a 3×3×3 majority filter. It closes its mask with a ball of radius 2 voxels. It keeps the brain's edge rather than eroding it, and relies on Laplacian unwrapping and its echo fit to handle the unreliable phase there.
 
 ## Intentional differences from the original
 
