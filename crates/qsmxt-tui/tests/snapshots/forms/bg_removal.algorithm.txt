@@ -3,63 +3,63 @@ config:
   /bg_removal/algorithm: "vsharp" -> "pdf"
 command:
   + --bf-algorithm pdf
-methods: d6c0d10132db6e21 (35 lines)
+methods: b3f560c3a907a95c (35 lines)
 
 ## bg_removal.algorithm = lbv
 config:
   /bg_removal/algorithm: "vsharp" -> "lbv"
 command:
   + --bf-algorithm lbv
-methods: 993834d25cd1818b (29 lines)
+methods: e8f1fce71130ba76 (29 lines)
 
 ## bg_removal.algorithm = ismv
 config:
   /bg_removal/algorithm: "vsharp" -> "ismv"
 command:
   + --bf-algorithm ismv
-methods: 86a9b1ff4e6f244d (29 lines)
+methods: 369f4554e4700ae6 (29 lines)
 
 ## bg_removal.algorithm = sharp
 config:
   /bg_removal/algorithm: "vsharp" -> "sharp"
 command:
   + --bf-algorithm sharp
-methods: e3209bb80c935994 (29 lines)
+methods: 14ba4e4872f23153 (29 lines)
 
 ## bg_removal.algorithm = resharp
 config:
   /bg_removal/algorithm: "vsharp" -> "resharp"
 command:
   + --bf-algorithm resharp
-methods: e86c49660ca25b58 (29 lines)
+methods: 796a09fee5d09cbd (29 lines)
 
 ## bg_removal.algorithm = harperella
 config:
   /bg_removal/algorithm: "vsharp" -> "harperella"
 command:
   + --bf-algorithm harperella
-methods: 9830634cb95589e0 (29 lines)
+methods: 1bc9c21bf9f382d1 (29 lines)
 
 ## bg_removal.algorithm = iharperella
 config:
   /bg_removal/algorithm: "vsharp" -> "iharperella"
 command:
   + --bf-algorithm iharperella
-methods: 44af9df195f8625a (33 lines)
+methods: 7754c47f21179a67 (33 lines)
 
 ## bg_removal.algorithm = bfrnet
 config:
   /bg_removal/algorithm: "vsharp" -> "bfrnet"
 command:
   + --bf-algorithm bfrnet
-methods: bff298417e01fd3d (30 lines)
+methods: 8a016b290350c424 (30 lines)
 
 ## bg_removal.algorithm = iqfm
 config:
   /bg_removal/algorithm: "vsharp" -> "iqfm"
 command:
   + --bf-algorithm iqfm
-methods: 834c0fdf78536c05 (29 lines)
+methods: 1fc8c48600a69784 (29 lines)
 
 ## bg_removal.algorithm = bfrnet, toggle inversion.tile_size
 config:
@@ -68,7 +68,7 @@ config:
 command:
   + --bf-algorithm bfrnet
   + --tile-size 128
-methods: 18feae7cb8f6197d (30 lines)
+methods: 3c3ed3d87350ef6e (30 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = xqsm
 config:
@@ -77,7 +77,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
-methods: d836662339f0042f (19 lines)
+methods: 03877ce9cc99de18 (19 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet
 config:
@@ -86,7 +86,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
-methods: af3d274a812312e6 (21 lines)
+methods: ae8f2a34dabbae2f (21 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet-plus
 config:
@@ -95,7 +95,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
-methods: bc5609fc102b1c39 (21 lines)
+methods: c3889e9b0d9d0382 (21 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmgan
 config:
@@ -104,7 +104,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
-methods: 77aa65e97f527352 (21 lines)
+methods: 61e7e4517d6cc573 (21 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = ir2qsm
 config:
@@ -113,7 +113,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
-methods: 46acd2f41ff4e778 (13 lines)
+methods: 3e7818f75a07603b (13 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = lpcnn
 config:
@@ -122,7 +122,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
-methods: fa33f54e8b7895e3 (20 lines)
+methods: f2b69b0d899fc84c (20 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = modl-qsm
 config:
@@ -131,7 +131,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
-methods: 708755246105d6af (13 lines)
+methods: ecdcdb3f0aebc36c (13 lines)
 
 ## bg_removal.algorithm = iqfm, toggle pipeline.do_r2primemap
 config:
@@ -140,7 +140,7 @@ config:
 command:
   + --bf-algorithm iqfm
   + --do-r2primemap
-methods: 6a00df17ee80374d (37 lines)
+methods: 5a8bae7208388988 (37 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = xqsm, toggle pipeline.do_r2primemap
 config:
@@ -151,7 +151,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm xqsm
   + --do-r2primemap
-methods: 419151987bf4a963 (27 lines)
+methods: 5cccdbac98a65560 (27 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet, toggle pipeline.do_r2primemap
 config:
@@ -162,7 +162,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet
   + --do-r2primemap
-methods: da8254387e3b2602 (29 lines)
+methods: 2fc54407ff444df7 (29 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmnet-plus, toggle pipeline.do_r2primemap
 config:
@@ -173,7 +173,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmnet-plus
   + --do-r2primemap
-methods: 58b5da5acb820561 (29 lines)
+methods: 8ede8a5bd9850d6e (29 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = qsmgan, toggle pipeline.do_r2primemap
 config:
@@ -184,7 +184,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm qsmgan
   + --do-r2primemap
-methods: 396d9c16f8348456 (29 lines)
+methods: 16e5fdff19b8daa3 (29 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = ir2qsm, toggle pipeline.do_r2primemap
 config:
@@ -195,7 +195,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm ir2qsm
   + --do-r2primemap
-methods: 7172abb7e230a8d2 (23 lines)
+methods: 55dbe2d5acd24c53 (23 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = lpcnn, toggle pipeline.do_r2primemap
 config:
@@ -206,7 +206,7 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm lpcnn
   + --do-r2primemap
-methods: e43547181301973b (28 lines)
+methods: 571602dc5bcc93c0 (28 lines)
 
 ## bg_removal.algorithm = iqfm, inversion.algorithm = modl-qsm, toggle pipeline.do_r2primemap
 config:
@@ -217,5 +217,5 @@ command:
   + --bf-algorithm iqfm
   + --qsm-algorithm modl-qsm
   + --do-r2primemap
-methods: 3c8678667742cf45 (23 lines)
+methods: bde8cc2a42376384 (23 lines)
 

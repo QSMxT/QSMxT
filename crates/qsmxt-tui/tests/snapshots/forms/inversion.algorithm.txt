@@ -3,77 +3,77 @@ config:
   /inversion/algorithm: "ilsqr" -> "rts"
 command:
   + --qsm-algorithm rts
-methods: be93feac3c5e1e4b (13 lines)
+methods: ddb8d418f09bbeb4 (13 lines)
 
 ## inversion.algorithm = tv
 config:
   /inversion/algorithm: "ilsqr" -> "tv"
 command:
   + --qsm-algorithm tv
-methods: 69d15addeecf8d22 (13 lines)
+methods: d12888e123fe7a09 (13 lines)
 
 ## inversion.algorithm = tkd
 config:
   /inversion/algorithm: "ilsqr" -> "tkd"
 command:
   + --qsm-algorithm tkd
-methods: e74037b51ecc7830 (13 lines)
+methods: 646776848146fb73 (13 lines)
 
 ## inversion.algorithm = tsvd
 config:
   /inversion/algorithm: "ilsqr" -> "tsvd"
 command:
   + --qsm-algorithm tsvd
-methods: f35d3984031c2072 (13 lines)
+methods: 4160d7dae6ac76a7 (13 lines)
 
 ## inversion.algorithm = tgv
 config:
   /inversion/algorithm: "ilsqr" -> "tgv"
 command:
   + --qsm-algorithm tgv
-methods: 573d612459c59166 (12 lines)
+methods: b43eeb88a9d6d65b (12 lines)
 
 ## inversion.algorithm = tikhonov
 config:
   /inversion/algorithm: "ilsqr" -> "tikhonov"
 command:
   + --qsm-algorithm tikhonov
-methods: cb79638d8e36e6b2 (13 lines)
+methods: 27e337bac607ec6b (13 lines)
 
 ## inversion.algorithm = nltv
 config:
   /inversion/algorithm: "ilsqr" -> "nltv"
 command:
   + --qsm-algorithm nltv
-methods: df5e411f19bfd1b0 (13 lines)
+methods: db2876d7cc60e407 (13 lines)
 
 ## inversion.algorithm = medi
 config:
   /inversion/algorithm: "ilsqr" -> "medi"
 command:
   + --qsm-algorithm medi
-methods: 4bddd554c227156b (26 lines)
+methods: 393bdd960676dc3e (26 lines)
 
 ## inversion.algorithm = tfi
 config:
   /inversion/algorithm: "ilsqr" -> "tfi"
 command:
   + --qsm-algorithm tfi
-methods: c0ef98e1d0d9eca1 (18 lines)
+methods: 9e96dec32d782e84 (18 lines)
 
 ## inversion.algorithm = star
 config:
   /inversion/algorithm: "ilsqr" -> "star"
 command:
   + --qsm-algorithm star
-methods: aeb3227e4b0c8f7f (21 lines)
+methods: 1dd344d5c142713e (21 lines)
 
 ## inversion.algorithm = lsqr
 config:
   /inversion/algorithm: "ilsqr" -> "lsqr"
 command:
   + --qsm-algorithm lsqr
-methods: 80cce910463e5bc1 (19 lines)
+methods: 40fdc7a33c7b304c (19 lines)
 
 ## inversion.algorithm = lsqr+heidi
 config:
@@ -82,119 +82,119 @@ config:
 command:
   + --qsm-algorithm lsqr
   + --heidi
-methods: 2bc67119f6c4be80 (22 lines)
+methods: 2e0918e7941fc9eb (22 lines)
 
 ## inversion.algorithm = qsmart
 config:
   /inversion/algorithm: "ilsqr" -> "qsmart"
 command:
   + --qsm-algorithm qsmart
-methods: 12df1dee606017b2 (34 lines)
+methods: 2d3ebe56a358fd7d (34 lines)
 
 ## inversion.algorithm = ndi
 config:
   /inversion/algorithm: "ilsqr" -> "ndi"
 command:
   + --qsm-algorithm ndi
-methods: c48913c0fe39fe6d (13 lines)
+methods: afe80986c61cf1a4 (13 lines)
 
 ## inversion.algorithm = fansi
 config:
   /inversion/algorithm: "ilsqr" -> "fansi"
 command:
   + --qsm-algorithm fansi
-methods: 48316fa6f2e598f4 (13 lines)
+methods: 90b61ef5c588b463 (13 lines)
 
 ## inversion.algorithm = l1qsm
 config:
   /inversion/algorithm: "ilsqr" -> "l1qsm"
 command:
   + --qsm-algorithm l1qsm
-methods: 4482b875ccc35abe (13 lines)
+methods: c957751be8a96af9 (13 lines)
 
 ## inversion.algorithm = whqsm
 config:
   /inversion/algorithm: "ilsqr" -> "whqsm"
 command:
   + --qsm-algorithm whqsm
-methods: bad7be19dc63dfc8 (19 lines)
+methods: 60d6a962c0b0cf4d (19 lines)
 
 ## inversion.algorithm = hdqsm
 config:
   /inversion/algorithm: "ilsqr" -> "hdqsm"
 command:
   + --qsm-algorithm hdqsm
-methods: 579dd1aad5bb3033 (19 lines)
+methods: df6995d19a1cd30e (19 lines)
 
 ## inversion.algorithm = amp-pe
 config:
   /inversion/algorithm: "ilsqr" -> "amp-pe"
 command:
   + --qsm-algorithm amp-pe
-methods: 14d323f083862849 (20 lines)
+methods: 6af83176592192d8 (20 lines)
 
 ## inversion.algorithm = xqsm
 config:
   /inversion/algorithm: "ilsqr" -> "xqsm"
 command:
   + --qsm-algorithm xqsm
-methods: 1a97ed14651880ed (19 lines)
+methods: 645598e9fbf5afc8 (19 lines)
 
 ## inversion.algorithm = qsmnet
 config:
   /inversion/algorithm: "ilsqr" -> "qsmnet"
 command:
   + --qsm-algorithm qsmnet
-methods: d06ef0c8dcf25885 (20 lines)
+methods: cce4be72b412cd5e (20 lines)
 
 ## inversion.algorithm = qsmnet-plus
 config:
   /inversion/algorithm: "ilsqr" -> "qsmnet-plus"
 command:
   + --qsm-algorithm qsmnet-plus
-methods: 3ed66aeb4c4da759 (20 lines)
+methods: 34742e6bb5bf3f6a (20 lines)
 
 ## inversion.algorithm = autoqsm
 config:
   /inversion/algorithm: "ilsqr" -> "autoqsm"
 command:
   + --qsm-algorithm autoqsm
-methods: 5ed0688431c0ed50 (18 lines)
+methods: 648c988d5d02ccb3 (18 lines)
 
 ## inversion.algorithm = qsmgan
 config:
   /inversion/algorithm: "ilsqr" -> "qsmgan"
 command:
   + --qsm-algorithm qsmgan
-methods: 689c494795c357ce (20 lines)
+methods: 291721452a5aff89 (20 lines)
 
 ## inversion.algorithm = ir2qsm
 config:
   /inversion/algorithm: "ilsqr" -> "ir2qsm"
 command:
   + --qsm-algorithm ir2qsm
-methods: bb85cd0bbc60f640 (13 lines)
+methods: 0841ae9088b8e5b7 (13 lines)
 
 ## inversion.algorithm = lpcnn
 config:
   /inversion/algorithm: "ilsqr" -> "lpcnn"
 command:
   + --qsm-algorithm lpcnn
-methods: fd60fbd01f6289e9 (19 lines)
+methods: b549e4b14b334dc6 (19 lines)
 
 ## inversion.algorithm = modl-qsm
 config:
   /inversion/algorithm: "ilsqr" -> "modl-qsm"
 command:
   + --qsm-algorithm modl-qsm
-methods: b4e61c45b8b6fdaf (13 lines)
+methods: 2506b2f52d2b1494 (13 lines)
 
 ## inversion.algorithm = nextqsm
 config:
   /inversion/algorithm: "ilsqr" -> "nextqsm"
 command:
   + --qsm-algorithm nextqsm
-methods: 5b620e94548ba9d5 (18 lines)
+methods: 67d00603a3d7c5b0 (18 lines)
 
 ## inversion.algorithm = iqsm
 config:
@@ -217,7 +217,7 @@ config:
 command:
   + --qsm-algorithm tgv
   + --tgv-te 20
-methods: df376d35377e4f3b (12 lines)
+methods: 87ec3035012d69e0 (12 lines)
 
 ## inversion.algorithm = nltv, inversion.nltv.te = ms
 config:
@@ -226,7 +226,7 @@ config:
 command:
   + --qsm-algorithm nltv
   + --nltv-te 20
-methods: fccbc7664d370640 (13 lines)
+methods: c4fedd8336776e61 (13 lines)
 
 ## inversion.algorithm = medi, toggle inversion.medi.msmv
 config:
@@ -235,7 +235,7 @@ config:
 command:
   + --qsm-algorithm medi
   + --medi-msmv
-methods: 0fdea6ec910b4dde (26 lines)
+methods: 518f48c3f0dd230d (26 lines)
 
 ## inversion.algorithm = medi, inversion.medi.te = ms
 config:
@@ -244,7 +244,7 @@ config:
 command:
   + --qsm-algorithm medi
   + --medi-te 5
-methods: 3209524d9c153efe (26 lines)
+methods: 639ab0b30293a20d (26 lines)
 
 ## inversion.algorithm = tfi, inversion.tfi.te = ms
 config:
@@ -253,7 +253,7 @@ config:
 command:
   + --qsm-algorithm tfi
   + --tfi-te 5
-methods: 51435e0f0c96f89c (18 lines)
+methods: 961fd682ae63974d (18 lines)
 
 ## inversion.algorithm = star, inversion.star.te = ms
 config:
@@ -262,7 +262,7 @@ config:
 command:
   + --qsm-algorithm star
   + --star-te 40
-methods: 983fee15173c7ef4 (21 lines)
+methods: ae211559d50fd255 (21 lines)
 
 ## inversion.algorithm = lsqr+heidi, inversion.heidi.te = ms
 config:
@@ -273,7 +273,7 @@ command:
   + --qsm-algorithm lsqr
   + --heidi
   + --heidi-te 20
-methods: 1c623872ada8008a (22 lines)
+methods: 5b8bb83e2783e3dd (22 lines)
 
 ## inversion.algorithm = qsmart, inversion.qsmart.frangi_c_mode = relative
 config:
@@ -282,7 +282,7 @@ config:
 command:
   + --qsm-algorithm qsmart
   + --qsmart-frangi-c-mode relative
-methods: 4803aa21011059a0 (34 lines)
+methods: cb1fbd5f2855c4b5 (34 lines)
 
 ## inversion.algorithm = ndi, inversion.ndi.te = ms
 config:
@@ -291,7 +291,7 @@ config:
 command:
   + --qsm-algorithm ndi
   + --ndi-te 20
-methods: bc99a256d606fb3b (13 lines)
+methods: 9982ec1ad5ac8e94 (13 lines)
 
 ## inversion.algorithm = fansi, inversion.fansi.te = ms
 config:
@@ -300,7 +300,7 @@ config:
 command:
   + --qsm-algorithm fansi
   + --fansi-te 20
-methods: 794127175daa355c (13 lines)
+methods: efd8929ce53a4ff5 (13 lines)
 
 ## inversion.algorithm = l1qsm, inversion.l1qsm.te = ms
 config:
@@ -309,7 +309,7 @@ config:
 command:
   + --qsm-algorithm l1qsm
   + --l1qsm-te 20
-methods: baec7a6c4df9c31a (13 lines)
+methods: 4c232182ea1da8db (13 lines)
 
 ## inversion.algorithm = whqsm, inversion.whqsm.te = ms
 config:
@@ -318,7 +318,7 @@ config:
 command:
   + --qsm-algorithm whqsm
   + --whqsm-te 20
-methods: c24e144615bcfe6a (19 lines)
+methods: 73c95052a35cd00d (19 lines)
 
 ## inversion.algorithm = xqsm, toggle pipeline.do_r2primemap
 config:
@@ -327,7 +327,7 @@ config:
 command:
   + --qsm-algorithm xqsm
   + --do-r2primemap
-methods: 1cd61f308afeab0d (27 lines)
+methods: 4214704cfb2ed744 (27 lines)
 
 ## inversion.algorithm = qsmnet, toggle pipeline.do_r2primemap
 config:
@@ -336,7 +336,7 @@ config:
 command:
   + --qsm-algorithm qsmnet
   + --do-r2primemap
-methods: 23d94714ec6b9941 (28 lines)
+methods: d5b322438baaf0f6 (28 lines)
 
 ## inversion.algorithm = qsmnet-plus, toggle pipeline.do_r2primemap
 config:
@@ -345,7 +345,7 @@ config:
 command:
   + --qsm-algorithm qsmnet-plus
   + --do-r2primemap
-methods: dd22a4636384429f (28 lines)
+methods: e0be21006db28414 (28 lines)
 
 ## inversion.algorithm = autoqsm, toggle pipeline.do_r2primemap
 config:
@@ -354,7 +354,7 @@ config:
 command:
   + --qsm-algorithm autoqsm
   + --do-r2primemap
-methods: 1873c20fab28aaa4 (26 lines)
+methods: 20898818bffd4e2b (26 lines)
 
 ## inversion.algorithm = qsmgan, toggle pipeline.do_r2primemap
 config:
@@ -363,7 +363,7 @@ config:
 command:
   + --qsm-algorithm qsmgan
   + --do-r2primemap
-methods: 0d8421d9d75d9dae (28 lines)
+methods: 9747714fcab124ed (28 lines)
 
 ## inversion.algorithm = ir2qsm, toggle pipeline.do_r2primemap
 config:
@@ -372,7 +372,7 @@ config:
 command:
   + --qsm-algorithm ir2qsm
   + --do-r2primemap
-methods: 6b8f3e39777a53fa (23 lines)
+methods: b77b6b7c68461577 (23 lines)
 
 ## inversion.algorithm = lpcnn, toggle pipeline.do_r2primemap
 config:
@@ -381,7 +381,7 @@ config:
 command:
   + --qsm-algorithm lpcnn
   + --do-r2primemap
-methods: 9825c83ed5f60a77 (27 lines)
+methods: a92418673ce7a550 (27 lines)
 
 ## inversion.algorithm = modl-qsm, toggle pipeline.do_r2primemap
 config:
@@ -390,7 +390,7 @@ config:
 command:
   + --qsm-algorithm modl-qsm
   + --do-r2primemap
-methods: 058b3e5244583aad (23 lines)
+methods: 04540b224c7ab9ac (23 lines)
 
 ## inversion.algorithm = nextqsm, toggle pipeline.do_r2primemap
 config:
@@ -399,7 +399,7 @@ config:
 command:
   + --qsm-algorithm nextqsm
   + --do-r2primemap
-methods: 8497129e222e6b8f (26 lines)
+methods: ceeab878412fb386 (26 lines)
 
 ## inversion.algorithm = iqsm, toggle pipeline.do_r2primemap
 config:

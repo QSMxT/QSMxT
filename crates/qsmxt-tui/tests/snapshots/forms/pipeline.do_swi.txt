@@ -3,7 +3,7 @@ config:
   /pipeline/do_swi: false -> true
 command:
   + --do-swi
-methods: 6451370bed8e68df (14 lines)
+methods: e6d4575f456edf82 (14 lines)
 
 ## toggle pipeline.do_swi, toggle export_dicom
 config:
@@ -12,7 +12,7 @@ config:
 command:
   + --do-swi
   + --export-dicom
-methods: 3aac477d070371d9 (14 lines)
+methods: f493367e3be0080e (14 lines)
 
 ## toggle pipeline.do_swi, toggle export_dicom, toggle swi.filtered_phase
 config:
@@ -23,5 +23,5 @@ command:
   + --do-swi
   + --swi-filtered-phase
   + --export-dicom
-methods: c2899b77c36dbb4e (14 lines)
+methods: ee755ee21c334c93 (14 lines)
 

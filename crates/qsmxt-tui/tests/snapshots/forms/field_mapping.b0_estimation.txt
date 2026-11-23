@@ -3,21 +3,21 @@ config:
   /field_mapping/b0_estimation: "weighted-avg" -> "linear-fit"
 command:
   + --b0-estimation linear-fit
-methods: ffe03abcb11e4f26 (29 lines)
+methods: 836b02272b98e2cd (29 lines)
 
 ## field_mapping.b0_estimation = robust-fit
 config:
   /field_mapping/b0_estimation: "weighted-avg" -> "robust-fit"
 command:
   + --b0-estimation robust-fit
-methods: a96ab7d3d86b629f (29 lines)
+methods: c831f4173345a7ca (29 lines)
 
 ## field_mapping.b0_estimation = qsmart-echofit
 config:
   /field_mapping/b0_estimation: "weighted-avg" -> "qsmart-echofit"
 command:
   + --b0-estimation qsmart-echofit
-methods: bc6231f1bab5551d (30 lines)
+methods: e820a0cc4bf48566 (30 lines)
 
 ## field_mapping.b0_estimation = complex-fit
 config:
@@ -33,5 +33,5 @@ config:
 command:
   + --b0-estimation qsmart-echofit
   + --qsmart-fit-threshold-mode percentile
-methods: bc6231f1bab5551d (30 lines)
+methods: e820a0cc4bf48566 (30 lines)
 

@@ -3,7 +3,7 @@ config:
   /pipeline/do_smwi: false -> true
 command:
   + --do-smwi
-methods: d438d651f19ec966 (14 lines)
+methods: 7caff1029a8dd3db (14 lines)
 
 ## toggle pipeline.do_smwi, toggle export_dicom
 config:
@@ -12,5 +12,5 @@ config:
 command:
   + --do-smwi
   + --export-dicom
-methods: 5da2913e4c74dd2c (14 lines)
+methods: 9790ec18b9eaf8a3 (14 lines)
 
