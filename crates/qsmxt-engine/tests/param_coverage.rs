@@ -86,7 +86,9 @@ fn qsmxt_engine_covers_qsm_core_inversion_params() {
     // continuous kernel is a qsm-core option QSMxT does not offer.
     cover!(q::inversion::FansiParams => c::FansiConfig, ignore: ["b0", "echo_times", "is_tgv", "kernel", "newton_guard"]);
     cover!(q::inversion::L1QsmParams => c::L1qsmConfig, ignore: ["b0", "echo_times", "kernel"]);
-    cover!(q::inversion::WhQsmParams => c::WhqsmConfig, ignore: ["b0", "echo_times", "kernel"]);
+    // `newton_guard` (WH-QSM, QSM.rs#482): as for NLTV and the FANSI family, QSM.rs's default
+    // (on) is used; `false` is WH_nlTV.m's unguarded step, for parity only.
+    cover!(q::inversion::WhQsmParams => c::WhqsmConfig, ignore: ["b0", "echo_times", "kernel", "newton_guard"]);
     cover!(q::inversion::HdQsmParams => c::HdqsmConfig, ignore: ["kernel"]);
     cover!(q::inversion::NdiParams => c::NdiConfig, ignore: ["b0", "echo_times", "kernel"]);
     cover!(q::inversion::IlsqrParams => c::IlsqrConfig);

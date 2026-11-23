@@ -52,7 +52,7 @@ export const moved = {
 			'multi-echo-phase-handling': '/data/bipolar/',
 			'output': '/reference/outputs/#the-methods-text-and-pipeline-graph',
 			'parallelism-on-a-single-node': '/how-to/run-qsm/#optional',
-			'pipelines': '/toolbox-pipelines/#pipelines-1',
+			'pipelines': '/toolbox-pipelines/#starting-one',
 			'preview-first-with---dry-run': '/how-to/convert-dicom/#steps',
 			're-running': '/how-to/run-qsm/#optional',
 			'recommendations': '/background/recommendations/#on-the-command-line',
@@ -97,7 +97,7 @@ export const moved = {
 	'/guides/running-interactively/': {
 		to: '/background/tui/',
 		anchors: {
-			'pipelines': '/toolbox-pipelines/#pipelines',
+			'pipelines': '/toolbox-pipelines/#starting-one',
 			'recommendations': '/background/recommendations/#in-the-tui',
 			'updates-and-announcements': '/how-to/update/#announcements',
 			'what-you-can-do': '/start/quick-start/',

@@ -71,7 +71,7 @@ QSM processing was performed using qsmxt (Stewart, 2026). Processing followed th
 
 Recommendations (QSM.rs's pipeline rules for the chosen methods):
   recommended (--accept-recommendations applies them):
-    - Phase offset removal is off; Weighted average recommends turning it on: The B0 calculation's authors state that phase offsets have to be removed before it; ROMEO removes them (MCPC-3D-S) whenever it computes B0 from multi-echo data. Laplacian unwrapping does not remove them: it takes out only their harmonic part, and the rest stays in the field map (field-mapping.phase-offsets, stated by the authors)
+    - Phase offset removal is off; Weighted average recommends turning it on: The B0 fit's authors state that phase offsets must be removed first, and ROMEO removes them for multi-echo data. Laplacian unwrapping removes only part of them, and the rest stays in the field map (field-mapping.phase-offsets, stated by the authors)
       keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false
 
 Reference values of the chosen methods (for the first run's scan):
