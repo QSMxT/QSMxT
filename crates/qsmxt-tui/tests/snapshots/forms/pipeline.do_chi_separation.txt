@@ -12,7 +12,7 @@ config:
 command:
   + --do-chisep
   + --chisep decompose
-methods: b4562f4507a5e546 (40 lines)
+methods: ede6990d1c0fc601 (39 lines)
 
 ## toggle pipeline.do_chi_separation, separation.algorithm = chi-sep-ilsqr
 config:
