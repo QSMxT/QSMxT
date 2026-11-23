@@ -46,7 +46,7 @@ None.
 
 ## Known gaps
 
-For bipolar readouts, the MEDI toolbox uses a bipolar echo fit, which is not supported yet. This pipeline always uses the monopolar fit ([QSMxT#564](https://github.com/QSMxT/QSMxT/issues/564)).
+For bipolar readouts, turn on bipolar correction: the complex fit is then the MEDI toolbox's bipolar echo fit (Fit_ppm_complex_bipolar) ([QSMxT#564](https://github.com/QSMxT/QSMxT/issues/564)).
 
 ## Citations
 
