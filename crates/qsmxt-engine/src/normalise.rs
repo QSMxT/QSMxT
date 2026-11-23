@@ -41,8 +41,14 @@ use crate::recommendations::{Allowed, Basis, Kind, Named, Recommendation, Streng
 pub const REQUIRED_RULES: &[&str] = &[
     "qsmxt.analysis-segmentation", "qsmxt.analysis-qsm", "qsmxt.smwi-qsm", "qsmxt.chisep-r2prime",
     "qsmxt.chisep-r2star", "qsmxt.r2prime-r2star", "qsmxt.r2prime-r2", "qsmxt.reference-segmentation",
-    "qsmxt.grouping-magnitude",
+    "qsmxt.grouping-magnitude", BIPOLAR_READOUT_RULE, BIPOLAR_OFFSET_REMOVAL_RULE,
 ];
+
+/// The required change a bipolar readout makes ([`scan_adjustments`]): bipolar correction on.
+pub const BIPOLAR_READOUT_RULE: &str = "qsmxt.bipolar-readout";
+/// The required change that goes with it where bipolar correction would be skipped: phase-offset
+/// removal on, of which bipolar correction is a part.
+pub const BIPOLAR_OFFSET_REMOVAL_RULE: &str = "qsmxt.bipolar-offset-removal";
 
 /// One change [`PipelineConfig::normalised`] made to a configuration, and why: what a front end
 /// lists beside the plan, and offers beforehand as a required change ([`required_findings`]).
@@ -64,6 +70,9 @@ pub struct Adjustment {
     /// The change and its reason, in a sentence that names settings rather than flags, as the
     /// log says it: "Segmentation turned on: Reference = ventricles needs it (...)".
     pub message: String,
+    /// What the change rests on: [`Basis::Wiring`] (an output another setting needs) or
+    /// [`Basis::Acquisition`] (what the scan's acquisition needs, [`scan_adjustments`]).
+    pub basis: Basis,
 }
 
 impl Adjustment {
@@ -71,18 +80,29 @@ impl Adjustment {
            needed_by: impl Into<String>, reason: impl Into<String>) -> Self {
         let (needed_by, reason) = (needed_by.into(), reason.into());
         let message = format!("{output} turned on: {needed_by} needs it ({reason})");
-        Adjustment { setting, because, rule, output, needed_by, reason, message }
+        Adjustment { setting, because, rule, output, needed_by, reason, message, basis: Basis::Wiring }
+    }
+
+    /// An [`Adjustment::new`] that the scan's acquisition needs ([`Basis::Acquisition`]).
+    fn for_scan(rule: &'static str, setting: &'static str, because: &'static str, output: &'static str,
+                needed_by: impl Into<String>, reason: impl Into<String>) -> Self {
+        Adjustment { basis: Basis::Acquisition, ..Self::new(rule, setting, because, output, needed_by, reason) }
     }
 
     /// The finding a front end offers for this change before the run ([`required_findings`]).
     fn finding(&self, config: &Value) -> Recommendation {
         let named = |on: bool| Named { value: Value::Bool(on), name: if on { "on" } else { "off" }.into() };
-        let trigger_value = self.because.split('.').try_fold(config, |v, k| v.get(k)).cloned().unwrap_or(Value::Null);
+        let trigger_value = if self.because == READOUT_FACT {
+            Value::String(crate::scan::ReadoutPolarity::Bipolar.id().into())
+        } else {
+            self.because.split('.').try_fold(config, |v, k| v.get(k)).cloned().unwrap_or(Value::Null)
+        };
+        let scan = self.basis == Basis::Acquisition;
         Recommendation {
             rule: self.rule.into(),
             kind: Kind::Reasoned,
             strength: Strength::Required,
-            basis: Basis::Wiring,
+            basis: self.basis,
             setting: self.setting.into(),
             label: self.output.trim_start_matches("The ").to_string(),
             trigger: Trigger { setting: self.because.into(), value: trigger_value, name: self.needed_by.clone() },
@@ -90,13 +110,82 @@ impl Adjustment {
             recommended: named(true),
             allowed: Allowed::OneOf { values: vec![named(true)] },
             reason: capitalised(&self.reason),
-            source: "QSMxT (how its steps link together)".into(),
-            needs_scan: false,
+            source: if scan { BIPOLAR_SOURCE } else { "QSMxT (how its steps link together)" }.into(),
+            needs_scan: scan,
             departs: true,
             dismissed: false,
             conflict: false,
         }
     }
+}
+
+/// The trigger of a change the scan's readout polarity makes ([`scan_adjustments`]): not a setting.
+pub const READOUT_FACT: &str = "scan.readout_polarity";
+
+const BIPOLAR_SOURCE: &str = "QSMxT; Eckstein 2021 (PhD thesis, TU Wien, Section 3.1.3); QSMxT/QSMxT#564";
+
+/// Whether bipolar correction is in play in `c` on a scan with `n_echoes` (when known): QSM is
+/// reconstructed from a field map that combines the echoes (not per echo, not a total-field
+/// inversion from the wrapped phase), as QSM.rs's rules see it.
+fn bipolar_in_play(c: &PipelineConfig, n_echoes: Option<usize>) -> bool {
+    use qsm_core::pipeline::rules as core;
+    if !c.pipeline.do_qsm || n_echoes.is_some_and(|n| n < 3) {
+        return false;
+    }
+    let pipeline = crate::bridge::to_qsm_pipeline_config(c);
+    let facts = core::ScanFacts { echo_count: n_echoes, ..Default::default() };
+    !core::current(&core::RuleInput::pipeline(&pipeline), &facts, "field_mapping.bipolar_correction")
+        .unwrap_or_default().is_empty()
+}
+
+/// The changes a scan's acquisition needs, made to `c` (a configuration already
+/// [`PipelineConfig::normalised`]): with a **bipolar readout** (`readout`, from the sidecar's
+/// `ReadoutPolarity`) and at least three echoes (or an echo count not known), bipolar correction
+/// is turned on wherever it is in play ([`BIPOLAR_READOUT_RULE`]); where it would then be skipped
+/// because phase-offset removal is off (STI Suite's, QSMART's and UK Biobank's pipelines; not the
+/// complex fit, which is MEDI's bipolar fit then), phase-offset removal is turned on too
+/// ([`BIPOLAR_OFFSET_REMOVAL_RULE`]), unless the Laplacian field is kept outside the mask, which
+/// refuses it.
+///
+/// Decided 2026-11-23 (QSMxT#564): without correction, a bipolar scan's field map is wrong almost
+/// everywhere and χ can be scaled several-fold. A front end offers it as
+/// a "Required change" ([`Basis::Acquisition`]); a run left without it applies it, says so in its
+/// log and records it, as [`PipelineConfig::normalised`]'s changes (decision 183).
+pub fn scan_adjustments(
+    c: &mut PipelineConfig, readout: Option<crate::scan::ReadoutPolarity>, n_echoes: Option<usize>,
+) -> Vec<Adjustment> {
+    let mut out = Vec::new();
+    if readout != Some(crate::scan::ReadoutPolarity::Bipolar) || !bipolar_in_play(c, n_echoes) {
+        return out;
+    }
+    let fm = &mut c.field_mapping;
+    if !fm.bipolar_correction {
+        fm.bipolar_correction = true;
+        out.push(Adjustment::for_scan(BIPOLAR_READOUT_RULE, "field_mapping.bipolar_correction", READOUT_FACT,
+            "Bipolar correction", "the scan's bipolar readout",
+            "its odd and even echoes carry opposite phase errors, which the field map would take for field"));
+    }
+    let complex_fit = fm.b0_estimation == crate::enums::B0Estimation::ComplexFit;
+    if !fm.phase_offset_removal && !complex_fit && !fm.laplacian_unmasked && !fm.laplacian_keep_outside {
+        fm.phase_offset_removal = true;
+        out.push(Adjustment::for_scan(BIPOLAR_OFFSET_REMOVAL_RULE, "field_mapping.phase_offset_removal",
+            "field_mapping.bipolar_correction", "Phase offset removal", "bipolar correction for the scan's bipolar readout",
+            "bipolar correction runs as part of MCPC-3D-S phase-offset removal"));
+    }
+    for a in &out {
+        if !c.required_changes.contains(&a.message) {
+            c.required_changes.push(a.message.clone());
+        }
+    }
+    out
+}
+
+/// [`scan_adjustments`] as `required` findings on `config` as given, for a front end that knows
+/// the scan's readout polarity (`facts`).
+pub fn scan_required_findings(config: &PipelineConfig, facts: &crate::recommendations::Facts) -> Vec<Recommendation> {
+    let mut c = config.normalised().0;
+    let json = serde_json::to_value(config).unwrap_or(Value::Null);
+    scan_adjustments(&mut c, facts.readout_polarity, facts.echo_count).iter().map(|a| a.finding(&json)).collect()
 }
 
 /// `s` with its first letter in capitals, if it is a Latin one ("χ-separation" stays as it is).
@@ -185,7 +274,8 @@ impl PipelineConfig {
     /// run's intermediates unless they were asked for ([`Self::computes_unasked_r2prime`]). Those
     /// are not required changes: no setting is changed for them.
     pub fn normalised_for(&self, facts: &crate::scan::ScanFacts) -> (PipelineConfig, Vec<Adjustment>) {
-        let (mut c, out) = self.normalised();
+        let (mut c, mut out) = self.normalised();
+        out.extend(scan_adjustments(&mut c, facts.readout_polarity, Some(facts.n_echoes)));
         if crate::requirements::measures_r2prime_for_chisepnet(facts, &c) {
             measure_r2prime_for_chisepnet(&mut c);
         }
@@ -197,6 +287,13 @@ impl PipelineConfig {
         let (mut c, _) = self.normalised();
         if plan.config.pipeline.do_r2primemap && crate::config::chisepnet_route_can_estimate_r2prime(&c) {
             measure_r2prime_for_chisepnet(&mut c);
+        }
+        // The changes the scan's acquisition needed ([`scan_adjustments`]), as the plan made them.
+        for a in plan.adjustments.iter().filter(|a| a.basis == Basis::Acquisition) {
+            let _ = crate::schema::set(&mut c, a.setting, Value::Bool(true));
+            if !c.required_changes.contains(&a.message) {
+                c.required_changes.push(a.message.clone());
+            }
         }
         c
     }
@@ -434,7 +531,7 @@ mod tests {
             dims: (8, 8, 8), voxel_size: None, n_echoes: 3, echo_times: vec![0.01, 0.02, 0.03], has_magnitude: true,
             n_coils: 1, real_imaginary: false, field_strength: 3.0, nominal_field_strength: None, imaging_frequency: None, b0_dir: None, mese_echo_times: None,
             custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
-            manufacturer: None,
+            manufacturer: None, readout_polarity: None,
         };
         assert_eq!(c.normalised_for(&facts).0, n, "nothing to measure from");
         facts.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);

@@ -2291,7 +2291,7 @@ dependencies = [
 [[package]]
 name = "qsm-core"
 version = "0.0.0"
-source = "git+https://github.com/astewartau/QSM.rs.git?rev=35e15a912cacc00055299f02611f1a8b6fd7c170#35e15a912cacc00055299f02611f1a8b6fd7c170"
+source = "git+https://github.com/astewartau/QSM.rs.git?rev=38be352a2fc21cd0599d65a070edfa78d19e54fa#38be352a2fc21cd0599d65a070edfa78d19e54fa"
 dependencies = [
  "bytemuck",
  "delaunator",

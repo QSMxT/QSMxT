@@ -246,6 +246,14 @@ pub fn run_pipeline_applied(
     for c in &changes {
         log::info!("{}: {}: {} → {} (the pipeline's on this scan)", qsm_run.key, c.label, c.from_text, c.to_text);
     }
+    // What the scan's acquisition needs (bipolar correction for a bipolar readout): a required
+    // change, made here and logged, so the run's state, steps and methods text all take it
+    // (`qsmxt_engine::normalise::scan_adjustments`; decision 183).
+    let mut completed = completed;
+    let facts = requirements::scan_facts(qsm_run, &completed);
+    for a in qsmxt_engine::normalise::scan_adjustments(&mut completed, facts.readout_polarity, Some(facts.n_echoes)) {
+        log::info!("{}: {}", qsm_run.key, a.message);
+    }
     let config = &completed;
     let state_path = output.state_path(&qsm_run.key);
     let state = PipelineState::load_or_create(&state_path, config, &qsm_run.key, force);
@@ -253,7 +261,6 @@ pub fn run_pipeline_applied(
     // What this run can produce of what was enabled, and the steps that produce it. `qsmxt run`
     // has already refused a requested output the data cannot give and warned about an implied one
     // (`requirements::check_runs`); the plan follows the same rules, so the two cannot disagree.
-    let facts = requirements::scan_facts(qsm_run, config);
     let plan = qsmxt_engine::plan::plan(config, &facts);
     for note in &plan.notes {
         log::warn!("{note}");

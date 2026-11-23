@@ -97,6 +97,7 @@ impl App {
             num_echoes: f.echo_count,
             field_strength: f.field_strength,
             manufacturer: f.manufacturer,
+            readout_polarity: f.readout_polarity,
             ..Default::default()
         }
     }

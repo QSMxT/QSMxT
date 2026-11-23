@@ -10,7 +10,7 @@ use crate::schema::{self, ValueType, ViewFacts};
 fn facts_for(rule: &Rule) -> Option<Facts> {
     let mut f = Facts {
         echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)),
-        manufacturer: None, measured_r2prime: None,
+        manufacturer: None, measured_r2prime: None, readout_polarity: None, bipolar_signature: None,
     };
     for c in rule.when {
         let Condition::Fact { fact, is } = c else { continue };
@@ -149,7 +149,69 @@ fn native_rules() -> impl Iterator<Item = (&'static Rule, Facts)> {
 }
 
 fn known() -> Facts {
-    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)), manufacturer: None, measured_r2prime: None }
+    Facts { echo_count: Some(4), field_strength: Some(3.0), voxel_size: Some((1.0, 1.0, 1.0)), dims: Some((64, 64, 32)), manufacturer: None, measured_r2prime: None, readout_polarity: None, bipolar_signature: None }
+}
+
+/// A bipolar readout makes bipolar correction a required change, applied by the run
+/// (`qsmxt.bipolar-readout`); with phase-offset removal off it is turned on too. A monopolar or
+/// unknown readout changes nothing; with fewer than three echoes, or a per-echo QSM, it is not in
+/// play.
+#[test]
+fn a_bipolar_readout_requires_bipolar_correction() {
+    use crate::scan::ReadoutPolarity::{Bipolar, Monopolar};
+    let bipolar = Facts { readout_polarity: Some(Bipolar), ..known() };
+    let c = PipelineConfig::default();
+    let found = recommendations(&c, &bipolar);
+    let r = found.iter().find(|r| r.rule == "qsmxt.bipolar-readout").expect("required");
+    assert_eq!((r.strength, r.basis, r.setting.as_str()), (Strength::Required, Basis::Acquisition, "field_mapping.bipolar_correction"));
+    assert!(r.applied_by_run() && r.needs_scan && r.recommended.value == json!(true), "{r:?}");
+    assert!(!found.iter().any(|r| r.rule == "qsmxt.bipolar-offset-removal"), "offset removal is on by default");
+    for facts in [Facts { readout_polarity: Some(Monopolar), ..known() }, known(),
+                  Facts { echo_count: Some(2), ..bipolar.clone() }] {
+        assert!(!recommendations(&c, &facts).iter().any(|r| r.rule.starts_with("qsmxt.bipolar")), "{facts:?}");
+    }
+    let mut per_echo = c.clone();
+    per_echo.qsm.per_echo = true;
+    assert!(!recommendations(&per_echo, &bipolar).iter().any(|r| r.rule.starts_with("qsmxt.bipolar")));
+    // Without phase-offset removal (STI Suite's, QSMART's, UK Biobank's), it is turned on with it.
+    let mut no_offsets = c.clone();
+    no_offsets.field_mapping.phase_offset_removal = false;
+    let rules: Vec<String> = recommendations(&no_offsets, &bipolar).into_iter().map(|r| r.rule)
+        .filter(|r| r.starts_with("qsmxt.bipolar")).collect();
+    assert_eq!(rules, ["qsmxt.bipolar-readout", "qsmxt.bipolar-offset-removal"]);
+    // Applying them resolves them; with correction on, nothing is found.
+    let mut fixed = no_offsets.clone();
+    for r in &rules {
+        apply(&mut fixed, r, None, &bipolar).unwrap();
+    }
+    assert!(fixed.field_mapping.bipolar_correction && fixed.field_mapping.phase_offset_removal);
+    assert!(!recommendations(&fixed, &bipolar).iter().any(|r| r.rule.starts_with("qsmxt.bipolar")));
+    // MEDI's complex fit takes it as its bipolar fit: no offset removal.
+    let mut complex = no_offsets.clone();
+    complex.field_mapping.b0_estimation = crate::enums::B0Estimation::ComplexFit;
+    let rules: Vec<String> = recommendations(&complex, &bipolar).into_iter().map(|r| r.rule)
+        .filter(|r| r.starts_with("qsmxt.bipolar")).collect();
+    assert_eq!(rules, ["qsmxt.bipolar-readout"]);
+}
+
+/// The echoes' bipolar signature, with the polarity not known, suggests bipolar correction (not
+/// preselected); a known polarity or correction already on says nothing.
+#[test]
+fn a_bipolar_signature_suggests_bipolar_correction() {
+    let seen = Facts { bipolar_signature: Some(true), ..known() };
+    let c = PipelineConfig::default();
+    let found = recommendations(&c, &seen);
+    let r = found.iter().find(|r| r.rule == "qsmxt.bipolar-signature").expect("suggested");
+    assert!(r.strength == Strength::Suggested && !r.strength.preselected(), "{r:?}");
+    assert!(!found.iter().any(|r| r.rule == "qsmxt.bipolar-readout"));
+    let mut on = c.clone();
+    apply(&mut on, "qsmxt.bipolar-signature", None, &seen).unwrap();
+    assert!(on.field_mapping.bipolar_correction);
+    assert!(!recommendations(&on, &seen).iter().any(|r| r.rule.starts_with("qsmxt.bipolar")));
+    let known_mono = Facts { readout_polarity: Some(crate::scan::ReadoutPolarity::Monopolar), ..seen.clone() };
+    assert!(!recommendations(&c, &known_mono).iter().any(|r| r.rule.starts_with("qsmxt.bipolar")));
+    assert!(!recommendations(&c, &Facts { bipolar_signature: Some(false), ..known() }).iter()
+        .any(|r| r.rule.starts_with("qsmxt.bipolar")));
 }
 
 /// A QSM.rs setting at a QSMxT setting's own path needs no entry in the table.

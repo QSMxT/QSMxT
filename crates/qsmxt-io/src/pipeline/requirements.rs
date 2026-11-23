@@ -72,7 +72,8 @@ pub fn scan_facts(run: &QsmRun, config: &PipelineConfig) -> ScanFacts {
         custom_qsm: found(s.custom_qsm_tool.as_deref(), "*_Chimap.nii*", &["desc-"]),
         custom_r2: found(s.custom_r2_tool.as_deref(), "*_R2map.nii*", &[]),
         custom_r2prime: found(s.custom_r2prime_tool.as_deref(), "*_R2primemap.nii*", &[]),
-        manufacturer: sidecar.and_then(|sc| sc.manufacturer),
+        manufacturer: sidecar.as_ref().and_then(|sc| sc.manufacturer.clone()),
+        readout_polarity: sidecar.and_then(|sc| sc.readout_polarity),
     }
 }
 

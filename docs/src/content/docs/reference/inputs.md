@@ -83,7 +83,7 @@ Some QSM methods need more of the data than phase:
 | --- | --- |
 | `--qsm-algorithm medi`, `tfi`, `--bf-algorithm pdf` | the magnitude of every echo, and increasing, evenly spaced echoes: they weight the data by a noise map made from the echoes (MEDI toolbox `Fit_ppm_complex`) |
 | `--qsm-algorithm ndi`, `nltv`, `fansi`, `fansi-tgv`, `l1qsm`, `hdqsm`, `lsqr`, `heidi`; `whqsm` with a magnitude weight | magnitude: their data weight |
-| `--b0-estimation complex-fit` | the magnitude of every echo, and increasing, evenly spaced echo times: it fits the complex echoes per echo spacing (MEDI toolbox `Fit_ppm_complex`). Bipolar correction is refused with it |
+| `--b0-estimation complex-fit` | the magnitude of every echo, and increasing, evenly spaced echo times: it fits the complex echoes per echo spacing (MEDI toolbox `Fit_ppm_complex`; with bipolar correction, its bipolar fit `Fit_ppm_complex_bipolar`) |
 
 Evenly spaced means each echo spacing is within 0.02 ms of the first, so echo times
 rounded to 0.01 ms in a sidecar (4.92, 9.84, 14.77, 19.68 ms) are accepted.

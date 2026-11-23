@@ -47,6 +47,7 @@ pub fn typical_scan() -> ScanFacts {
         custom_r2: false,
         custom_r2prime: false,
         manufacturer: None,
+        readout_polarity: None,
     }
 }
 
@@ -128,11 +129,24 @@ impl PipelineView {
         self.run.as_ref().and_then(|(_, r)| r.as_ref().ok()).map(|r| r.mese.is_some())
     }
 
+    /// The readout polarity in the first echo's sidecar of the run last read, when it gives one.
+    pub fn read_readout_polarity(&self) -> Option<qsmxt_engine::scan::ReadoutPolarity> {
+        let run = self.run.as_ref().and_then(|(_, r)| r.as_ref().ok())?;
+        sidecar_readout_polarity(&run.echoes.first()?.phase_json)
+    }
+
     /// The manufacturer in the first echo's sidecar of the run last read, when it gives one.
     pub fn read_manufacturer(&self) -> Option<String> {
         let run = self.run.as_ref().and_then(|(_, r)| r.as_ref().ok())?;
         sidecar_manufacturer(&run.echoes.first()?.phase_json)
     }
+}
+
+/// A BIDS sidecar's `ReadoutPolarity` ([`qsmxt_engine::scan::ReadoutPolarity`]), when the file
+/// reads and gives one QSMxT knows.
+pub fn sidecar_readout_polarity(json: &std::path::Path) -> Option<qsmxt_engine::scan::ReadoutPolarity> {
+    let v: serde_json::Value = serde_json::from_str(&fs_err::read_to_string(json).ok()?).ok()?;
+    v.get("ReadoutPolarity")?.as_str().and_then(qsmxt_engine::scan::ReadoutPolarity::from_name)
 }
 
 /// A BIDS sidecar's `Manufacturer`, when the file reads and gives one.

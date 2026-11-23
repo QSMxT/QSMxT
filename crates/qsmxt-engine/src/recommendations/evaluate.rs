@@ -56,9 +56,12 @@ pub fn reference_values(config: &PipelineConfig, facts: &Facts) -> Vec<Recommend
         Some(recommendation(&json, rule, &input, &scan, &applies.current, departs))
     }).collect();
     out.extend(qsmxt_findings(c, facts));
+    out.extend(bipolar_signature_finding(c, facts));
     // The outputs the config as given leaves off that another setting needs: on the config as
     // given, since normalising it turns them on.
     out.extend(crate::normalise::required_findings(config));
+    // What the scan's acquisition needs (a bipolar readout's bipolar correction).
+    out.extend(crate::normalise::scan_required_findings(config, facts));
     mark(config, &mut out);
     out
 }
@@ -110,6 +113,49 @@ fn qsmxt_findings(c: &PipelineConfig, facts: &Facts) -> Vec<Recommendation> {
         conflict: false,
     }]
 }
+
+/// `qsmxt.bipolar-signature`: the echoes' phase shows a bipolar readout's odd/even pattern
+/// (QSM.rs's `bipolar_signature`, measured by a front end that holds the data:
+/// [`Facts::bipolar_signature`]) while the sidecar does not say the readout polarity. Bipolar
+/// correction is then suggested, not preselected: the signature is measured on the data, and a
+/// monopolar scan with an unusual odd/even phase (or data corrected already) could show it too.
+fn bipolar_signature_finding(c: &PipelineConfig, facts: &Facts) -> Option<Recommendation> {
+    if facts.bipolar_signature != Some(true) || facts.readout_polarity.is_some() || c.field_mapping.bipolar_correction {
+        return None;
+    }
+    // In play as for a bipolar readout: what `scan_adjustments` would turn on.
+    let mut probe = c.clone();
+    crate::normalise::scan_adjustments(&mut probe, Some(crate::scan::ReadoutPolarity::Bipolar), facts.echo_count)
+        .iter().find(|a| a.rule == crate::normalise::BIPOLAR_READOUT_RULE)?;
+    let named = |on: bool| Named { value: Value::Bool(on), name: if on { "on" } else { "off" }.into() };
+    Some(Recommendation {
+        rule: BIPOLAR_SIGNATURE_RULE.into(),
+        kind: Kind::Reasoned,
+        strength: Strength::Suggested,
+        basis: Basis::Measured,
+        setting: "field_mapping.bipolar_correction".into(),
+        label: label_of("field_mapping.bipolar_correction"),
+        trigger: Trigger {
+            setting: crate::normalise::READOUT_FACT.into(),
+            value: Value::String("bipolar-signature".into()),
+            name: "the echoes' bipolar readout signature".into(),
+        },
+        current: vec![named(false)],
+        recommended: named(true),
+        allowed: Allowed::OneOf { values: vec![named(true)] },
+        reason: "The echoes' phase alternates between odd and even echoes as a bipolar (alternating-polarity) \
+                 readout makes it, and the sidecar does not say the readout polarity: if the scan's readout \
+                 is bipolar, its field map needs bipolar correction".into(),
+        source: "QSM.rs utils::bipolar_signature; QSMxT/QSMxT#564".into(),
+        needs_scan: true,
+        departs: true,
+        dismissed: false,
+        conflict: false,
+    })
+}
+
+/// The id of QSMxT's suggestion from the echoes' bipolar signature ([`bipolar_signature_finding`]).
+pub const BIPOLAR_SIGNATURE_RULE: &str = "qsmxt.bipolar-signature";
 
 /// The findings on `config` on a scan with `facts`: every rule that applies and is departed from.
 pub fn recommendations(config: &PipelineConfig, facts: &Facts) -> Vec<Recommendation> {

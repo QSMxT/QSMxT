@@ -43,6 +43,9 @@ pub struct ViewFacts {
     /// acquisition, or a supplied R2′ map (`None` = not known, or mixed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub measured_r2prime: Option<bool>,
+    /// The readout polarity, when every run's sidecar gives the same (`None` = not known, or
+    /// mixed): a bipolar readout makes bipolar correction a required change.
+    pub readout_polarity: Option<crate::scan::ReadoutPolarity>,
 }
 
 impl ViewFacts {
@@ -63,6 +66,7 @@ impl ViewFacts {
             dims: common(scans.iter().map(|s| Some([s.dims.0, s.dims.1, s.dims.2]))),
             manufacturer: common(scans.iter().map(|s| s.manufacturer.clone())),
             measured_r2prime: common(scans.iter().map(|s| Some(s.mese_echo_times.is_some() || s.custom_r2prime))),
+            readout_polarity: common(scans.iter().map(|s| s.readout_polarity)),
         }
     }
 
@@ -540,6 +544,7 @@ mod tests {
             dims: Some([16, 16, 8]),
             manufacturer: Some("Philips".into()),
             measured_r2prime: Some(false),
+            readout_polarity: None,
         });
     }
 

@@ -89,6 +89,8 @@ impl ScanInputs {
                     .then(|| sidecars().rev().find_map(|s| number(Some(s), "ImagingFrequency")))
                     .flatten()
                     .filter(|f| f.is_finite() && *f > 0.0);
+                let readout_polarity = sidecars().find_map(|v| v.get("ReadoutPolarity")?.as_str()
+                    .and_then(crate::scan::ReadoutPolarity::from_name));
                 let sidecars = self.echoes.iter().zip(&echo_times).map(|(echo, &te)| {
                     let mut sc = echo.sidecar.as_ref()
                         .and_then(|v| {
@@ -126,6 +128,7 @@ impl ScanInputs {
                     custom_r2: false,
                     custom_r2prime: false,
                     manufacturer: manufacturer.clone(),
+                    readout_polarity,
                 };
                 (Some(facts), sidecars)
             }

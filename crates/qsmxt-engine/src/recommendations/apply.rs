@@ -70,6 +70,7 @@ pub fn rule_may_change(config: &PipelineConfig, path: &str, facts: &Facts) -> bo
         dims: facts.dims.map(|(x, y, z)| [x, y, z]),
         manufacturer: facts.manufacturer.clone(),
         measured_r2prime: facts.measured_r2prime,
+        readout_polarity: facts.readout_polarity,
         ..Default::default()
     };
     crate::schema::visible_settings(config, &view).into_iter().find(|(p, _)| *p == path).is_none_or(|(_, shown)| shown)
@@ -93,6 +94,17 @@ pub fn apply(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>, fact
 /// [`apply`] whether or not the setting applies: for a pipeline, whose choices and the authors'
 /// settings they bring apply whole ([`crate::pipelines`]), and for findings already checked.
 pub(crate) fn apply_rule(config: &mut PipelineConfig, rule: &str, pick: Option<&Value>) -> Result<(), String> {
+    // What a bipolar readout needs (or its signature suggests): the setting turned on.
+    let scan_setting = match rule {
+        crate::normalise::BIPOLAR_READOUT_RULE | BIPOLAR_SIGNATURE_RULE => Some("field_mapping.bipolar_correction"),
+        crate::normalise::BIPOLAR_OFFSET_REMOVAL_RULE => Some("field_mapping.phase_offset_removal"),
+        _ => None,
+    };
+    if let Some(setting) = scan_setting {
+        crate::schema::set(config, setting, Value::Bool(true))?;
+        undismiss(config, rule);
+        return Ok(());
+    }
     // A required change (an output another setting needs): turn the output on.
     if crate::normalise::REQUIRED_RULES.contains(&rule) {
         if let Some(a) = config.normalised().1.into_iter().find(|a| a.rule == rule) {

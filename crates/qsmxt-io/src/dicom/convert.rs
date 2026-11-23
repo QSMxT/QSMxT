@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 
+use qsmxt_engine::scan::ReadoutPolarity;
+
 use super::{clean_bids_label, find_collisions, parse_dcm2niix_suffix, plan_session, BidsStem, CoilType, DicomSession, SeriesType, Target};
 
 /// Message sent from the conversion thread to the UI.
@@ -250,6 +252,39 @@ fn frame_of_reference_uid(files: &[PathBuf]) -> Option<String> {
     })
 }
 
+/// The Siemens private elements that carry the protocol's ASCCONV block: the CSA series header
+/// (0029,1020) of classic DICOM (and (0029,1120) where the private block is numbered 11), and
+/// XA's MrPhoenixProtocol (0021,1019).
+const ASCCONV_TAGS: [dicom::core::Tag; 3] =
+    [dicom::core::Tag(0x0029, 0x1020), dicom::core::Tag(0x0029, 0x1120), dicom::core::Tag(0x0021, 0x1019)];
+
+/// The readout polarity of a series, from the first of `files` whose header says it: Siemens'
+/// `ucReadOutMode` in the protocol's ASCCONV block ([`ReadoutPolarity::from_ascconv`]). dcm2niix
+/// reads the key but writes it to the sidecar only for diffusion (`DiffusionScheme`), and no
+/// standard DICOM or BIDS field says it; GE and Philips headers carry it in no field QSMxT can
+/// read reliably. Only the first few files are looked at: it is a series-level parameter.
+fn readout_polarity(files: &[PathBuf]) -> Option<ReadoutPolarity> {
+    files.iter().take(3).find_map(|f| {
+        let obj = dicom::object::OpenFileOptions::new().read_until(dicom::dictionary_std::tags::PIXEL_DATA).open_file(f).ok()?;
+        ASCCONV_TAGS.iter().find_map(|&tag| {
+            let bytes = obj.element(tag).ok()?.to_bytes().ok()?;
+            ReadoutPolarity::from_ascconv(&String::from_utf8_lossy(&bytes))
+        })
+    })
+}
+
+/// Add `ReadoutPolarity` (`"monopolar"` or `"bipolar"`) to a sidecar dcm2niix wrote: not a BIDS
+/// field; QSMxT reads it to require bipolar correction for a bipolar readout.
+fn add_readout_polarity(json_path: &Path, polarity: ReadoutPolarity) {
+    let Ok(content) = fs::read_to_string(json_path) else { return };
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) else { return };
+    let Some(obj) = json.as_object_mut() else { return };
+    obj.insert("ReadoutPolarity".into(), serde_json::json!(polarity.id()));
+    if let Ok(out) = serde_json::to_string_pretty(&json) {
+        let _ = fs::write(json_path, out);
+    }
+}
+
 /// Add `FrameOfReferenceUID` to a sidecar dcm2niix wrote, under the DICOM keyword as BIDS
 /// recommends for metadata it does not define.
 fn add_frame_of_reference(json_path: &Path, uid: &str) {
@@ -298,6 +333,9 @@ fn dcm2niix_once(d: &Dcm2niix, files: &[PathBuf], work: &Path, base: &str, log: 
         .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(base)))
         .collect();
     outputs.sort();
+    if let Some(polarity) = readout_polarity(files) {
+        outputs.iter().filter(|p| p.extension().is_some_and(|e| e == "json")).for_each(|p| add_readout_polarity(p, polarity));
+    }
     if d.keep_uids {
         if let Some(uid) = frame_of_reference_uid(files) {
             outputs.iter().filter(|p| p.extension().is_some_and(|e| e == "json")).for_each(|p| add_frame_of_reference(p, &uid));
@@ -701,6 +739,44 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
         assert_eq!((v["FrameOfReferenceUID"].as_str(), v["StudyInstanceUID"].as_str(), v["EchoTime"].as_f64()),
                    (Some("2.25.42"), Some("2.25.7"), Some(0.02)));
+    }
+
+    /// A Siemens series' `ucReadOutMode` (CSA series header or XA's MrPhoenixProtocol) goes into
+    /// the sidecar as `ReadoutPolarity`; a header without it adds nothing.
+    #[test]
+    fn the_readout_polarity_goes_into_the_sidecar() {
+        use dicom::core::{DataElement, Tag, VR};
+        use dicom::dictionary_std::{tags, uids};
+        use dicom::object::{meta::FileMetaTableBuilder, InMemDicomObject};
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, tag: Option<Tag>, mode: &str| {
+            let mut o = InMemDicomObject::new_empty();
+            o.put(DataElement::new(tags::SOP_CLASS_UID, VR::UI, uids::MR_IMAGE_STORAGE));
+            o.put(DataElement::new(tags::SOP_INSTANCE_UID, VR::UI, "2.25.1"));
+            if let Some(tag) = tag {
+                let text = format!("CSA\0\0### ASCCONV BEGIN ###\nlContrasts = 5\nucReadOutMode                            = {mode}\n### ASCCONV END ###");
+                o.put(DataElement::new(tag, VR::OB, dicom::core::PrimitiveValue::from(text.into_bytes())));
+            }
+            let p = dir.path().join(name);
+            o.with_meta(FileMetaTableBuilder::new().transfer_syntax(uids::EXPLICIT_VR_LITTLE_ENDIAN)
+                .media_storage_sop_class_uid(uids::MR_IMAGE_STORAGE).media_storage_sop_instance_uid("2.25.1"))
+                .unwrap().write_to_file(&p).unwrap();
+            p
+        };
+        let csa = write("csa.dcm", Some(Tag(0x0029, 0x1020)), "0x2");
+        let xa = write("xa.dcm", Some(Tag(0x0021, 0x1019)), "0x1");
+        let none = write("none.dcm", None, "");
+        assert_eq!(readout_polarity(&[none.clone(), csa]), Some(ReadoutPolarity::Bipolar));
+        assert_eq!(readout_polarity(std::slice::from_ref(&xa)), Some(ReadoutPolarity::Monopolar));
+        assert_eq!(readout_polarity(&[none]), None);
+        let json = dir.path().join("x.json");
+        fs::write(&json, r#"{"EchoTime": 0.02}"#).unwrap();
+        add_readout_polarity(&json, ReadoutPolarity::Bipolar);
+        let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&json).unwrap()).unwrap();
+        assert_eq!((v["ReadoutPolarity"].as_str(), v["EchoTime"].as_f64()), (Some("bipolar"), Some(0.02)));
+        let sc = qsmxt_engine::scan::QsmSidecar::from_json(&serde_json::json!({
+            "EchoTime": 0.02, "MagneticFieldStrength": 3.0, "ReadoutPolarity": v["ReadoutPolarity"]})).unwrap();
+        assert_eq!(sc.readout_polarity, Some(ReadoutPolarity::Bipolar));
     }
 
     /// Serializes tests that mutate process-wide environment variables.

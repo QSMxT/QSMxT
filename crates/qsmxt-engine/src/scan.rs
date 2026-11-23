@@ -59,6 +59,71 @@ pub struct ScanFacts {
     /// vendor ([`crate::recommendations`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manufacturer: Option<String>,
+    /// The readout polarity of a multi-echo acquisition, when the sidecar gives it
+    /// (`ReadoutPolarity`, which `qsmxt dicom-convert` writes from the DICOM header where it
+    /// can: [`ReadoutPolarity`]). A bipolar readout needs bipolar correction
+    /// ([`crate::normalise`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readout_polarity: Option<ReadoutPolarity>,
+}
+
+/// Whether the echoes of a multi-echo gradient echo were read out with the same gradient polarity
+/// (monopolar, "flyback") or alternating polarity (bipolar). A bipolar readout gives odd and even
+/// echoes opposite phase errors, which the field map takes for field unless they are corrected
+/// (bipolar correction; MEDI's bipolar echo fit).
+///
+/// BIDS has no field for it. `qsmxt dicom-convert` writes the sidecar field `ReadoutPolarity`
+/// (`"monopolar"` or `"bipolar"`) where the DICOM header says it: Siemens' protocol
+/// (`ucReadOutMode` in the ASCCONV block, `0x1` monopolar, `0x2` bipolar). GE and Philips headers
+/// say it in no field QSMxT can read reliably, so it is left out there; a user can add it to the
+/// sidecar by hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadoutPolarity {
+    Monopolar,
+    Bipolar,
+}
+
+impl ReadoutPolarity {
+    /// The polarity a sidecar's `ReadoutPolarity` names: `"bipolar"` or `"monopolar"` (also
+    /// `"unipolar"`, `"flyback"`), in any case; anything else is not known.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "bipolar" | "alternating" => Some(ReadoutPolarity::Bipolar),
+            "monopolar" | "unipolar" | "flyback" => Some(ReadoutPolarity::Monopolar),
+            _ => None,
+        }
+    }
+
+    /// The polarity Siemens' `ucReadOutMode` gives, from the text of a protocol's ASCCONV block
+    /// (`ucReadOutMode = 0x2`): `0x1` monopolar, `0x2` bipolar, as dcm2niix reads the same key.
+    /// `None` without the key or with another value.
+    pub fn from_ascconv(text: &str) -> Option<Self> {
+        let begin = text.find("### ASCCONV BEGIN")?;
+        let body = &text[begin..];
+        let body = &body[..body.find("### ASCCONV END").unwrap_or(body.len())];
+        body.lines().find_map(|line| {
+            let (key, value) = line.split_once('=')?;
+            (key.trim() == "ucReadOutMode").then_some(())?;
+            let v = value.trim().trim_matches('"');
+            let n = match v.strip_prefix("0x").or_else(|| v.strip_prefix("0X")) {
+                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                None => v.parse().ok()?,
+            };
+            match n {
+                1 => Some(ReadoutPolarity::Monopolar),
+                2 => Some(ReadoutPolarity::Bipolar),
+                _ => None,
+            }
+        })
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            ReadoutPolarity::Monopolar => "monopolar",
+            ReadoutPolarity::Bipolar => "bipolar",
+        }
+    }
 }
 
 impl ScanFacts {
@@ -103,6 +168,7 @@ impl ScanFacts {
             custom_r2: false,
             custom_r2prime: false,
             manufacturer: sidecars[0].manufacturer.clone(),
+            readout_polarity: sidecars.iter().find_map(|sc| sc.readout_polarity),
         })
     }
 }
@@ -149,6 +215,9 @@ pub struct QsmSidecar {
     /// ppm with it ([`QsmSidecar::working_field_strength`]).
     #[serde(rename = "ImagingFrequency", default, skip_serializing_if = "Option::is_none")]
     pub imaging_frequency: Option<f64>,
+    /// `ReadoutPolarity` (not a BIDS field; [`ReadoutPolarity`]).
+    #[serde(rename = "ReadoutPolarity", default, skip_serializing_if = "Option::is_none")]
+    pub readout_polarity: Option<ReadoutPolarity>,
 }
 
 /// The field strength phase is converted to ppm with: `ImagingFrequency / γ̄` when the sidecar
@@ -168,7 +237,7 @@ impl QsmSidecar {
         QsmSidecar {
             echo_time, magnetic_field_strength, b0_dir: None, slice_thickness: None,
             mr_acquisition_type: None, slice_encoding_direction: None, manufacturer: None,
-            imaging_frequency: None,
+            imaging_frequency: None, readout_polarity: None,
         }
     }
 
@@ -204,6 +273,7 @@ impl QsmSidecar {
             slice_encoding_direction: string("SliceEncodingDirection"),
             manufacturer: string("Manufacturer"),
             imaging_frequency: value.get("ImagingFrequency").and_then(|v| v.as_f64()),
+            readout_polarity: string("ReadoutPolarity").as_deref().and_then(ReadoutPolarity::from_name),
         })
     }
 }
@@ -576,6 +646,45 @@ pub fn grid_decision(meta: &RunMetadata, facts: &ScanFacts, config: &PipelineCon
 mod tests {
     use super::*;
 
+    /// The readout polarity, from a sidecar's `ReadoutPolarity` and from Siemens' ASCCONV
+    /// `ucReadOutMode`, as `qsmxt dicom-convert` reads it.
+    #[test]
+    fn the_readout_polarity_is_read_from_sidecars_and_siemens_protocols() {
+        assert_eq!(ReadoutPolarity::from_name(" Bipolar "), Some(ReadoutPolarity::Bipolar));
+        assert_eq!(ReadoutPolarity::from_name("monopolar"), Some(ReadoutPolarity::Monopolar));
+        assert_eq!(ReadoutPolarity::from_name("dual"), None);
+        let ascconv = |v: &str| format!(
+            "junk\n### ASCCONV BEGIN ###\nlContrasts                               = 5\nucReadOutMode                            = {v}\n### ASCCONV END ###\nucReadOutMode = 0x2");
+        assert_eq!(ReadoutPolarity::from_ascconv(&ascconv("0x2")), Some(ReadoutPolarity::Bipolar));
+        assert_eq!(ReadoutPolarity::from_ascconv(&ascconv("0x1")), Some(ReadoutPolarity::Monopolar));
+        assert_eq!(ReadoutPolarity::from_ascconv(&ascconv("0x4")), None);
+        // Only inside the block, and only the exact key.
+        assert_eq!(ReadoutPolarity::from_ascconv("### ASCCONV BEGIN ###\nsKSpace.ucReadOutModeX = 0x2\n### ASCCONV END ###\nucReadOutMode = 0x2"), None);
+        assert_eq!(ReadoutPolarity::from_ascconv("ucReadOutMode = 0x2"), None);
+        let json = serde_json::json!({"EchoTime": 0.01, "MagneticFieldStrength": 3, "ReadoutPolarity": "bipolar"});
+        let sc = QsmSidecar::from_json(&json).unwrap();
+        assert_eq!(sc.readout_polarity, Some(ReadoutPolarity::Bipolar));
+        let facts = ScanFacts::from_sidecars((4, 4, 4), &[sc.clone(), sc], true).unwrap();
+        assert_eq!(facts.readout_polarity, Some(ReadoutPolarity::Bipolar));
+    }
+
+    /// A plan for a bipolar scan turns bipolar correction on, says so, and records it for the
+    /// methods Note; the run takes the plan's configuration.
+    #[test]
+    fn a_bipolar_scan_is_planned_with_bipolar_correction() {
+        let facts = ScanFacts { readout_polarity: Some(ReadoutPolarity::Bipolar), ..crate::plan::tests::facts() };
+        assert!(facts.n_echoes >= 3, "{facts:?}");
+        let config = PipelineConfig::default();
+        let plan = crate::plan::plan(&config, &facts);
+        assert!(plan.config.field_mapping.bipolar_correction);
+        let a = plan.adjustments.iter().find(|a| a.rule == "qsmxt.bipolar-readout").expect("adjusted");
+        assert!(a.message.starts_with("Bipolar correction turned on: the scan's bipolar readout needs it"), "{}", a.message);
+        assert!(plan.config.required_changes.contains(&a.message));
+        assert!(config.normalised_as_planned(&plan).field_mapping.bipolar_correction);
+        let mono = ScanFacts { readout_polarity: Some(ReadoutPolarity::Monopolar), ..facts };
+        assert!(!crate::plan::plan(&config, &mono).config.field_mapping.bipolar_correction);
+    }
+
     /// A configuration that cannot resample is never resampled, however oblique the scan; one
     /// that can is, on an oblique scan, unless a sidecar gives B0's direction and nothing needs
     /// axial data.
@@ -700,6 +809,7 @@ mod tests {
             echo_time: 0.004, magnetic_field_strength: 3.0, b0_dir: None,
             slice_thickness: thickness, mr_acquisition_type: acq.map(str::to_string),
             slice_encoding_direction: dir.map(str::to_string), manufacturer: None, imaging_frequency: None,
+            readout_polarity: None,
         }
     }
 
