@@ -396,7 +396,7 @@ fn full_labels_are_not_abbreviated() {
 /// Whether a label is in sentence case: no word but the first is capitalised, except names
 /// ("QSM", "V-SHARP", "iLSQR", "SUSEP-Net") and units ("Hz").
 fn sentence_case(label: &str) -> bool {
-    const NAMES: &[&str] = &["Hz", "Hz/ppm", "Dr+", "Dr−", "SUSEP-Net", "RS2-Net", "Suite"];
+    const NAMES: &[&str] = &["Hz", "Hz/ppm", "Dr+", "Dr−", "SUSEP-Net", "RS2-Net", "Suite", "Biobank"];
     label.split(' ').enumerate().all(|(i, w)| {
         NAMES.contains(&w.trim_matches(|c: char| "(),:".contains(c)))
             || w.split('-').enumerate().all(|(j, p)| {
