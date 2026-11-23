@@ -1,0 +1,60 @@
+---
+title: Quick start
+description: "Your first susceptibility map in a few minutes, from example data."
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+**Goal:** a susceptibility map from a real scan, to see what QSMxT does before you use your own
+data. You need QSMxT [installed](/QSMxT/start/install/) and about 100 MB of disk space.
+
+<Tabs syncKey="interface">
+<TabItem label="TUI">
+
+1. Start the interactive interface:
+
+   ```sh
+   qsmxt tui
+   ```
+
+2. On the **Input** tab, set *Input mode* to **Example dataset** and press **Download**
+   (`prisma-bridge-run1` is ticked already). QSMxT fetches one subject (a 5-echo 3D gradient-echo scan at 3 T)
+   and switches to that dataset.
+3. Press `F5` to run.
+
+</TabItem>
+<TabItem label="Command line">
+
+1. Download the example as a BIDS dataset:
+
+   ```sh
+   qsmxt example study/bids
+   ```
+
+   This fetches one subject (a 5-echo 3D gradient-echo scan at 3 T).
+
+2. Run QSM:
+
+   ```sh
+   qsmxt run study/bids
+   ```
+
+</TabItem>
+</Tabs>
+
+## Check it worked
+
+The susceptibility map is `derivatives/qsmxt/sub-01/ses-*/anat/…_Chimap.nii`, inside the
+dataset directory (`study/bids` above; `qsmxt-example/` in the TUI unless you changed it). Open it in any NIfTI viewer: the
+iron-rich deep grey matter and the veins are bright. `methods.md` beside it says what was done.
+
+## Next
+
+- [Convert DICOM to BIDS](/QSMxT/how-to/convert-dicom/), then
+  [Run QSMxT on your data](/QSMxT/how-to/run-qsm/).
+- [Look at your results](/QSMxT/how-to/results/): what each file is, and what to check.
+- [Your data](/QSMxT/data/): what QSMxT does for GE, single-echo, 2D, 7 T, rodent and other
+  data.
+
+More example scans (the same subject on two scanners and several protocols) are listed by
+`qsmxt example --list`; see [`qsmxt example`](/QSMxT/reference/cli/#qsmxt-example).

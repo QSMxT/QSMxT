@@ -71,28 +71,28 @@ QSM processing was performed using qsmxt (Stewart, 2026). Processing followed th
 
 Recommendations (QSM.rs's pipeline rules for the chosen methods):
   recommended (--accept-recommendations applies them):
-    - Phase offset removal is off; Weighted average recommends turning it on: The B0 calculation's authors state that phase offsets have to be removed before it; ROMEO removes them (MCPC-3D-S) whenever it computes B0 from multi-echo data. Laplacian unwrapping does not remove them: it takes out only their harmonic part, and the rest stays in the field map (field-mapping.phase-offsets, stated by the authors)
+    - Phase offset removal is off; Weighted average recommends turning it on: The B0 fit's authors state that phase offsets must be removed first, and ROMEO removes them for multi-echo data. Laplacian unwrapping removes only part of them, and the rest stays in the field map (field-mapping.phase-offsets, stated by the authors)
       keep the choice with --dismiss-recommendation field-mapping.phase-offsets=false
 
 Reference values of the chosen methods (for the first run's scan):
-  Background removal: V-SHARP — ukb mask trim on uses V-SHARP
+  Background removal: V-SHARP — UK Biobank mask trim on uses V-SHARP
   Deconvolve (V-SHARP): off — iLSQR uses off
   Working grid (V-SHARP): 1 mm isotropic grid — iLSQR uses 1 mm isotropic grid
   Maximum radius (V-SHARP): 12 mm — iLSQR uses 12 mm
   Minimum radius (V-SHARP): 2 mm — iLSQR uses 2 mm
   Radius step (V-SHARP): 1 mm — iLSQR uses 1 mm
-  B0 estimation: Weighted average — ukb mask trim on uses Weighted average
-  Echo weighting: Assumed decay — ukb mask trim on uses Assumed decay
-  Laplacian field kept outside the mask: on — ukb mask trim on uses on
-  Laplacian solver: FFT, 64-voxel padding — ukb mask trim on uses FFT, 64-voxel padding
-  Laplacian unwrapping of the raw phase: off — ukb mask trim on uses off
+  B0 estimation: Weighted average — UK Biobank mask trim on uses Weighted average
+  Echo weighting: Assumed decay — UK Biobank mask trim on uses Assumed decay
+  Laplacian field kept outside the mask: on — UK Biobank mask trim on uses on
+  Laplacian solver: FFT, 64-voxel padding — UK Biobank mask trim on uses FFT, 64-voxel padding
+  Laplacian unwrapping of the raw phase: off — UK Biobank mask trim on uses off
   Phase offset removal: off — Weighted average uses on (differs)
-  Phase offset removal: off — ukb mask trim on uses off
-  Phase unwrapping: Laplacian — ukb mask trim on uses Laplacian
-  QSM inversion: iLSQR — ukb mask trim on uses iLSQR
-  Maximum iterations (iLSQR): 100 — ukb mask trim on uses 100
-  Padding (iLSQR): 64 mm — ukb mask trim on uses 64 mm
+  Phase offset removal: off — UK Biobank mask trim on uses off
+  Phase unwrapping: Laplacian — UK Biobank mask trim on uses Laplacian
+  QSM inversion: iLSQR — UK Biobank mask trim on uses iLSQR
+  Maximum iterations (iLSQR): 100 — UK Biobank mask trim on uses 100
+  Padding (iLSQR): 64 mm — UK Biobank mask trim on uses 64 mm
   Precision (iLSQR): Single — iLSQR uses Single
-  Brain mask: HD-BET — ukb mask trim on uses HD-BET
-  HD-BET inference: sliding window — ukb mask trim on uses sliding window
-  QSM reference: None — ukb mask trim on uses None
+  Brain mask: HD-BET — UK Biobank mask trim on uses HD-BET
+  HD-BET inference: sliding window — UK Biobank mask trim on uses sliding window
+  QSM reference: None — UK Biobank mask trim on uses None

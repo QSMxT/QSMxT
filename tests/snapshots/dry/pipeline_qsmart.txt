@@ -67,7 +67,7 @@ QSM processing was performed using qsmxt (Stewart, 2026). Processing followed th
 
 Recommendations (QSM.rs's pipeline rules for the chosen methods):
   suggested (better on some data, e.g. in vivo; --accept-recommendations leaves them):
-    - Frangi C mode (QSMART) is Absolute; QSMART suggests Relative: QSMART's Frangi c (500) is in magnitude units, and scanners scale magnitude very differently: with it, 27-63 % of the brain was labelled vessel on Siemens, Philips, 7 T and simulated data (3-5 % on GE). A c relative to the magnitude's brain median gave 2-9 % on all of them, and on QSM-CI's simulated head raised XSIM from 0.15 to 0.21-0.22 (NRMSE 92 -> 88 %), though deep-GM NRMSE rose from 99 to 113 %. Across scanners, deep-GM χ agreed better on GE, the same on Siemens Skyra and slightly worse on Siemens Prisma (qsmart.frangi-c-relative, measured in QSM.rs)
+    - Frangi C mode (QSMART) is Absolute; QSMART suggests Relative: QSMART's vessel-detection constant is in magnitude units, and scanners scale magnitude very differently, so it labelled 27-63 % of the brain as vessel on most scanners. A constant relative to the brain's median magnitude labelled 2-9 % on all of them (qsmart.frangi-c-relative, measured in QSM.rs)
       keep the choice with --dismiss-recommendation qsmart.frangi-c-relative=absolute
 
 Reference values of the chosen methods (for the first run's scan):

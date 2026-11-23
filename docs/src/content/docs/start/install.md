@@ -1,12 +1,14 @@
 ---
-title: Installation
-description: Install QSMxT on Linux, macOS, or Windows — or build it from source.
+title: Install
+description: "Install QSMxT on Linux, macOS, or Windows, or build it from source."
 ---
 
 QSMxT ships as a single self-contained binary. There is no environment to manage
 and no toolbox to assemble.
 
 ## Quick install
+
+One command installs `qsmxt` and the `dcm2niix` it uses for DICOM conversion.
 
 ### Linux / macOS
 
@@ -64,66 +66,6 @@ qsmxt --version
 qsmxt --help
 ```
 
-## Keeping up to date
-
-```sh
-qsmxt update
-```
-
-This checks the [latest release](https://github.com/QSMxT/QSMxT/releases),
-installs it if newer, and keeps the bundled `dcm2niix` in sync. The download is
-checked against the release's `SHA256SUMS` before anything is extracted; a
-missing or mismatching checksum aborts the update and leaves the installed
-binary untouched.
-
-A build from source reports version `0.0.0` and has no release to compare
-against, so `qsmxt update` refuses to replace it. Use `qsmxt update --force` to
-install the latest release over it anyway.
-
-### Trying the main branch
-
-```sh
-qsmxt update --main
-```
-
-This builds the latest commit on the `main` branch from source and installs it in
-place of your `qsmxt`. It needs the Rust toolchain (install it from
-[rustup.rs](https://rustup.rs)) and takes several minutes the first time. The build
-is kept in `~/.qsmxt/build`, so a later `qsmxt update --main` rebuilds only QSMxT itself
-(and QSM.rs when main has moved to another QSM.rs commit), not its dependencies. The
-cache is emptied when it grows past 10 GB; delete the folder to free the space sooner. Main may contain
-changes that are not yet released or documented. `qsmxt --version` shows the
-commit you are running, and running `qsmxt update --main` again moves to the
-newest commit. To go back to the latest release, run `qsmxt update --force`.
-
-`qsmxt tui` also checks for a new release each time it starts and offers the
-update in a pop-up when one is available. The check runs in the background with
-a short timeout, so it never delays startup and makes no difference without an
-internet connection; offline, the result of the last check that succeeded is
-used. From the pop-up, `Enter` installs the update and `Esc` closes it until the
-next start.
-
-Set `QSMXT_NO_UPDATE_CHECK=1` to turn the background check off entirely (this
-also turns off the announcements below). It is also skipped automatically when
-`CI` is set and in local development builds.
-
-### Announcements
-
-The QSMxT team publishes announcements, such as a problem found in a release and
-the version that fixes it. `qsmxt tui` fetches them in the background when it
-starts and shows a new one once in a pop-up. An announcement about a problem
-that can give wrong results is shown each time the TUI starts, for as long as
-the version you run is affected. Press `n` on the TUI's tab bar to read every
-announcement, or run:
-
-```sh
-qsmxt news
-```
-
-The last announcements fetched are saved in `~/.qsmxt/announcements.toml`, so
-they can be read offline, and the ones already shown are recorded in
-`~/.qsmxt/announcements-seen.json`.
-
 ## Manual download
 
 Grab the archive for your platform from the
@@ -159,3 +101,44 @@ curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/uninstall.sh | sh
 # Windows PowerShell
 irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/uninstall.ps1 | iex
 ```
+
+## Coming from QSMxT 8.x
+
+QSMxT v9 is a complete rewrite in Rust: a single self-contained binary, with no
+Python environment to manage. The reconstruction pipeline and DICOM/NIfTI
+conversion are fully reimplemented and faster, and there is a new interactive TUI.
+
+### Command changes
+
+| 8.x | v9 |
+| --- | --- |
+| `qsmxt <bids>` | `qsmxt run <bids>` |
+| `dicom-convert` | `qsmxt dicom-convert` |
+| `--export_dicoms` | [`--export-dicom`](/QSMxT/how-to/export-dicom/) |
+
+### Multi-coil data
+
+8.x combined uncombined receive coils with MCPC-3D-S inside `dicom-convert`
+(writing `_rec-mcpc3ds` files). In v9 the converter keeps the per-coil files
+(`_rec-uncombined_coil-NN_*`) and `qsmxt run` combines them as its first stage;
+`qsmxt combine mcpc3ds` does the same on loose files. See
+[Uncombined coil data](/QSMxT/data/uncombined-coils/).
+
+### Workflows not in v9
+
+Some parts of the 8.x line are not included in v9:
+
+- template and group-space building
+- the web UI
+
+(NeXtQSM is in v9, as `--qsm-algorithm nextqsm`.)
+
+Anatomical segmentation is back, by a different route: v9 parcellates the GRE
+magnitude directly with SynthSeg rather than registering a T1w atlas, and
+summarises every quantitative map per structure. See
+[Measure χ in brain structures](/QSMxT/how-to/results/#measure-χ-in-brain-structures).
+
+If you rely on those, 8.x is still available: see the
+[8.x documentation](https://qsmxt.github.io/QSMxT/v8/), the
+[`python-legacy` branch](https://github.com/QSMxT/QSMxT/tree/python-legacy) and the
+[8.x releases](https://github.com/QSMxT/QSMxT/releases).

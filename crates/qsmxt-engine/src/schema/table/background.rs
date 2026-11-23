@@ -58,7 +58,7 @@ fn mask() -> Vec<Def> {
         .gui("Keep the background-removal mask's largest connected component, holes filled, as STI Suite's PolishMask")
         .cli("After background removal, keep the mask's largest connected component with its holes filled and zero the local field outside it, as STI Suite's QSM_GUI does (PolishMask)")
         .negated("--no-bf-polish-mask", "Do not polish the background-removal mask (the default), after a `--pipeline` that does").negated_conflicts(),
-        d("bg_removal.ukb_mask_trim", Background, "UKB mask trim", "Before and after background removal, trim the mask of voxels with unreliable phase, as UK Biobank's pipeline does", Bool)
+        d("bg_removal.ukb_mask_trim", Background, "UK Biobank mask trim", "Before and after background removal, trim the mask of voxels with unreliable phase, as UK Biobank's pipeline does", Bool)
         .flag("--bf-ukb-mask-trim")
         .when(|x| !x.bf("iqfm"))
         .gui("Trim the mask by the phase reliability of the first and last echo before and after background removal, as UK Biobank's pipeline does")

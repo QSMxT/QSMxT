@@ -14,9 +14,9 @@ pub(super) use qsm_core::catalogue::Stage as MethodStage;
 /// A work as the methods text cites it: its key (one per work, so a work cited twice is listed
 /// once), its reference-list entry, and its in-text citation ("Kames et al., 2018").
 #[derive(Clone, Debug, PartialEq)]
-pub(super) struct Citation {
+pub(crate) struct Citation {
     pub(super) key: &'static str,
-    pub(super) text: Cow<'static, str>,
+    pub(crate) text: Cow<'static, str>,
     pub(super) inline: Cow<'static, str>,
 }
 
@@ -24,7 +24,7 @@ pub(super) struct Citation {
 /// volume(issue):pages. https://doi.org/…`. An arXiv preprint gives its identifier after the
 /// venue (`*arXiv*:2506.13293`), taken from its DOI. A work with no venue (unpublished) ends at
 /// its title.
-pub(super) fn reference_text(c: &catalogue::Citation) -> String {
+pub(crate) fn reference_text(c: &catalogue::Citation) -> String {
     let stop = if c.title.ends_with(['.', '?', '!']) { "" } else { "." };
     let mut s = format!("{} ({}). \"{}{stop}\"", c.authors, c.year, c.title);
     if let Some(venue) = c.venue {
@@ -165,7 +165,7 @@ pub(super) const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
     inline: Cow::Borrowed("QSM-CI"),
 };
 
-pub(super) const CITE_QSMXT: Citation = Citation {
+pub(crate) const CITE_QSMXT: Citation = Citation {
     key: "stewart2026qsmxt",
     text: Cow::Borrowed("Stewart, A. (2026). QSMxT. https://github.com/QSMxT/QSMxT"),
     inline: Cow::Borrowed("Stewart, 2026"),

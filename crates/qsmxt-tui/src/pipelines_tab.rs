@@ -30,9 +30,9 @@ use super::app::{App, Page};
 
 /// The About page: what the toolbox pipelines are, plainly.
 pub const ABOUT: [&str; 3] = [
-    "Each toolbox pipeline is a set of QSMxT options that reproduces a reference toolbox's own \
-     pipeline. They are not QSMxT's recommendations. QSM-CI compares them with the original \
-     toolboxes; the parity page shows which have passed:",
+    "Each toolbox pipeline is a set of QSMxT options taken from a reference toolbox's own \
+     pipeline. They are not QSMxT's recommendations. QSM-CI measures how closely each matches \
+     the original toolbox; the parity page shows the results:",
     "https://qsmxt.github.io/QSM-CI/parity.html",
     "Results can often be improved by choosing different options. QSMxT's defaults are its own \
      recommendation.",
@@ -626,7 +626,7 @@ mod tests {
         let text = screen(&mut app);
         assert!(text.contains("▸ About") && text.contains("About toolbox pipelines"), "{text}");
         assert!(text.contains("https://qsmxt.github.io/QSM-CI/parity.html") && text.contains("not QSMxT's recommendations")
-            && text.contains("QSM-CI compares them with the original"), "{text}");
+            && text.contains("QSM-CI measures how closely each matches") && !text.contains("reproduc"), "{text}");
         key(&mut app, KeyCode::Enter);
         assert!(app.pipelines.preview.is_none());
         assert_eq!(app.pipeline_status().text(), "QSMxT defaults");

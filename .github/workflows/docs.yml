@@ -6,6 +6,12 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/docs.yml'
+  # Pull requests build the site (which fails on a broken internal link or #heading,
+  # starlight-links-validator) but don't deploy it.
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 # Allow this workflow to publish to GitHub Pages.
@@ -14,10 +20,11 @@ permissions:
   pages: write
   id-token: write
 
-# One deploy at a time; don't cancel an in-progress run.
+# One deploy at a time; don't cancel an in-progress deploy. A pull request's newer build
+# replaces its older one.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('docs-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -29,11 +36,13 @@ jobs:
       - uses: actions/checkout@v4
       # The 8.x (Python) docs are served under /v8/ — see docs/legacy/build.sh.
       - uses: actions/checkout@v4
+        if: github.event_name != 'pull_request'
         with:
           ref: python-legacy
           path: legacy-src
           sparse-checkout: docs
       - uses: ruby/setup-ruby@v1
+        if: github.event_name != 'pull_request'
         with:
           ruby-version: '3.4'
           bundler-cache: true
@@ -46,12 +55,15 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: legacy/build.sh "$GITHUB_WORKSPACE/legacy-src" dist/v8
+        if: github.event_name != 'pull_request'
       - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
         with:
           path: docs/dist
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -1,57 +1,44 @@
-# Starlight Starter Kit: Basics
+# QSMxT documentation site
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+The site at https://qsmxt.github.io/QSMxT/ is built with [Astro Starlight](https://starlight.astro.build)
+from this directory. `.github/workflows/docs.yml` deploys it on every push to `main` that touches
+`docs/`, and builds it (without deploying) on pull requests.
 
-```
-npm create astro@latest -- --template starlight
-```
-
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
-
-## 🚀 Project Structure
-
-Inside of your Astro + Starlight project, you'll see the following folders and files:
-
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
+```sh
+npm ci
+npm run build     # writes dist/; fails on a broken internal link or #heading
+npm run dev       # local server at http://localhost:4321/QSMxT/
 ```
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+## Layout
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+- `src/content/docs/`: one Markdown page per URL. The sidebar's five sections are in
+  `start/` (Get started), `how-to/` (Guides), `data/` (Your data), `reference/` and
+  `toolbox-pipelines/` (Reference) and `background/` (How it works), plus `index.mdx`, the home
+  page. Each topic has one home: a guide holds the steps, a data note what QSMxT does for that
+  kind of data, a reference page the full detail.
+- `astro.config.mjs`: the sidebar, the site's head scripts, the link checker
+  ([starlight-links-validator](https://starlight-links-validator.vercel.app)) and the redirects.
+- `redirects.mjs`: every old page URL and where its content went. Moving or renaming a page, or
+  moving a section to another page, needs an entry here, so that links from papers, forum posts
+  and older releases keep working, `#heading` included.
+- `legacy/`: the QSMxT 8.x site (a Jekyll site on the `python-legacy` branch), which the deploy
+  copies into `dist/v8/`. To build it locally: `bundle install` in `legacy/`, then
+  `legacy/build.sh <python-legacy checkout> dist/v8`.
 
-Static assets, like favicons, can be placed in the `public/` directory.
+## Generated parts
 
-## Legacy 8.x docs
+Don't edit these by hand; the tests named fail until they are regenerated and committed.
 
-The Python QSMxT 8.x docs (a Jekyll site on the `python-legacy` branch) are still
-served at https://qsmxt.github.io/QSMxT/v8/. The docs workflow builds them with
-`legacy/build.sh` and copies the result into `dist/v8/` after the Astro build. To
-build them locally: `bundle install` in `legacy/`, then
-`legacy/build.sh <python-legacy checkout> dist/v8`.
+| What | From | Regenerate |
+|---|---|---|
+| The `cli-*` blocks in `reference/cli.md` (every command's options) | the `qsmxt` binary's argument definitions (`src/cli_reference.rs`) | `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference` |
+| The `settings` block in `reference/configuration.md` | the settings registry | `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs` |
+| `toolbox-pipelines/<id>.md` (whole pages, one per toolbox pipeline) and the `pipelines` table in `toolbox-pipelines/index.md` | QSM.rs's toolbox pipelines and pipeline rules, resolved through `qsmxt_engine::pipelines` (`crates/qsmxt-engine/src/reference_docs/pipelines.rs`) | `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs` |
+| The `*-methods` tables in `reference/methods.md` and `reference/source-separation.md`, and the algorithm tables in the repository's `README.md` | QSM.rs's method catalogue and the settings registry (`crates/qsmxt-engine/src/reference_docs.rs`) | the same |
 
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+A generated block sits between `<!-- generated:NAME start … -->` and `<!-- generated:NAME end -->`;
+the prose around it is hand-written. `src/cli_reference.rs` also checks the hand-written pages:
+every `--flag` they name exists, every command has its heading and blocks in `reference/cli.md`,
+every algorithm value is described in the method pages, and every output
+file is in `reference/outputs.md`.

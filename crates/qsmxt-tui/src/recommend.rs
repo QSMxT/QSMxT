@@ -1531,7 +1531,7 @@ mod tests {
     }
 
     /// Choosing QSMART offers its recommended group (Laplacian unwrapping, the echo fit, no
-    /// erosion) ticked, with one reason (QSM.rs's rules, decision 142); its magnitude threshold of
+    /// erosion) ticked, each for the brain's edge QSMART keeps (QSM.rs's rules, decision 142); its magnitude threshold of
     /// 100 is not offered while the mask is made from the makehomogeneous-corrected phase quality,
     /// where it would empty the mask, and comes once N4 and the first echo's magnitude are taken.
     #[test]
@@ -1548,7 +1548,7 @@ mod tests {
             assert!(row.checked && row.tag() == "recommended", "{id}: {row:?}");
             row.finding.reason.as_str()
         }).collect();
-        assert!(reasons.iter().all(|r| *r == reasons[0] && r.contains("brain's edge")), "{reasons:?}");
+        assert!(reasons.iter().all(|r| r.contains("brain's edge")), "{reasons:?}");
         assert!(!m.rows.iter().any(|r| r.finding.rule == "qsmart.mask-threshold"), "the threshold with phase quality");
         // Everything ticked and applied: the threshold follows once N4 and the first echo are in.
         let (mut offered, mut pop_ups) = (vec![], 0);

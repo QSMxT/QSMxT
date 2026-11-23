@@ -1,48 +1,11 @@
 ---
-title: Running interactively
-description: Convert data, configure, and run the QSM pipeline from QSMxT's interactive terminal interface.
+title: TUI layout and keys
+description: "The interactive terminal interface's tabs, keys and mouse."
 ---
 
-The interactive terminal interface (TUI) is the recommended way to use QSMxT. It
-takes you through the whole workflow — converting DICOMs, configuring the
-pipeline, and running it — without writing a single command flag or config file.
-
-```sh
-qsmxt tui
-```
-
-## What you can do
-
-- **Convert DICOMs to BIDS** — point at a DICOM directory, review the automatic
-  series classification, relabel anything that needs it, and convert. (See
-  [DICOM → BIDS](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids) for what the classifier handles.)
-  Tick *Keep DICOM UIDs* above *Convert to BIDS* to keep the study's UIDs for a
-  later DICOM export ([not for sharing](/QSMxT/guides/running-noninteractively/#keeping-the-studys-dicom-uids)).
-- **Point at a dataset** and let QSMxT discover the phase/magnitude runs.
-- **Download an example dataset** — no data of your own to hand? Set
-  **Input mode → Example dataset**, tick one or more real in-vivo acquisitions,
-  and press Download. The TUI fetches them, writes a BIDS dataset, and drops you
-  straight into BIDS mode pointed at it. (See
-  [Fetch an example](/QSMxT/getting-started/quick-start/#no-data-yet-fetch-an-example).)
-- **Start from a pipeline** — QSMxT's defaults, or an original toolbox's whole
-  pipeline (the MEDI toolbox, STI Suite, QSMART, ...) on the Pipeline tab. (See
-  [Pipelines](#pipelines).)
-- **Choose algorithms** for masking, unwrapping, background-field removal, and
-  dipole inversion from menus — no need to memorise flag names or valid values.
-- **Adjust parameters** for each stage, with sensible defaults pre-filled.
-- **Copy the equivalent command** — as you configure, the TUI shows the matching
-  `qsmxt run` command and updates it live. It's the easiest way to build a run
-  command without memorising flags. The TUI does not write a config file itself,
-  but every run (from the TUI or the CLI) records its resolved settings in
-  `derivatives/qsmxt/pipeline_config.toml`, which `--config` (or the TUI's
-  *Config file* field) loads back.
-- **Export results as DICOM** — tick *Export DICOM* in the Reconstruction tab's
-  DICOM section, and the maps to export, to write them as DICOM series alongside
-  the NIfTIs, ready for a PACS or a clinical viewer. (See
-  [Exporting results as DICOM](/QSMxT/guides/running-noninteractively/#exporting-results-as-dicom).)
-- **Run the pipeline** and watch progress without leaving the terminal.
-- **Submit to a cluster** — generate and launch SLURM jobs for large cohorts
-  directly from the TUI; scaling out doesn't require the command line.
+`qsmxt tui` starts the interactive terminal interface. The [Quick start](/QSMxT/start/quick-start/)
+and the [guides](/QSMxT/how-to/run-qsm/) say how to use it for each task; this page is its layout
+and keys.
 
 ## Tips
 
@@ -52,46 +15,6 @@ then `Enter`. Press `?` at any time to see a tip. When tips are off, its **Show 
 startup** button turns them back on. The setting is saved in `~/.qsmxt/tips.json`. Setting
 the `QSMXT_NO_TIPS` environment variable also turns tips off, for example on a shared
 install.
-
-## Updates and announcements
-
-When a newer release is available, the TUI says so in a pop-up when it starts: `Enter` updates
-QSMxT and `Esc` closes the pop-up until the next start. Announcements from the QSMxT team (for
-example a problem found in a release, and the version that fixes it) pop up once; one about a
-problem that can give wrong results pops up each time the TUI starts until you update past it.
-Only one pop-up opens at a time: important announcements first, then the update, then other
-announcements. In an announcement, `↑`/`↓` scroll, `c` copies its link and `Enter` closes it.
-Press `n` on the tab bar to read every announcement, newest first, or run `qsmxt news`. Both
-checks run in the background and never delay startup; without an internet connection the
-announcements saved last time are shown. See
-[Keeping up to date](/QSMxT/getting-started/installation/#keeping-up-to-date).
-
-## Pipelines
-
-The Pipeline tab lists QSMxT's defaults and the original toolboxes' pipelines: the MEDI
-toolbox, STI Suite (iLSQR and STAR-QSM), QSMART, the HEIDI package, the χ-separation toolbox
-(iLSQR, MEDI and χ-sepnet) and DECOMPOSE. Next to the list, the highlighted pipeline is
-compared with your settings: each setting choosing it would change, from your value to the
-pipeline's. Where a toolbox pipeline is known to differ from the toolbox's own, a note above
-the comparison says how: for bipolar readouts, the MEDI toolbox uses a bipolar echo fit, which
-is not supported yet, so its pipeline here always uses the monopolar fit. *About*, at the top of the list, explains what the toolbox pipelines are, with
-a link to [QSM-CI's parity checks](https://qsmxt.github.io/QSM-CI/parity.html); `Enter` there
-copies the link.
-
-`Enter` opens a preview of those changes. **Apply** makes them; `Esc` or **Cancel** changes
-nothing. A toolbox pipeline is its method and the original authors' settings that method
-brings with it (the same ones its reference pipeline pop-up offers, see
-[Recommendations](#recommendations)), so choosing the MEDI toolbox sets MEDI with BET, the
-complex fit, region-growing unwrapping and PDF. The stages it covers start from QSMxT's
-defaults first, so a value you changed there earlier is reset too; every other setting stays as
-it is. A reasoned recommendation is not part of a pipeline: it is shown in the preview and
-offered as usual afterwards.
-
-The header shows the pipeline your settings follow, on every tab: `Pipeline: MEDI toolbox`.
-Change a setting afterwards and it reads `MEDI toolbox · 1 departure`; change the method itself
-and it reads `Custom`. Press `P` on any settings page to come back to the Pipeline tab. The
-command preview starts with `--pipeline medi-toolbox`, followed only by the flags where your
-settings depart from it.
 
 ## Basic and Advanced settings
 
@@ -107,56 +30,6 @@ from QSMxT's default (or, when you chose a pipeline on the Pipeline tab, from th
 value), has a value that is not allowed, or has a recommendation still open. The mask recipe
 shows as one line until you edit it. The command preview and the methods text always cover
 every setting.
-
-## Recommendations
-
-When a change makes a setting depart from what a chosen method recommends (or requires, or
-discourages), a pop-up lists the changes on offer, under the section each setting is on: the
-setting, its value now → the value offered, and what kind of advice it is. Each has a tick box.
-`↑`/`↓` move between them, `Space` or `Enter` (or a click) ticks one, and the panel under the
-list gives the reason for the highlighted one. **Apply** (`A`, or `↓` past the last row or `Tab`
-to the buttons, then `Enter`) makes the ticked changes and does nothing while none is ticked.
-**Keep mine** (`K`) keeps your settings, closes the pop-up and saves that choice in the
-configuration, so the pop-up does not come back until the setting changes. `Esc` closes the
-pop-up and leaves the setting marked ⚑.
-
-What starts ticked depends on the kind of advice:
-
-- **Recommended** (also *required* or *discouraged*): there is a stated reason another value is
-  better, and it starts ticked. A required change that you untick means the run will not start;
-  the panel says so.
-- **Suggested**: better on some data but not all (for example in vivo, but not on the simulated
-  head), such as NDI's in-mask weight normaliser. It starts unticked.
-- **Reference**: what the method's authors used, with no reason given that it is better. It is
-  offered so that you can reproduce their pipeline, but it is not a recommendation, so it starts
-  unticked.
-
-Where there are several ways to resolve one setting (values that disagree, or turning off the
-box the advice depends on instead), they show as one choice, `( )`, and ticking one unticks the
-others; where advice on one setting disagrees, nothing starts ticked. When the setting you just
-changed goes against a box that is ticked (choosing QSMART with HEIDI on), the pop-up offers to
-turn that box off, ticked, so your change stands; it does not offer to change your choice back.
-
-When you choose a method that has a reference pipeline (for example MEDI, QSMART or iLSQR) and
-your settings differ from it, a pop-up titled with that pipeline (*MEDI's reference pipeline*)
-lists each setting that differs in the same way, with any recommendations the same change
-created first. Nothing changes unless you tick it and apply it. A recommendation wins over an
-authors' setting on the same setting, and two authors' settings that disagree leave that
-setting as it is, marked, for you to choose. Keep mine records nothing for an authors' setting;
-the pop-up comes back only when you choose the method again after switching away. If your
-settings already match the reference pipeline, there is no pop-up. A list too long for the
-terminal scrolls, with a scrollbar.
-
-A setting that departs from a rule is marked with the method whose rule it is and, when that
-takes only a few words, what the rule uses: for example `ⓘ MEDI: BET`, or `ⓘ MEDI, PDF: BET`
-when several methods' references agree. A longer one shows only the method, such as `ⓘ QSMART`
-beside a mask that differs from QSMART's in several ways. ⚑ marks a recommendation (or something required or discouraged) that is still open; ⓘ
-marks a difference from an original authors' setting, or a recommendation you kept. Press `!` on a
-marked setting (the row and the key bar say so when it is highlighted) to see its advice: whose
-rule it is, what it uses and why, in the same checklist, with the other values the rule allows.
-A recommendation starts ticked, and an authors' setting does not. The line under
-the help gives each covered setting's reference value and whose it is, whether or not the setting
-differs.
 
 ## Layout
 
@@ -177,7 +50,7 @@ The sidebar lists every section whatever the settings, and marks how each stands
 when its output is not made, such as χ-separation until it is ticked (the QSM heading reads `off`
 when QSM is); `–` (dimmed) when the settings skip its stage, such as background removal for an
 inversion that takes the total field, which the section then explains; `⚑` when a setting in it
-has advice offered as a change, and `ⓘ` for information only (see [Recommendations](#recommendations)). On a short
+has advice offered as a change, and `ⓘ` for information only (see [Recommendations](/QSMxT/background/recommendations/#in-the-tui)). On a short
 terminal the sidebar drops its blank lines, then turns its headings into rules, then scrolls
 around the current section (`▲`/`▼`). Narrower than 78 columns, the sections become a strip of
 sub-tabs along the top of the panel instead, chosen with `←`/`→`, with `↓` going into them and
@@ -192,7 +65,7 @@ a column on the right instead, so the settings use the panel's full height; the 
 | Tab | Pages | What is there |
 |---|---|---|
 | 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation groups: a pattern, or groups given to runs with ←/→ in the run tree (one of them the reference), each run marked with its group |
-| 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes (see [Pipelines](#pipelines)). *About*, at the top of the list, says what the toolbox pipelines are |
+| 2 Pipeline | — | The pipeline to start from: QSMxT's defaults or an original toolbox's, and what choosing it changes: `Enter` previews the changes and **Apply** makes them (see [Toolbox pipelines](/QSMxT/toolbox-pipelines/#starting-one)). *About*, at the top of the list, says what the toolbox pipelines are |
 | 3 Reconstruction | Preprocessing: Geometry · Masking · Motion | Axial resampling and output space, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks, the magnitude's inhomogeneity correction and the two-pass reliable mask; motion correction and its rigid registration |
 | | QSM: Compute QSM · Field map · Background · Inversion · COSMOS/STI · Reference · χ-separation · SMWI | Whether QSM is reconstructed (SMWI turns it back on and χ-separation needs it, unless a QSM is supplied); unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (without one, where to choose it); the χ reference; the χ-separation method and its parameters; SMWI |
 | | Other outputs: Magnitude · SWI · Relaxometry · Segmentation | whether the combined magnitude is published; SWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics |
@@ -276,13 +149,6 @@ The Methods › Graph drawing is written to the system's temporary folder. Over 
 display, QSMxT does not try to open it and shows where it was written instead, so you can copy
 it to your own computer. A run writes the same drawing next to its results (`pipeline.svg`).
 
-The TUI builds the same configuration the CLI consumes, so anything you set up
-interactively can be reproduced [noninteractively](/QSMxT/guides/running-noninteractively/)
-with `qsmxt run --config` — or by copying the generated command.
-
-:::note
-The TUI is ideal for exploring a new dataset and dialling in parameters. Once
-you're happy, capture the configuration to a TOML file and reuse it
-[noninteractively](/QSMxT/guides/running-noninteractively/) for scripted batch
-processing.
-:::
+The TUI shows the `qsmxt run` command for the current settings as you change them, and every
+run saves its settings to `derivatives/qsmxt/pipeline_config.toml`, which `--config` (or the
+Input tab's *Config file*) loads back.

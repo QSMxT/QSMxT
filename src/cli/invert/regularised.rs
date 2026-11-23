@@ -30,8 +30,8 @@ pub struct InvertTgvArgs {
     pub scan: ScanParamArgs,
     /// Use QuantitativeSusceptibilityMappingTGV.jl's divergence in the w update rather than the
     /// exact adjoint of the symmetric gradient. Changes the result only on anisotropic voxels;
-    /// with --reference-edge-erosion and --reference-output-box it reproduces that package, for
-    /// comparison with it
+    /// with --reference-edge-erosion and --reference-output-box it follows that package's steps,
+    /// for comparison with it
     #[arg(long)]
     pub reference_divergence: bool,
     /// Erode the mask as QuantitativeSusceptibilityMappingTGV.jl does, not from the array's edge.

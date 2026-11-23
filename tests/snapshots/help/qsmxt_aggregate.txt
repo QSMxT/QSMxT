@@ -833,7 +833,7 @@ Options:
           HEIDI: Field-Laplacian threshold (ppm per voxel²) (default: 5.943433583931419e-2)
 
       --heidi-gradient-mask-floor <HEIDI_GRADIENT_MASK_FLOOR>
-          TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks) (default: 0)
+          TV weight kept where every direction reads as an edge (0 gives the binarised masks upstream ships) (default: 0)
 
       --heidi-continuation-steps <HEIDI_CONTINUATION_STEPS>
           HEIDI: NESTA continuation steps on μ (default: 8)

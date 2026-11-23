@@ -1,14 +1,60 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightLinksValidator from 'starlight-links-validator';
+import { readFile, writeFile } from 'node:fs/promises';
+import { moved, split, v8 } from './redirects.mjs';
+
+const base = '/QSMxT';
+
+// Every old page URL redirects to where its content is now (see redirects.mjs).
+const redirects = Object.fromEntries([
+	...Object.entries(moved).map(([from, { to }]) => [from, base + to]),
+	...v8.map((from) => [from, `${base}/v8${from}`]),
+]);
+
+// The script a page runs to send a link to one of its old headings on to the page that heading
+// moved to. `fallback` is where to go when the hash is not in `anchors` (null: stay).
+function hashForwarder(anchors, fallback) {
+	const map = Object.fromEntries(Object.entries(anchors).map(([a, to]) => [a, base + to]));
+	return (
+		`(function(){var m=${JSON.stringify(map)},f=${JSON.stringify(fallback)},h=location.hash.slice(1);` +
+		'try{h=decodeURIComponent(h)}catch(e){}' +
+		'var t=m[h]||(f&&f+location.hash);if(t)location.replace(t);})();'
+	);
+}
+
+// Astro's redirect pages are a bare meta refresh, which drops the `#heading` of the link. Give
+// each one a script that keeps it, and follows a heading that moved to another page.
+const redirectAnchors = {
+	name: 'qsmxt-redirect-anchors',
+	hooks: {
+		'astro:build:done': async ({ dir }) => {
+			const pages = [
+				...Object.entries(moved).map(([from, { to, anchors }]) => [from, hashForwarder(anchors, base + to)]),
+				...v8.map((from) => [from, hashForwarder({}, `${base}/v8${from}`)]),
+			];
+			for (const [from, script] of pages) {
+				const file = new URL(`.${from.replace(/\/?$/, '/')}index.html`, dir);
+				const html = await readFile(file, 'utf8');
+				if (!html.includes('http-equiv="refresh"') || !html.includes('<title>')) {
+					throw new Error(`${from} is not a redirect page Astro writes`);
+				}
+				await writeFile(file, html.replace('<title>', `<script>${script}</script><title>`));
+			}
+		},
+	},
+};
 
 // https://astro.build/config
 export default defineConfig({
 	// GitHub Pages project site for QSMxT/QSMxT. Override `site`/`base` here if a
 	// custom domain (e.g. qsmxt.org) is configured.
 	site: 'https://qsmxt.github.io',
-	base: '/QSMxT',
+	base,
+	redirects,
 	integrations: [
+		redirectAnchors,
 		starlight({
 			title: 'QSMxT',
 			description:
@@ -22,6 +68,10 @@ export default defineConfig({
 			// Cross-project "ecosystem bar" shared across all QSM sites
 			// (canonical source: QSMxT/qsmxt.github.io → qsm-nav.js).
 			head: [
+				...Object.entries(split).map(([page, { anchors }]) => ({
+					tag: 'script',
+					content: `if(location.pathname===${JSON.stringify(base + page)})${hashForwarder(anchors, null)}`,
+				})),
 				// Actually load Inter + JetBrains Mono (the theme only *names* them);
 				// without this, Starlight falls back to a system font and looks unlike
 				// the rest of the QSM family.
@@ -78,32 +128,75 @@ export default defineConfig({
 				baseUrl: 'https://github.com/QSMxT/QSMxT/edit/main/docs/',
 			},
 			lastUpdated: true,
+			plugins: [
+				// Fails the build on a broken internal link or #heading. The 8.x site is copied
+				// into dist/v8 after this build (legacy/build.sh), so links into it can't be checked.
+				starlightLinksValidator({ exclude: [`${base}/v8/`, `${base}/v8/**`] }),
+			],
 			sidebar: [
 				{
-					label: 'Getting started',
+					label: 'Get started',
 					items: [
-						{ label: 'Installation', slug: 'getting-started/installation' },
-						{ label: 'Quick start', slug: 'getting-started/quick-start' },
-						{ label: 'Coming from QSMxT 8.x', slug: 'getting-started/coming-from-8x' },
+						{ label: 'Home', link: '/' },
+						{ label: 'Install', slug: 'start/install' },
+						{ label: 'Quick start', slug: 'start/quick-start' },
 					],
 				},
 				{
 					label: 'Guides',
 					items: [
-						{ label: 'Running interactively', slug: 'guides/running-interactively' },
-						{ label: 'Running noninteractively', slug: 'guides/running-noninteractively' },
+						{ label: 'Convert DICOM to BIDS', slug: 'how-to/convert-dicom' },
+						{ label: 'Run QSMxT on your data', slug: 'how-to/run-qsm' },
+						{ label: 'Look at your results', slug: 'how-to/results' },
+						{ label: 'Export results as DICOM', slug: 'how-to/export-dicom' },
+						{ label: 'Run on a cluster', slug: 'how-to/slurm' },
+						{ label: 'Update QSMxT', slug: 'how-to/update' },
+						{ label: 'Cite QSMxT and write the methods', slug: 'how-to/cite' },
+					],
+				},
+				{
+					label: 'Your data',
+					items: [
+						{ label: 'Overview', slug: 'data' },
+						{ label: 'GE and real/imaginary data', slug: 'data/ge-real-imaginary' },
+						{ label: 'Uncombined coil data', slug: 'data/uncombined-coils' },
+						{ label: 'Oblique slices', slug: 'data/oblique' },
+						{ label: '2D acquisitions and slice gaps', slug: 'data/2d-slice-gaps' },
+						{ label: 'Single-echo data', slug: 'data/single-echo' },
+						{ label: 'Bipolar readouts', slug: 'data/bipolar' },
+						{ label: '7 T and low field', slug: 'data/field-strength' },
+						{ label: 'Rodent and other non-human data', slug: 'data/non-human' },
+						{ label: 'Source separation and MESE', slug: 'data/source-separation' },
+						{ label: 'Multiple head orientations', slug: 'data/multi-orientation' },
+						{ label: 'Non-BIDS or partial data', slug: 'data/non-bids' },
 					],
 				},
 				{
 					label: 'Reference',
 					items: [
-						{ label: 'Commands', slug: 'reference/commands' },
-						{ label: 'Input data', slug: 'reference/inputs' },
-						{ label: 'Algorithms', slug: 'reference/algorithms' },
-						{ label: 'Configuration', slug: 'reference/configuration' },
-						{ label: 'Standalone tools', slug: 'reference/tools' },
+						{ label: 'Settings', slug: 'reference/configuration' },
+						{ label: 'Command line', slug: 'reference/cli' },
+						{ label: 'Methods index', slug: 'reference/methods' },
+						{ label: 'Mask recipes', slug: 'reference/masking' },
+						{ label: 'Input data layout', slug: 'reference/inputs' },
 						{ label: 'Output files', slug: 'reference/outputs' },
-						{ label: 'CLI reference', slug: 'reference/cli' },
+						{ label: 'Source separation', slug: 'reference/source-separation' },
+						{ label: 'Multi-orientation', slug: 'reference/multi-orientation' },
+						{
+							label: 'Toolbox pipelines',
+							// The overview and one page per pipeline (each page's `sidebar.order`).
+							items: [{ autogenerate: { directory: 'toolbox-pipelines' } }],
+						},
+					],
+				},
+				{
+					label: 'How it works',
+					items: [
+						{ label: 'How the pipeline works', slug: 'background/pipeline' },
+						{ label: 'How QSMxT reads your data', slug: 'background/input-handling' },
+						{ label: 'Recommendations', slug: 'background/recommendations' },
+						{ label: 'Geometry', slug: 'background/geometry' },
+						{ label: 'TUI layout and keys', slug: 'background/tui' },
 					],
 				},
 			],

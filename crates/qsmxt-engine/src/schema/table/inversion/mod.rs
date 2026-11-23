@@ -346,7 +346,7 @@ fn heidi() -> Vec<Def> {
         .when(|x| x.heidi() && x.c.inversion.heidi.apply_laplacian_correction),
         d("inversion.heidi.gradient_mask_floor", Inversion, "Gradient mask floor", "TV weight kept where every direction reads as an edge (0 = upstream's binarised masks)", Float).flag("--heidi-gradient-mask-floor").parent("inversion.heidi.enabled").context("HEIDI")
         .when(|x| x.heidi())
-        .cli("TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped binarised masks)"),
+        .cli("TV weight kept where every direction reads as an edge (0 gives the binarised masks upstream ships)"),
         d("inversion.heidi.continuation_steps", Inversion, "Continuation steps", "NESTA continuation steps on μ", Int).flag("--heidi-continuation-steps").parent("inversion.heidi.enabled").context("HEIDI")
         .when(|x| x.heidi()),
         d("inversion.heidi.inner_iterations", Inversion, "Inner iterations", "Accelerated-gradient iterations per continuation step", Int).flag("--heidi-inner-iterations").parent("inversion.heidi.enabled").context("HEIDI")

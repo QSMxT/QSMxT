@@ -1,6 +1,6 @@
 //! The generated parts of the reference docs, from their single sources: the settings reference
 //! in `configuration.md` from the settings registry ([`crate::schema::settings`]), and the method
-//! tables in `algorithms.md` and the README from QSM.rs's method catalogue
+//! tables in `methods.md` and `source-separation.md` and the README from QSM.rs's method catalogue
 //! ([`qsm_core::catalogue::METHODS`]), with each method's citations written as the methods text
 //! writes them.
 //!
@@ -20,7 +20,12 @@
 //! QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs
 //! ```
 //!
+//! The toolbox pipeline pages (`toolbox-pipelines/<id>.md`, whole pages) and the overview's table
+//! of them are generated the same way ([`pipelines`]).
+//!
 //! (`qsmxt`'s CLI reference is regenerated the same way: `cargo test --bin qsmxt cli_reference`.)
+
+pub mod pipelines;
 
 use qsm_core::catalogue::{self, Citation, Method, Stage};
 use serde_json::Value;
@@ -30,21 +35,25 @@ use crate::schema::{self, EchoKind, EnumOption, Section, Setting, ValueType};
 
 /// The settings reference, relative to the repository root.
 pub const CONFIGURATION: &str = "docs/src/content/docs/reference/configuration.md";
-/// The algorithms reference.
-pub const ALGORITHMS: &str = "docs/src/content/docs/reference/algorithms.md";
+/// The methods index: every stage's method table but source separation's.
+pub const METHODS: &str = "docs/src/content/docs/reference/methods.md";
+/// The source-separation guide, which holds the separation methods' table.
+pub const SOURCE_SEPARATION: &str = "docs/src/content/docs/reference/source-separation.md";
 /// The README.
 pub const README: &str = "README.md";
 
 const REGENERATE: &str = "regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs";
 
-/// `page` (the text of the file `path`, one of [`CONFIGURATION`], [`ALGORITHMS`] and
-/// [`README`]) with its generated blocks rendered afresh. An error names a block whose markers
+/// `page` (the text of the file `path`, one of [`CONFIGURATION`], [`METHODS`],
+/// [`SOURCE_SEPARATION`], [`README`] and [`pipelines::OVERVIEW`]) with its generated blocks rendered afresh. An error names a block whose markers
 /// are missing or out of order, or a file that has no generated blocks.
 pub fn render_page(path: &str, page: &str) -> Result<String, String> {
     let blocks = match path {
         CONFIGURATION => vec![("settings", "the settings registry", settings_reference())],
-        ALGORITHMS => algorithm_blocks(),
+        METHODS => algorithm_blocks().into_iter().filter(|(name, ..)| *name != SEPARATION_BLOCK).collect(),
+        SOURCE_SEPARATION => algorithm_blocks().into_iter().filter(|(name, ..)| *name == SEPARATION_BLOCK).collect(),
         README => vec![("algorithms", "QSM.rs's method catalogue", readme_algorithms())],
+        pipelines::OVERVIEW => vec![("pipelines", "QSM.rs's toolbox pipelines", pipelines::pipelines_table())],
         _ => return Err(format!("{path} has no generated blocks")),
     };
     let mut out = page.to_string();
@@ -309,19 +318,22 @@ fn page_citations(tables: &[Rows]) -> PageCitations {
     PageCitations::new(tables.iter().flat_map(|t| rows(*t)).flat_map(|r| r.method.citations.iter()))
 }
 
-// ─── The algorithms page ───
+// ─── The method tables ───
 
 const INVERSION: &str = "inversion.algorithm";
+/// The block in [`SOURCE_SEPARATION`].
+const SEPARATION_BLOCK: &str = "separation-methods";
 
-/// The algorithms page's blocks: each stage's choice of method, its id, catalogue name, the
-/// registry's help for it, and its papers.
+/// The method tables' blocks: each stage's choice of method, its id, catalogue name, the
+/// registry's help for it, and its papers. All but [`SEPARATION_BLOCK`] are in [`METHODS`]; their
+/// citations are labelled as one set, so a label means the same work in both pages.
 const ALGORITHM_TABLES: [(&str, Rows); 6] = [
     ("inhomogeneity-methods", Rows::Setting { path: "masking.inhomogeneity_method", stage: Stage::InhomogeneityCorrection, family: Family::All }),
     ("unwrapping-methods", Rows::Setting { path: "field_mapping.unwrapping_algorithm", stage: Stage::Unwrapping, family: Family::All }),
     ("background-methods", Rows::Setting { path: "bg_removal.algorithm", stage: Stage::BackgroundRemoval, family: Family::All }),
     ("inversion-methods", Rows::Setting { path: INVERSION, stage: Stage::Inversion, family: Family::Classical }),
     ("deep-learning-inversion-methods", Rows::Setting { path: INVERSION, stage: Stage::Inversion, family: Family::DeepLearning }),
-    ("separation-methods", Rows::Setting { path: "separation.algorithm", stage: Stage::Separation, family: Family::All }),
+    (SEPARATION_BLOCK, Rows::Setting { path: "separation.algorithm", stage: Stage::Separation, family: Family::All }),
 ];
 
 fn algorithm_blocks() -> Vec<(&'static str, &'static str, String)> {
@@ -329,7 +341,7 @@ fn algorithm_blocks() -> Vec<(&'static str, &'static str, String)> {
     ALGORITHM_TABLES.iter().map(|(name, t)| {
         let deep_learning_inversions = matches!(t, Rows::Setting { path: INVERSION, family: Family::DeepLearning, .. });
         let rows: Vec<Vec<String>> = rows(*t).into_iter().map(|r| {
-            let value = r.value.expect("an algorithms-page row is a registry option");
+            let value = r.value.expect("a method-table row is a registry option");
             let mut row = vec![
                 code(&value),
                 cell(&format!("{}{}", r.method.name, if r.default { " (default)" } else { "" })),
@@ -418,13 +430,66 @@ mod tests {
     }
 
     #[test]
-    fn algorithms_reference_is_current() {
-        check(ALGORITHMS);
+    fn methods_index_is_current() {
+        check(METHODS);
+    }
+
+    #[test]
+    fn source_separation_methods_are_current() {
+        check(SOURCE_SEPARATION);
     }
 
     #[test]
     fn readme_algorithms_are_current() {
         check(README);
+    }
+
+    #[test]
+    fn toolbox_pipelines_overview_is_current() {
+        check(pipelines::OVERVIEW);
+    }
+
+    /// Every toolbox pipeline has its page, each committed page is what renders (and renders the
+    /// same twice), and the directory holds no page for a pipeline that no longer exists.
+    /// `QSMXT_UPDATE_DOCS=1` writes the pages and removes stale ones instead.
+    #[test]
+    fn every_toolbox_pipeline_has_a_current_page() {
+        use qsm_core::pipeline::reference_pipelines::REFERENCE_PIPELINES;
+        let update = std::env::var_os("QSMXT_UPDATE_DOCS").is_some();
+        let mut expected = vec!["index.md".to_string()];
+        for p in REFERENCE_PIPELINES {
+            let path = pipelines::page_path(p);
+            let rendered = pipelines::pipeline_page(p);
+            assert_eq!(rendered, pipelines::pipeline_page(p), "{}: renders differently twice", p.id);
+            expected.push(format!("{}.md", p.id));
+            let file = repo().join(&path);
+            if update {
+                std::fs::write(&file, &rendered).unwrap();
+                continue;
+            }
+            let committed = std::fs::read_to_string(&file).unwrap_or_default();
+            assert!(committed == rendered,
+                "{path} is missing or out of date: run `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs` \
+                 and commit the result");
+        }
+        for entry in std::fs::read_dir(repo().join(pipelines::DIR)).unwrap() {
+            let name = entry.unwrap().file_name().into_string().unwrap();
+            if !expected.contains(&name) {
+                assert!(update, "{}/{name} is not a toolbox pipeline's page", pipelines::DIR);
+                std::fs::remove_file(repo().join(pipelines::DIR).join(&name)).unwrap();
+            }
+        }
+    }
+
+    /// Parity is QSM-CI's to report (decision 217): no page or table claims that a pipeline
+    /// reproduces its toolbox.
+    #[test]
+    fn no_toolbox_pipeline_page_claims_parity() {
+        use qsm_core::pipeline::reference_pipelines::REFERENCE_PIPELINES;
+        let pages = REFERENCE_PIPELINES.iter().map(pipelines::pipeline_page).chain([pipelines::pipelines_table()]);
+        for page in pages {
+            assert!(!page.to_lowercase().contains("reproduc"), "{page}");
+        }
     }
 
     /// The settings reference lists every registry setting once.
