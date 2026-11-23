@@ -170,7 +170,17 @@ fn trigger_name(core_path: &str, value_name: &str) -> String {
         // The echo combination by its method's name: "Complex fit" (MEDI's Fit_ppm_complex).
         "field_mapping.b0_estimation" => value_name.to_string(),
         "inversion.apply_heidi" => "HEIDI streaking reduction".to_string(),
-        _ => format!("{} {}", label_of(core_path).to_lowercase(), value_name),
+        _ => format!("{} {}", in_sentence(label_of(core_path)), value_name),
+    }
+}
+
+/// A setting's label inside a sentence: lower case, unless it opens with a name in capitals
+/// ("UK Biobank mask trim").
+fn in_sentence(label: &str) -> String {
+    let mut c = label.chars();
+    match (c.next(), c.next()) {
+        (Some(a), Some(b)) if a.is_uppercase() && b.is_uppercase() => label.to_string(),
+        _ => label.to_lowercase(),
     }
 }
 
