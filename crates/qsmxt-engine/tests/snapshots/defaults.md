@@ -4,7 +4,7 @@ qsmxt run <bids_dir>
 
 ## Config hash
 
-ce6532685da3c5c3
+296c61fcdd42e592
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -14,7 +14,7 @@ inhomog                  will_run   b537e5cae9ec9938
 magnitude                will_run   41493901271c0f06
 mask                     will_run   489f108399b10fb1
 motion                   skipped    -
-unwrap                   will_run   65e65dbff212cbcd
+unwrap                   will_run   867e114aaee73e0e
 bgremove                 will_run   dd1cecf888d2fbe4
 invert                   will_run   44bb0e4c1c060d8d
 reference                will_run   ab537061af419c5e
@@ -24,7 +24,7 @@ output_space             skipped    -
 
 # Methods
 
-QSM processing was performed using qsmxt (Stewart, 2026). Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using Otsu thresholding (Otsu, 1979) of the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude), followed by dilation, hole-filling, and erosion. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021). The B0 field map was estimated as a weighted average of the unwrapped echo phases. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015). Susceptibility values were referenced to the mean susceptibility within the reconstruction mask (the brain mask less any rim eroded by background field removal).
+QSM processing was performed using qsmxt (Stewart, 2026). Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using Otsu thresholding (Otsu, 1979) of the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude), followed by dilation, hole-filling, and erosion. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021); for multi-echo data, voxels whose temporal unwrapping was uncertain (quality below 0.5) were re-unwrapped spatially. The B0 field map was estimated as a weighted average of the unwrapped echo phases. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015). Susceptibility values were referenced to the mean susceptibility within the reconstruction mask (the brain mask less any rim eroded by background field removal).
 
 ## References
 

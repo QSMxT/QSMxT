@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline chi-sep-medi
 
 ## Config hash
 
-3ac15a6b77146f0a
+2e94359c0b24621
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -15,7 +15,7 @@ mask                     will_run   be81155c6b6e0d6f
 motion                   skipped    -
 t2star_r2star            will_run   71883b65a3d0ba9d
 r2_r2prime               will_run   cb5c308f771c4c69
-unwrap                   will_run   5729e68f384acc64
+unwrap                   will_run   37f19506c9ba036b
 bgremove                 will_run   dd1cecf888d2fbe4
 invert                   will_run   44bb0e4c1c060d8d
 reference                will_run   965ae69dfcceed4f
@@ -26,7 +26,7 @@ output_space             skipped    -
 
 # Methods
 
-QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the χ-separation toolbox 1.1.3 pipeline. A brain mask was generated using BET brain extraction (Smith, 2002) of the RSS-combined magnitude image, in its stored voxel order as MEDI's BET.m runs it. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021) with phase linearity disabled. The B0 field map was estimated as a weighted average of the unwrapped echo phases. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015). No susceptibility referencing was applied. R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015). R2 maps were fitted from multi-echo spin-echo magnitude data using an Extended Phase Graph dictionary (Weigel, 2015). R2' was computed as R2* - R2. Negative R2' values were set to zero. Paramagnetic and diamagnetic susceptibility maps were computed using χ-separation (MEDI) (Shin et al., 2021) within the reconstruction mask (the brain mask less any rim eroded by background field removal). The two sources were initialised from the susceptibility map, the data terms were weighted by a noise map from the echo magnitudes, and the susceptibility within a CSF mask from R2* from a non-negative least-squares mono-exponential fit was regularised towards uniformity. The susceptibility map separated was reconstructed from the local field by iLSQR (Li et al., 2015).
+QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the χ-separation toolbox 1.1.3 pipeline. A brain mask was generated using BET brain extraction (Smith, 2002) of the RSS-combined magnitude image, in its stored voxel order as MEDI's BET.m runs it. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021) with phase linearity disabled; for multi-echo data, voxels whose temporal unwrapping was uncertain (quality below 0.5) were re-unwrapped spatially. The B0 field map was estimated as a weighted average of the unwrapped echo phases. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015). No susceptibility referencing was applied. R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015). R2 maps were fitted from multi-echo spin-echo magnitude data using an Extended Phase Graph dictionary (Weigel, 2015). R2' was computed as R2* - R2. Negative R2' values were set to zero. Paramagnetic and diamagnetic susceptibility maps were computed using χ-separation (MEDI) (Shin et al., 2021) within the reconstruction mask (the brain mask less any rim eroded by background field removal). The two sources were initialised from the susceptibility map, the data terms were weighted by a noise map from the echo magnitudes, and the susceptibility within a CSF mask from R2* from a non-negative least-squares mono-exponential fit was regularised towards uniformity. The susceptibility map separated was reconstructed from the local field by iLSQR (Li et al., 2015).
 
 ## Note
 

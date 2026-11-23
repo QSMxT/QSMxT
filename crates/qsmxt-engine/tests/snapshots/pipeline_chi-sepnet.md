@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline chi-sepnet
 
 ## Config hash
 
-de41cee0170b86de
+71a6f3c8a4cc3e65
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -14,7 +14,7 @@ magnitude                will_run   d82b40a650fa4990
 mask                     will_run   be81155c6b6e0d6f
 motion                   skipped    -
 t2star_r2star            will_run   71883b65a3d0ba9d
-unwrap                   will_run   5729e68f384acc64
+unwrap                   will_run   37f19506c9ba036b
 bgremove                 will_run   dd1cecf888d2fbe4
 invert                   will_run   44bb0e4c1c060d8d
 reference                will_run   ab537061af419c5e
@@ -25,7 +25,7 @@ output_space             skipped    -
 
 # Methods
 
-QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the χ-separation toolbox 1.1.3 pipeline. A brain mask was generated using BET brain extraction (Smith, 2002) of the RSS-combined magnitude image, in its stored voxel order as MEDI's BET.m runs it. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021) with phase linearity disabled. The B0 field map was estimated as a weighted average of the unwrapped echo phases. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015). Susceptibility values were referenced to the mean susceptibility within the reconstruction mask (the brain mask less any rim eroded by background field removal). R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015). Paramagnetic and diamagnetic susceptibility maps were computed using χ-sepnet (deep-learning source separation) (Kim et al., 2025) within the reconstruction mask, with the inputs resampled to 1 mm with B0 along z and the susceptibility channel computed by QSMnetME, as in the χ-separation toolbox, and the maps resampled back. Negative χ+ and |χ−| values were set to zero. χ-separation used R2' measured as R2* - R2 where a multi-echo spin-echo acquisition was available, and otherwise its own R2', estimated from R2* with R2PRIMEnet (Kim et al., 2025) in the network's training frame.
+QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the χ-separation toolbox 1.1.3 pipeline. A brain mask was generated using BET brain extraction (Smith, 2002) of the RSS-combined magnitude image, in its stored voxel order as MEDI's BET.m runs it. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021) with phase linearity disabled; for multi-echo data, voxels whose temporal unwrapping was uncertain (quality below 0.5) were re-unwrapped spatially. The B0 field map was estimated as a weighted average of the unwrapped echo phases. Background field removal was performed using V-SHARP (Wu et al., 2012). The V-SHARP background was estimated on an isotropic grid: the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution. Dipole inversion was performed using iLSQR (Li et al., 2015). Susceptibility values were referenced to the mean susceptibility within the reconstruction mask (the brain mask less any rim eroded by background field removal). R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015). Paramagnetic and diamagnetic susceptibility maps were computed using χ-sepnet (deep-learning source separation) (Kim et al., 2025) within the reconstruction mask, with the inputs resampled to 1 mm with B0 along z and the susceptibility channel computed by QSMnetME, as in the χ-separation toolbox, and the maps resampled back. Negative χ+ and |χ−| values were set to zero. χ-separation used R2' measured as R2* - R2 where a multi-echo spin-echo acquisition was available, and otherwise its own R2', estimated from R2* with R2PRIMEnet (Kim et al., 2025) in the network's training frame.
 
 ## Note
 

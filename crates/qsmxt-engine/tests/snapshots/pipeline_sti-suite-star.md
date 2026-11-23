@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline sti-suite-star
 
 ## Config hash
 
-3693688ffcb40cfa
+4ccdae1a115fe5f
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -14,7 +14,7 @@ inhomog                  will_run   b537e5cae9ec9938
 magnitude                will_run   41493901271c0f06
 mask                     will_run   489f108399b10fb1
 motion                   skipped    -
-unwrap                   will_run   b61ce283bf05d071
+unwrap                   will_run   a4313a686df285a
 bgremove                 will_run   6fd8ee4747dee677
 invert                   will_run   74dffb32751c5e0a
 reference                will_run   965ae69dfcceed4f

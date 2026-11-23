@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline decompose
 
 ## Config hash
 
-c8beb962f8310ff6
+1a5c54c30a252b7d
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -13,7 +13,7 @@ scale_phase              will_run   565f39e380eb4906
 magnitude                will_run   d82b40a650fa4990
 mask                     will_run   79b20a1f57f10bfe
 motion                   skipped    -
-unwrap                   will_run   b9c95f2dc16cb93f
+unwrap                   will_run   11f8b0e6152a7940
 bgremove                 will_run   d860293ca9f49328
 invert                   will_run   df9e21696a6ded2f
 reference                will_run   a619656f16c59b2f

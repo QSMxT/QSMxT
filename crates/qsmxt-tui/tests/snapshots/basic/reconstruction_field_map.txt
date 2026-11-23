@@ -7,7 +7,7 @@
 │   Motion            │     Bipolar correction:   [ ]                                                                  │
 │                     │   B0 estimation:          [ weighted-avg ▾ ]                                                   │
 │ QSM                 │                                                                                                │
-│   Compute QSM       │   + 17 advanced settings · A                                                                   │
+│   Compute QSM       │   + 18 advanced settings · A                                                                   │
 │ ▸ Field map        ⓘ│                                                                                                │
 │   Background        │                                                                                                │
 │   Inversion         │                                                                                                │

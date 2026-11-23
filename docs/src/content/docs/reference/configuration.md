@@ -319,7 +319,7 @@ goes in the file (`a.b.c` is `c` under `[a.b]`), what it takes, its default, and
 | `field_mapping.romeo.mag_weight` | true or false | `false` | `--romeo-mag-weight` | Penalise low-signal voxels. |
 | `field_mapping.romeo.mag_weight2` | true or false | `false` | `--romeo-mag-weight2` | Penalise abnormally high signal and flow artefacts. |
 | `field_mapping.romeo.bestpath` | true or false | `false` | `--romeo-bestpath` | Use Abdul-Rahman best-path weights instead of ROMEO weights. |
-| `field_mapping.romeo.temporal_uncertain_unwrapping` | number | `0.0` | `--romeo-temporal-uncertain-unwrapping` | Re-unwrap voxels whose temporal unwrapping is uncertain. Quality threshold: Quality threshold (0, 1] below which a voxel is re-unwrapped. `0.0` turns it off. |
+| `field_mapping.romeo.temporal_uncertain_unwrapping` | number | `0.5` | `--romeo-temporal-uncertain-unwrapping` | Re-unwrap voxels whose temporal unwrapping is uncertain. Quality threshold: Quality threshold (0, 1] below which a voxel is re-unwrapped. `0.0` turns it off. |
 | `field_mapping.romeo.max_seeds` | whole number | `1` | `--romeo-max-seeds` | Maximum number of seed regions. |
 | `field_mapping.romeo.merge_regions` | true or false | `false` | `--romeo-merge-regions` | Merge neighbouring regions after unwrapping. |
 | `field_mapping.romeo.correct_regions` | true or false | `false` | `--romeo-correct-regions` | Shift each region by a multiple of 2π to bring its median nearest 0. |

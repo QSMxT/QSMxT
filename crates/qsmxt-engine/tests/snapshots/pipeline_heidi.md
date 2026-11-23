@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline heidi
 
 ## Config hash
 
-f33a3401a2e8101b
+1980c4f1cc26f91e
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -14,7 +14,7 @@ inhomog                  will_run   b537e5cae9ec9938
 magnitude                will_run   41493901271c0f06
 mask                     will_run   489f108399b10fb1
 motion                   skipped    -
-unwrap                   will_run   65e65dbff212cbcd
+unwrap                   will_run   867e114aaee73e0e
 bgremove                 will_run   34e054fce95c6864
 invert                   will_run   6e9d5e238b2dcdcc
 reference                will_run   965ae69dfcceed4f
@@ -24,7 +24,7 @@ output_space             skipped    -
 
 # Methods
 
-QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the HEIDI package (qsm_heidi 4592631) pipeline. Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using Otsu thresholding (Otsu, 1979) of the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude), followed by dilation, hole-filling, and erosion. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021). The B0 field map was estimated as a weighted average of the unwrapped echo phases. Background field removal was performed using SHARP (Schweser et al., 2011). Dipole inversion was performed using minimally regularised LSQR (Schweser et al., 2010). Streaking was reduced with HEIDI (Homogeneity Enabled Incremental Dipole Inversion) (Schweser et al., 2012) on the LSQR map, as published: its well-conditioned k-space coefficients were kept, and the dipole cone was filled by total variation weighted by the field's homogeneity, with denoise reference itk enabled. No susceptibility referencing was applied.
+QSM processing was performed using qsmxt (Stewart, 2026). Processing followed the HEIDI package (qsm_heidi 4592631) pipeline. Inhomogeneity correction (Eckstein et al., 2019) was applied to each echo's magnitude. A brain mask was generated using Otsu thresholding (Otsu, 1979) of the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude), followed by dilation, hole-filling, and erosion. Phase was converted to ppm with the scanner's centre frequency (ImagingFrequency). Phase offset removal was performed using MCPC-3D-S (Eckstein et al., 2018). Phase unwrapping was performed using ROMEO (Dymerska et al., 2021); for multi-echo data, voxels whose temporal unwrapping was uncertain (quality below 0.5) were re-unwrapped spatially. The B0 field map was estimated as a weighted average of the unwrapped echo phases. Background field removal was performed using SHARP (Schweser et al., 2011). Dipole inversion was performed using minimally regularised LSQR (Schweser et al., 2010). Streaking was reduced with HEIDI (Homogeneity Enabled Incremental Dipole Inversion) (Schweser et al., 2012) on the LSQR map, as published: its well-conditioned k-space coefficients were kept, and the dipole cone was filled by total variation weighted by the field's homogeneity, with denoise reference itk enabled. No susceptibility referencing was applied.
 
 ## References
 

@@ -4,7 +4,7 @@ qsmxt run <bids_dir> --pipeline qsmart
 
 ## Config hash
 
-492b5bcabcc1f708
+2016005f63537bd
 
 ## Steps (dry run on a 3-echo 3 T scan: step, state, cache key)
 
@@ -14,7 +14,7 @@ inhomog                  will_run   df8800df7a34de01
 magnitude                will_run   9c8af2ebff243f82
 mask                     will_run   ce4a76ab15a11e7b
 motion                   skipped    -
-unwrap                   will_run   6c77d9b665171752
+unwrap                   will_run   139accc57c724a9
 qsmart                   will_run   5a72eb92d982dd8f
 reference                will_run   965ae69dfcceed4f
 output_space             skipped    -

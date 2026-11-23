@@ -342,7 +342,7 @@
 --romeo-bestpath
     /field_mapping/romeo/bestpath: false -> true
 --romeo-temporal-uncertain-unwrapping 2
-    /field_mapping/romeo/temporal_uncertain_unwrapping: 0.0 -> 2.0
+    /field_mapping/romeo/temporal_uncertain_unwrapping: 0.5 -> 2.0
 --romeo-max-seeds 2
     /field_mapping/romeo/max_seeds: 1 -> 2
 --romeo-merge-regions

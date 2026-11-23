@@ -16,14 +16,14 @@
 │   χ-separation   off│     Mag weight:               [ ]                                                              │
 │   SMWI           off│     Mag weight 2:             [ ]                                                              │
 │                     │     Best-path weights:        [ ]                                                              │
-│ OTHER OUTPUTS       │     Temporal uncertain:       [ ]                                                              │
-│   Magnitude         │     Max seeds:                1                                                                │
-│   SWI            off│     Merge regions:            [ ]                                                              │
-│   Relaxometry    off│     Correct regions:          [ ]                                                              │
-│   Segmentation   off│     Wrap addition:            0                                                                │
-│                     │   B0 estimation:              [ weighted-avg ▾ ]                                               │
-│ EXPORT              │     Weight type:              [ phase-snr ▾ ]                                                  │
-│   DICOM          off│                                                                                                │
+│ OTHER OUTPUTS       │     Temporal uncertain:       [x]                                                              │
+│   Magnitude         │       Quality threshold:      0.5                                                              │
+│   SWI            off│     Max seeds:                1                                                                │
+│   Relaxometry    off│     Merge regions:            [ ]                                                              │
+│   Segmentation   off│     Correct regions:          [ ]                                                              │
+│                     │     Wrap addition:            0                                                                │
+│ EXPORT              │   B0 estimation:              [ weighted-avg ▾ ]                                               │
+│   DICOM          off│     Weight type:              [ phase-snr ▾ ]                                                  │
 │                     │                                                                                                │
 │                     │                                                                                                │
 │                     │                                                                                                │

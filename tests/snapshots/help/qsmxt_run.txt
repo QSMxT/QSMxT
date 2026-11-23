@@ -308,7 +308,7 @@ Options:
           ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off)
 
       --romeo-temporal-uncertain-unwrapping <ROMEO_TEMPORAL_UNCERTAIN_UNWRAPPING>
-          ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0)
+          ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5)
 
       --romeo-max-seeds <ROMEO_MAX_SEEDS>
           ROMEO: Maximum number of seed regions (default: 1)
