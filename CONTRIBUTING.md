@@ -185,9 +185,11 @@ Grep for every changed name and old default before opening the PR.
 
 - The site is Astro Starlight under `docs/`. `src/cli_reference.rs` fails when a page names a
   flag, command or algorithm that doesn't exist.
-- Generated, never edited by hand: `reference/cli.md`, and the blocks between
-  `<!-- generated:NAME start … -->` and `<!-- generated:NAME end -->` in `configuration.md`
-  (from the registry), `algorithms.md` and `README.md` (method tables from QSM.rs's catalogue). Regenerate with
+- Generated, never edited by hand: the blocks in `reference/cli.md`, the blocks between
+  `<!-- generated:NAME start … -->` and `<!-- generated:NAME end -->` in `reference/configuration.md`
+  (from the registry), `reference/methods.md`, `reference/source-separation.md` and `README.md`
+  (method tables from QSM.rs's catalogue), and the pages in `toolbox-pipelines/` (from QSM.rs's
+  reference pipelines). Algorithm details belong in QSM.rs, not in these docs. Regenerate with
   `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference` and
   `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs`.
 - `README.md` covers what QSMxT is, install, quick start, the method tables and pointers to the
