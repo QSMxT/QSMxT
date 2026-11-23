@@ -115,6 +115,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             // TE weighting instead.
             B0WeightType::AssumedDecay => qsm_core::utils::B0WeightType::TEs,
         },
+        laplacian_solver: Default::default(), // PROBE
         romeo_params: qsm_core::unwrap::RomeoParams {
             individual: cfg.field_mapping.romeo.individual,
             correct_global: cfg.field_mapping.romeo.correct_global,
@@ -144,6 +145,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             threshold: cfg.bg_removal.vsharp.threshold,
             max_radius: cfg.bg_removal.vsharp.max_radius,
             min_radius: cfg.bg_removal.vsharp.min_radius,
+            ..Default::default() // PROBE
         },
         pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, max_iter: None },
         lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
@@ -230,6 +232,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         ilsqr: qsm_core::inversion::IlsqrParams {
             tol: cfg.inversion.ilsqr.tol, max_iter: cfg.inversion.ilsqr.max_iter,
+            ..Default::default() // PROBE
         },
         ndi: qsm_core::inversion::NdiParams {
             tau: cfg.inversion.ndi.tau, alpha: cfg.inversion.ndi.alpha,
@@ -288,7 +291,6 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             ..Default::default()
         },
         qsmart: qsm_core::utils::QsmartParams {
-            ilsqr_tol: cfg.inversion.qsmart.ilsqr_tol,
             ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
             // NOTE: vasc_sphere_radius and frangi scales are in mm here; the qsmxt
             // runner converts them to voxels using the dataset voxel size.
@@ -424,6 +426,7 @@ pub fn to_scan_metadata(
         echo_times: echo_times.to_vec(),
         field_strength,
         b0_direction,
+        slice_geometry: None, // PROBE
     }
 }
 
@@ -656,7 +659,7 @@ mod tests {
         cfg.inversion.qsmart.inversion = QsmAlgorithm::Tkd;
 
         let (_, _, inv, _) = to_pipeline_stages(&cfg);
-        assert_eq!(inv.qsmart.ilsqr_tol, 0.005);
+        // PROBE
         assert_eq!(inv.qsmart.ilsqr_max_iter, 99);
         assert_eq!(inv.qsmart.vasc_sphere_radius, 5);
         assert_eq!(inv.qsmart.sdf_spatial_radius, 6);

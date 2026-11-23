@@ -439,7 +439,7 @@ impl Default for QsmartConfig {
     fn default() -> Self {
         let p = qsm_core::utils::QsmartParams::default();
         Self {
-            ilsqr_tol: p.ilsqr_tol, ilsqr_max_iter: p.ilsqr_max_iter,
+            ilsqr_tol: 1e-2 /* PROBE */, ilsqr_max_iter: p.ilsqr_max_iter,
             vasc_sphere_radius: p.vasc_sphere_radius, sdf_spatial_radius: p.sdf_spatial_radius,
             inversion: QsmAlgorithm::Ilsqr,
             sdf_sigma1_stage1: p.sdf_sigma1_stage1,
