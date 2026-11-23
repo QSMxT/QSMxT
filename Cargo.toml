@@ -58,3 +58,7 @@ png = "0.17"
 
 [dev-dependencies]
 tempfile = "3"
+
+# local experiment only: QSM.rs da8d0aa + fix/vsharp-match-sti V-SHARP commit (exp/vsharp-on-da8d0aa)
+[patch."https://github.com/astewartau/QSM.rs.git"]
+qsm-core = { path = "/scratch/user/uqaste15/src/qsmrs-wt-da8d0aa" }
