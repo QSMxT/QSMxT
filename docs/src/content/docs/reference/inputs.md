@@ -1,10 +1,10 @@
 ---
-title: Input data
+title: Input data layout
 description: What a QSMxT-compatible BIDS dataset looks like, and which outputs each acquisition enables.
 ---
 
 QSMxT reads [BIDS](https://bids.neuroimaging.io/) datasets. If you convert your
-DICOMs with [`qsmxt dicom-convert`](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids)
+DICOMs with [`qsmxt dicom-convert`](/QSMxT/how-to/convert-dicom/#converting-dicoms-to-bids)
 the layout is handled for you, and this page is mostly reference. If you are
 assembling a dataset by hand, or wondering why an output did not appear, start
 here.
@@ -42,7 +42,7 @@ sub-*/[ses-*/]anat/*_part-phase_*.nii[.gz]
 with matching JSON sidecars containing `EchoTime` and `MagneticFieldStrength`.
 A sidecar's `Manufacturer`, when it has one, decides the phase sign of real/imaginary
 input and the recommendations that depend on the vendor (the
-[Tukey window](/QSMxT/reference/algorithms/#tukey-windowing) with χ-sepnet).
+[Tukey window](/QSMxT/reference/methods/#tukey-windowing) with χ-sepnet).
 Multi-echo data uses the BIDS `echo-<N>` entity. Magnitude images sit alongside
 as `*_part-mag_*`, and are optional for a basic QSM run but required by most
 other outputs.
@@ -58,114 +58,6 @@ A MESE acquisition needs at least three echoes to fit R2. Fewer are ignored. It
 does not have to be on the same grid as the GRE — a 2D stack with thicker slices
 or a smaller matrix is resampled onto whatever grid the run reconstructs on,
 using its affine. R2 is reported only where the MESE's field of view reaches.
-
-### Real and imaginary images
-
-Some scanners (GE in particular) export the complex image as real and imaginary
-parts instead of magnitude and phase. These are recognised by the BIDS
-`part-real` / `part-imag` entities, which `qsmxt dicom-convert` writes:
-
-```
-sub-*/[ses-*/]anat/*_echo-1_part-real_MEGRE.nii.gz
-sub-*/[ses-*/]anat/*_echo-1_part-imag_MEGRE.nii.gz
-...
-```
-
-They are used only when the acquisition has no `part-phase` images. Before
-anything else the pipeline converts each echo to magnitude and phase. Some
-reconstructions flip the sign of every other slice, which shows up as a π phase
-jump between neighbouring slices. The conversion detects this along each axis
-and undoes it. It makes one decision for all echoes, and the log records which
-axes it corrected. When the sidecar's `Manufacturer` is GE the phase is also
-negated, because GE's phase sign is the opposite of the Siemens and Philips
-convention the pipeline assumes. A `part-mag` image is not needed, because the magnitude comes
-from the real and imaginary parts. Per-coil real/imaginary data is not supported.
-
-### Uncombined receive coils
-
-Data exported per coil element (Siemens "save uncombined")
-is recognised by a `coil-<NN>` entity, which `qsmxt dicom-convert` writes. BIDS has
-no entity for a coil element yet, so this is a QSMxT extension: the converted
-dataset's `.bidsignore` lists `*_coil-*` so that the BIDS validator accepts the
-dataset.
-
-```
-sub-*/[ses-*/]anat/*_rec-uncombined_coil-01_echo-1_part-phase_MEGRE.nii.gz
-sub-*/[ses-*/]anat/*_rec-uncombined_coil-01_echo-1_part-mag_MEGRE.nii.gz
-...
-```
-
-All coils of one acquisition form a single run. Before anything else the pipeline
-combines them with MCPC-3D-S (see
-[Coil combination](/QSMxT/reference/algorithms/#coil-combination)), which needs
-magnitude and phase for every coil and at least two echoes, and then continues on
-the combined echoes. The combined echoes are also written to the derivatives as
-`*_rec-mcpc3ds_echo-<N>_part-{phase,mag}_*`.
-
-When the same acquisition is present both per coil and scanner-combined, the
-per-coil run is used and the scanner-combined one is skipped (a log line says so):
-the scanner's phase combination is generally not suitable for QSM. Pass
-`--exclude "*rec-uncombined*"` to process the scanner-combined data instead.
-
-## What `qsmxt dicom-convert` writes
-
-| Series | Name in `sub-*/[ses-*/]anat/` |
-| --- | --- |
-| Gradient-echo magnitude / phase / real / imaginary, one echo | `*_part-mag_T2starw` (`part-phase`, `part-real`, `part-imag`) |
-| The same, several echoes | `*_echo-<N>_part-mag_MEGRE` |
-| T1-weighted structural (MPRAGE, SPACE/TFE T1, MP2RAGE `UNI`) | `*_T1w` |
-| MP2RAGE inversion images | `*_inv-<N>_MP2RAGE` |
-| Scanner susceptibility map | `*_rec-scanner_Chimap` |
-| Scanner T2\* / R2\* map | `*_rec-scanner_T2starmap`, `*_rec-scanner_R2starmap` |
-| Scanner T1 map | `*_T1map` |
-| Scanner SWI | `*_rec-swi_part-mag_T2starw` |
-| Scanner minimum-intensity projection | `*_rec-mip_T2starw` |
-| Another reconstruction of the same images | `*_rec-<label>_…`, e.g. `rec-filtered`, `rec-scanner` |
-
-The plain original image of each kind is the one without a `rec-` label; that is
-the one `qsmxt run` uses. The magnitude follows the phase: when the phase comes
-from a particular reconstruction (ASPIRE's coil combination, say), the magnitude
-from that reconstruction is the main one, and the scanner's own combination is
-`rec-scanner`. A scanner map without a protocol name (Bruker's parametric maps) is
-filed with the acquisition it was made from. A map made from a series that
-is kept in `extra_data/` goes there too. When dcm2niix cannot separate the
-echoes of a series into files, QSMxT converts each echo time separately, or, when
-the echo tags are the same for every image, each volume (`rec-…volN`). Phase
-sidecars get the `Units` BIDS requires: `rad` when the phase is already in
-radians (as dcm2niix writes Philips phase), otherwise `arbitrary`. Any other series (scouts, reformats, FLAIR, diffusion,
-Dixon, other vendor maps) is kept in `sub-*/[ses-*/]extra_data/` as dcm2niix
-names it. These are not BIDS files, and `.bidsignore` lists `extra_data`. The
-`.bidsignore` also lists the MP2RAGE inversion images, because BIDS requires
-sidecar fields for them (such as `NumberShots`) that DICOM headers do not carry.
-
-## GE data
-
-GE real/imaginary series (`part-real`/`part-imag`) are read by `qsmxt run`: each
-echo is converted to magnitude and phase, slice chopping is undone, and the phase
-is negated, as GE records it with the opposite sign (see
-[Real and imaginary images](#real-and-imaginary-images)).
-
-GE phase series (`part-phase`) are not yet corrected for handedness or slice
-chopping, and `qsmxt dicom-convert` warns on each one. Until that correction lands
-(QSM.rs#171), use the real/imaginary export where there is one, or check the sign
-of χ from GE phase against a known structure, such as iron-rich deep grey matter,
-which should be paramagnetic.
-
-## Slice gaps in 2D acquisitions
-
-A 2D multi-slice acquisition can leave a gap between slices: the excited slice
-(`SliceThickness` in the sidecar) is thinner than the slice-to-slice pitch (the
-voxel size). The tissue in the gap was never sampled, and the FFT kernels used by
-background-field removal and dipole inversion assume a contiguous grid, so the map
-is wrong while still looking like a susceptibility map.
-
-QSMxT reads `SliceThickness`, `MRAcquisitionType` and `SliceEncodingDirection` from
-the first echo's sidecar. When the acquisition is 2D (or the thickness differs from
-the pitch) and the slices are more than 1% thinner than the pitch, a run that asks
-for QSM stops before any processing with a message saying so. `--ignore-slice-gap`
-(TUI: Preprocessing → Geometry → Ignore slice gap) reconstructs anyway, with a warning. Runs that
-only make SWI, T2\*/R2\* or other non-QSM outputs continue with a warning. Without
-`SliceThickness` nothing can be checked, and the run proceeds; dcm2niix writes it.
 
 ## What each output needs
 
@@ -202,11 +94,11 @@ rounded to 0.01 ms in a sidecar (4.92, 9.84, 14.77, 19.68 ms) are accepted.
 | `--qsm-algorithm ndi`, `nltv`, `fansi`, `fansi-tgv`, `l1qsm` | magnitude (the data weight) |
 | `--qsm-algorithm star` | nothing more, but with `--star-te spacing` the first two echo times in increasing order |
 | `--qsm-algorithm whqsm` with `--whqsm-weight max-normalised` or `in-vivo` | magnitude (the data weight) |
-| a method's echo time (`--medi-te` and the others, see [Echo time](/QSMxT/reference/algorithms/#echo-time)) | echo times it resolves from: with `spacing`, the first two in increasing order; a given time must be above 0 |
+| a method's echo time (`--medi-te` and the others, see [Echo time](/QSMxT/reference/methods/#echo-time)) | echo times it resolves from: with `spacing`, the first two in increasing order; a given time must be above 0 |
 
 A run that cannot give these is refused before processing.
 
-[Source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation)
+[Source separation](/QSMxT/how-to/source-separation/#susceptibility-source-separation)
 (`--do-chisep`) splits into two groups. The `r2star-qsm` and `decompose` methods
 work from multi-echo GRE magnitude alone (`r2star-qsm` needs what R2\* needs). The
 other six are based on R2', so they need a MESE acquisition as well, or R2PRIMEnet
@@ -227,32 +119,3 @@ Before any run is processed, QSMxT checks every run against what was asked for:
 A named `--use-custom-*` derivative that is missing for a run counts as asked for.
 `qsmxt validate` shows the same checks per run without processing anything.
 :::
-
-## Bringing your own inputs
-
-QSMxT will use maps produced by other tools from `<bids>/derivatives/<TOOL>/`,
-following the same `sub-*/[ses-*/]anat/` layout:
-
-| Option | Supplies | Filename |
-| --- | --- | --- |
-| `--use-custom-masks [TOOL]` | brain mask | `*_mask.nii*` |
-| `--use-custom-qsm <TOOL>` | susceptibility map | `*_Chimap.nii*` |
-| `--use-custom-r2 <TOOL>` | R2 map | `*_R2map.nii*` |
-| `--use-custom-r2prime <TOOL>` | R2' map | `*_R2primemap.nii*` |
-
-A supplied map must be on the scan's grid. When `--axial-resampling` resamples the run to a
-cardinal-aligned grid, a map on the acquired grid is resampled with the echoes. A susceptibility,
-R2 or R2' map on any other grid is refused when the run starts, before anything is computed, with
-a message naming the file and both grids. So is a segmentation (`--use-custom-dseg`) that only the
-statistics or a region `--qsm-reference` read. A brain mask, or a segmentation with
-`--do-segmentation`, that is not on the scan's grid is replaced by one the run makes, with a
-warning.
-
-Supplying R2' directly removes the MESE requirement for source separation, since
-R2 is only needed to compute it. `qsmxt validate` lists the derivative tools it
-can see for each run.
-
-A bring-your-own R2 or R2' map that only covers part of the brain carries the
-same caveat as a MESE slab: leave the uncovered voxels at zero rather than
-filling them, since a zero R2 is read as an absent measurement and excluded,
-while a small non-zero one is taken at face value.

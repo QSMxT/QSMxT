@@ -1,33 +1,11 @@
 ---
-title: Configuration
+title: Settings (configuration file)
 description: Save and reproduce pipeline settings with a TOML configuration file.
 ---
 
 Anything you can set on the `qsmxt run` command line can also live in a TOML
 configuration file. A config file makes runs reproducible and is the cleanest way
-to drive batch and [HPC](/QSMxT/guides/running-noninteractively/#hpc--slurm) processing.
-
-## Generate a starting config
-
-```sh
-qsmxt init > pipeline.toml
-```
-
-`qsmxt init` writes a configuration pre-populated with the default settings,
-ready to edit. Run `qsmxt init --help` for options.
-
-## Use it
-
-```sh
-qsmxt run study/bids --config pipeline.toml
-```
-
-Command-line flags take precedence over values in the file, so you can keep a
-base config and override individual settings per run:
-
-```sh
-qsmxt run study/bids --config pipeline.toml --qsm-algorithm tgv
-```
+to drive batch and [HPC](/QSMxT/how-to/slurm/#hpc--slurm) processing.
 
 ## What's in it
 
@@ -42,7 +20,7 @@ No default depends on the method: a file runs the methods and settings it says, 
 choosing a method never changes another setting. Where a chosen method's reference
 pipeline uses something else (PDF background removal for MEDI, for example), QSMxT says so
 in the log, in `qsmxt run --dry` and in the methods text's Note, and the TUI offers it (see
-[Recommendations](/QSMxT/guides/running-noninteractively/#recommendations)).
+[Recommendations](/QSMxT/background/recommendations/#recommendations-1)).
 
 Multi-orientation reconstruction lives in its own `[multi_orientation]` section,
 off unless `group_by` names a pattern:
@@ -55,7 +33,7 @@ algorithm = "cosmos"     # or "sti"
 lambda = 0.0
 ```
 
-See [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
+See [multi-orientation](/QSMxT/how-to/multi-orientation/#multi-orientation-cosmos-and-sti)
 for what the pattern matches and what will be refused.
 
 The combined magnitude is published unless `pipeline.do_magnitude = false`
@@ -83,10 +61,10 @@ wiener_noise = 0.01
 histogram_bins = 200
 ```
 
-See [inhomogeneity correction](/QSMxT/reference/algorithms/#inhomogeneity-correction)
+See [inhomogeneity correction](/QSMxT/reference/methods/#inhomogeneity-correction)
 for what each does.
 
-The [Tukey window](/QSMxT/reference/algorithms/#tukey-windowing) on the echoes is
+The [Tukey window](/QSMxT/reference/methods/#tukey-windowing) on the echoes is
 `pipeline.tukey_window`, its taper ratio (`--tukey-window`; 0, the default, applies none):
 
 ```toml
@@ -98,7 +76,7 @@ With two-pass artefact reduction, the reliable mask's sections and how they comb
 `masking.two_pass_sections` and `masking.two_pass_combine` (`"or"` or `"and"`; left out, it is
 the main mask's `masking.combine`), and how the second pass is made and merged is
 `masking.two_pass_mode` (`"local"`, the default, or `"original"`, the published algorithm; see
-[two-pass modes](/QSMxT/reference/algorithms/#two-pass-modes)):
+[two-pass modes](/QSMxT/how-to/build-mask/#two-pass-modes)):
 
 ```toml
 [masking]
@@ -131,7 +109,7 @@ num_phase_partitions = 6      # default 8; --prelude-partitions
 
 MEDI's region growing, `unwrapping_algorithm = "medi-region-growing"`, has no settings.
 See
-[phase unwrapping](/QSMxT/reference/algorithms/#phase-unwrapping) for what each does.
+[phase unwrapping](/QSMxT/reference/methods/#phase-unwrapping) for what each does.
 
 A method that converts the field to phase at one echo time has a `te` setting naming it:
 `"first"`, `"last"`, `"spacing"` (TE2 − TE1), `"sum"` (of the echo times), or a given time
@@ -161,7 +139,7 @@ polish_mask = false       # STI Suite's PolishMask after background removal; --b
 ukb_mask_trim = false     # UK Biobank's phase-reliability mask trimming around background removal; --bf-ukb-mask-trim
 ```
 
-HEIDI after the inversion ([HEIDI streaking reduction](/QSMxT/reference/algorithms/#heidi-streaking-reduction))
+HEIDI after the inversion ([HEIDI streaking reduction](/QSMxT/reference/methods/#heidi-streaking-reduction))
 is a switch under `[inversion.heidi]`; LSQR+HEIDI, HEIDI as published, is LSQR with it on:
 
 ```toml
@@ -184,7 +162,7 @@ that is off by default (iSMV's `max_iter`, DECOMPOSE's
 `lsqcurvefit.max_function_evaluations`).
 
 Recommendations you chose not to follow (see
-[Recommendations](/QSMxT/guides/running-noninteractively/#recommendations)) are kept in the
+[Recommendations](/QSMxT/background/recommendations/#recommendations-1)) are kept in the
 file, each with the value of its setting at the time. Only recommended, suggested and discouraged
 findings are kept; one for a reference-pipeline difference is dropped when the file is read. A change to the setting brings the
 recommendation back:
@@ -197,37 +175,6 @@ chosen = "first"            # the setting's value it was dismissed for
 
 On the command line this is `--dismiss-recommendation fansi.te-spacing=first`. A file without
 `dismissed_recommendations` has none.
-
-### Required changes
-
-Some outputs need another one: per-structure statistics need a segmentation (and QSM, when
-nothing else makes a map), a region reference needs a segmentation, SMWI needs QSM, χ-separation
-needs the relaxometry maps its method reads (and a computed R2′ needs R2\* and R2), and
-orientation grouping needs the published combined magnitude. In the TUI, choosing one of these
-opens a **Required change** pop-up: *Apply required change* turns the output on, *Undo my change*
-sets back the setting you just changed. Left unresolved (Esc), the output is marked.
-
-A run turns such an output on itself when the configuration leaves it off — from the command
-line or a config file as from the TUI — and says so in its log at info level ("Segmentation
-turned on: Reference = ventricles needs it (...)"). The change is recorded in the
-`pipeline_config.toml` it writes and in the methods text's Note:
-
-```toml
-required_changes = ["Segmentation turned on: Reference = ventricles needs it (the reference region is measured on a SynthSeg segmentation of the magnitude, which is saved with the outputs)"]
-```
-
-These are QSMxT's own requirements (how its steps link together). A method's own `required` rule
-(from QSM.rs's pipeline rules: what the method cannot run with) is never applied unasked: the
-run is refused, and `--accept-recommendations` applies it. A region reference that names no
-region is an error.
-
-:::tip
-Rather than writing flags or TOML by hand, configure interactively in the
-[TUI](/QSMxT/guides/running-interactively/) — it shows the equivalent `qsmxt run`
-command live. Set things up once, then reuse the command on the CLI and on the
-cluster; the `pipeline_config.toml` every run writes to `derivatives/qsmxt/` is a
-config file you can pass back with `--config`.
-:::
 
 ## Files from earlier versions
 
@@ -270,15 +217,6 @@ A file without it is read as follows, and what changed is logged:
 - TFI's `merit` did nothing in earlier files; it is now MERIT, on by default. An earlier
   value is dropped, with a warning where it turned MERIT off for a TFI run; keep it, with
   `schema_version` at the top, to turn MERIT off.
-
-## Validate before you run
-
-```sh
-qsmxt validate study/bids
-```
-
-`validate` checks that your dataset has the phase/magnitude pairs and sidecar
-metadata the pipeline needs, so problems surface before a long run starts.
 
 <!-- generated:settings start (from the settings registry: do not edit; regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs) -->
 

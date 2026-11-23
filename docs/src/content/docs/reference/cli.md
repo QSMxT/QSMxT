@@ -9,7 +9,7 @@ description: Every qsmxt command, option, accepted value and default, generated 
 This page is generated from the `qsmxt` binary's argument definitions, so it lists exactly
 the commands and options the binary accepts. `qsmxt <command> --help` prints the same
 text. For what the options *do*, see [Commands](/QSMxT/reference/commands/),
-[Algorithms](/QSMxT/reference/algorithms/) and [Standalone tools](/QSMxT/reference/tools/).
+[Methods index](/QSMxT/reference/methods/) and [Standalone tools](/QSMxT/reference/tools/).
 
 ## Commands
 

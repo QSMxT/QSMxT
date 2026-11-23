@@ -29,7 +29,7 @@ pub fn render() -> String {
          This page is generated from the `qsmxt` binary's argument definitions, so it lists exactly\n\
          the commands and options the binary accepts. `qsmxt <command> --help` prints the same\n\
          text. For what the options *do*, see [Commands](/QSMxT/reference/commands/),\n\
-         [Algorithms](/QSMxT/reference/algorithms/) and [Standalone tools](/QSMxT/reference/tools/).\n\n",
+         [Methods index](/QSMxT/reference/methods/) and [Standalone tools](/QSMxT/reference/tools/).\n\n",
     );
     out.push_str("## Commands\n\n");
     for sub in visible_subcommands(&cmd) {
@@ -213,10 +213,19 @@ mod tests {
         }
     }
 
-    /// Every value of every algorithm option is described in the algorithms page.
+    /// The pages that describe the methods: the methods index first, then the guides and
+    /// background pages that hold a stage's options.
+    const METHOD_PAGES: [&str; 6] = ["reference/methods.md", "how-to/build-mask.md", "background/geometry.md",
+        "how-to/source-separation.md", "how-to/multi-orientation.md", "how-to/reference-and-stats.md"];
+
+    fn method_pages() -> String {
+        METHOD_PAGES.map(doc).join("\n")
+    }
+
+    /// Every value of every algorithm option is described in the method pages.
     #[test]
-    fn every_algorithm_value_is_in_the_algorithms_page() {
-        let algorithms = doc("reference/algorithms.md");
+    fn every_algorithm_value_is_in_the_method_pages() {
+        let algorithms = method_pages();
         let cmd = crate::cli::Cli::command();
         let run = cmd.find_subcommand("run").unwrap();
         for flag in ["qsm-algorithm", "bf-algorithm", "unwrapping-algorithm", "mask-preset",
@@ -228,7 +237,7 @@ mod tests {
             for v in arg.get_possible_values().iter().filter(|v| !v.is_hide_set()) {
                 assert!(algorithms.contains(&format!("`{}`", v.get_name()))
                         || algorithms.contains(&format!("`--{flag} {}`", v.get_name())),
-                    "reference/algorithms.md does not describe --{flag} `{}`", v.get_name());
+                    "no method page ({METHOD_PAGES:?}) describes --{flag} `{}`", v.get_name());
             }
         }
     }
@@ -275,21 +284,21 @@ mod tests {
     /// The dipole-inversion table marks the config's default inversion, and only it, as the default.
     #[test]
     fn the_default_inversion_is_the_one_the_docs_mark() {
-        let algorithms = doc("reference/algorithms.md");
+        let algorithms = doc("reference/methods.md");
         let default = qsmxt_engine::InversionConfig::default().algorithm;
         for alg in qsmxt_engine::QsmAlgorithm::ALL {
             let row = algorithms.lines().find(|l| l.starts_with(&format!("| `{alg}` |")))
-                .unwrap_or_else(|| panic!("reference/algorithms.md has no row for `{alg}`"));
+                .unwrap_or_else(|| panic!("reference/methods.md has no row for `{alg}`"));
             assert_eq!(row.contains("(default"), alg == default,
-                "reference/algorithms.md: `{alg}` row marks the default wrongly: {row}");
+                "reference/methods.md: `{alg}` row marks the default wrongly: {row}");
         }
     }
 
-    /// The algorithms page spells every `--mask-preset` out as the flags it stands for, and those
+    /// The masking guide spells every `--mask-preset` out as the flags it stands for, and those
     /// are exactly the recipe the preset runs.
     #[test]
     fn mask_preset_expansions_in_the_docs_are_the_recipes() {
-        let algorithms = doc("reference/algorithms.md");
+        let algorithms = doc("how-to/build-mask.md");
         for (name, recipe) in qsmxt_engine::mask_presets() {
             let mut flags: Vec<String> = recipe.sections.iter()
                 .map(|s| format!("--mask {}", s.compact_spec())).collect();
@@ -298,7 +307,7 @@ mod tests {
             }
             flags.extend(recipe.refinements.iter().map(|r| format!("--mask-refine {}", r.compact_spec())));
             let row = format!("| `{name}` | `{}` |", flags.join(" "));
-            assert!(algorithms.contains(&row), "reference/algorithms.md lacks the expansion row\n{row}");
+            assert!(algorithms.contains(&row), "how-to/build-mask.md lacks the expansion row\n{row}");
         }
     }
 

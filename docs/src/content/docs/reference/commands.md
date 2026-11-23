@@ -10,16 +10,16 @@ for the complete, authoritative options of any command.
 
 | Command | Description |
 | --- | --- |
-| [`run`](/QSMxT/guides/running-noninteractively/) | Run the full QSM pipeline on a BIDS dataset |
+| [`run`](/QSMxT/how-to/run-bids/) | Run the full QSM pipeline on a BIDS dataset |
 | `init` | Generate a pipeline configuration file (TOML) |
 | [`validate`](/QSMxT/reference/inputs/) | Validate BIDS dataset structure for QSM processing |
-| [`dicom-convert`](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids) | Convert a DICOM directory to BIDS with automatic classification |
-| [`example`](/QSMxT/getting-started/quick-start/#no-data-yet-fetch-an-example) | Download an example BIDS dataset to try the pipeline on |
-| [`slurm`](/QSMxT/guides/running-noninteractively/#hpc--slurm) | Generate SLURM job scripts for HPC execution: one job per run, then an aggregation job |
-| [`aggregate`](/QSMxT/guides/running-noninteractively/#how-the-jobs-divide-the-work) | Run the dataset-level steps over runs processed with `run --no-dataset-steps` |
-| [`tui`](/QSMxT/guides/running-interactively/) | Launch the interactive TUI |
+| [`dicom-convert`](/QSMxT/how-to/convert-dicom/#converting-dicoms-to-bids) | Convert a DICOM directory to BIDS with automatic classification |
+| [`example`](/QSMxT/start/tutorial-tui/#no-data-yet-fetch-an-example) | Download an example BIDS dataset to try the pipeline on |
+| [`slurm`](/QSMxT/how-to/slurm/#hpc--slurm) | Generate SLURM job scripts for HPC execution: one job per run, then an aggregation job |
+| [`aggregate`](/QSMxT/how-to/slurm/#how-the-jobs-divide-the-work) | Run the dataset-level steps over runs processed with `run --no-dataset-steps` |
+| [`tui`](/QSMxT/background/tui/) | Launch the interactive TUI |
 | `update` | Check for and install the latest release |
-| [`news`](/QSMxT/getting-started/installation/#announcements) | Show the announcements from the QSMxT team, newest first |
+| [`news`](/QSMxT/how-to/update/#announcements) | Show the announcements from the QSMxT team, newest first |
 
 ## Standalone NIfTI tools
 
@@ -78,13 +78,13 @@ qsmxt <cmd> --help # full help for a command
 | `--phase-offset-removal <bool>` | Multi-echo phase-offset removal |
 | `--bipolar-correction` | Bipolar readout correction (≥ 3 echoes) |
 | `--romeo-*` | Fine-grained ROMEO unwrapping controls |
-| `--do-chisep` / `--chisep <M>` | [Susceptibility source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation) |
-| `--do-segmentation` / `--do-analysis` | [SynthSeg parcellation and per-structure statistics](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics) |
-| `--qsm-reference <SPEC>` | [What χ's zero is pinned to](/QSMxT/reference/algorithms/#referencing): `mean`, `none`, or a parcellation region |
-| `--export-dicom` | Also write each final map as a [DICOM series](/QSMxT/guides/running-noninteractively/#exporting-results-as-dicom) |
+| `--do-chisep` / `--chisep <M>` | [Susceptibility source separation](/QSMxT/how-to/source-separation/#susceptibility-source-separation) |
+| `--do-segmentation` / `--do-analysis` | [SynthSeg parcellation and per-structure statistics](/QSMxT/how-to/reference-and-stats/#segmentation-and-per-structure-statistics) |
+| `--qsm-reference <SPEC>` | [What χ's zero is pinned to](/QSMxT/how-to/reference-and-stats/#referencing): `mean`, `none`, or a parcellation region |
+| `--export-dicom` | Also write each final map as a [DICOM series](/QSMxT/how-to/export-dicom/#exporting-results-as-dicom) |
 | `--source-dicom <DIR>` | Inherit patient/study identity from the original DICOMs when exporting |
 | `--dicom-outputs <TOKEN>…` | Restrict the DICOM export to these maps (default: all produced) |
 
-See [Algorithms](/QSMxT/reference/algorithms/) for what each algorithm option's
+See [Algorithms](/QSMxT/reference/methods/) for what each algorithm option's
 values do, and the [CLI reference](/QSMxT/reference/cli/) for every option of
 every command.
