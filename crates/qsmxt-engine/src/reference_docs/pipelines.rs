@@ -13,7 +13,7 @@
 //!   toolbox's results, and list no "not reproduced" items (decision 217): only the deliberate
 //!   differences QSM.rs records, with their reasons, and its known gaps.
 
-use qsm_core::pipeline::reference_pipelines::{ReferencePipeline, DIFFERENCES, REFERENCE_PIPELINES};
+use qsm_core::pipeline::reference_pipelines::{ReferencePipeline, REFERENCE_PIPELINES};
 use qsm_core::pipeline::rules::{self as core, Condition, Fact, Test};
 use serde_json::Value;
 
@@ -47,24 +47,11 @@ fn scan() -> ViewFacts {
     }
 }
 
-/// The issues behind what a page links to that QSM.rs records only in its comments: a known
-/// gap's issue (`ReferencePipeline::note`), and the QSM-CI issue for a pipeline with no parity
-/// pair yet. `(pipeline id, repository, issue number)`.
-const GAP_ISSUES: &[(&str, &str, u32)] = &[
-    ("medi-toolbox", "QSMxT/QSMxT", 564),
-    ("sti-suite-star", "astewartau/QSM.rs", 493),
-    ("uk-biobank", "astewartau/QSM.rs", 491),
-];
-const PARITY_ISSUES: &[(&str, &str, u32)] = &[
-    ("sti-suite-star", "QSMxT/QSM-CI", 469),
-    ("chi-sepnet", "QSMxT/QSM-CI", 470),
-];
-
-fn issue(table: &[(&str, &'static str, u32)], id: &str) -> Option<String> {
-    table.iter().find(|(p, ..)| *p == id).map(|(_, repo, n)| {
-        let short = repo.rsplit('/').next().unwrap_or(repo);
-        format!("[{short}#{n}](https://github.com/{repo}/issues/{n})")
-    })
+/// A link to an issue given as `owner/repo#n`.
+fn issue(reference: &str) -> String {
+    let (repo, n) = reference.split_once('#').unwrap_or_else(|| panic!("{reference:?} is not owner/repo#n"));
+    let short = repo.rsplit('/').next().unwrap_or(repo);
+    format!("[{short}#{n}](https://github.com/{repo}/issues/{n})")
 }
 
 /// The file a pipeline's page is in, relative to the repository root.
@@ -174,14 +161,21 @@ fn rules_for(p: &ReferencePipeline, target: &PipelineConfig, facts: &ViewFacts, 
 /// Why `p` sets `path`, where no rule says: its own choices, and what QSMxT does with them.
 fn choice_reason(p: &ReferencePipeline, path: &str) -> Option<&'static str> {
     if p.choose.iter().any(|(s, _)| rec::qsmxt_path(s) == Some(path)) {
-        return Some("One of the choices that start this pipeline.");
+        return Some(CHOICE_REASONS[0]);
     }
     match path {
-        "pipeline.do_chi_separation" => Some("A χ-separation method runs with χ-separation on."),
-        "separation.r2prime_strategy" => Some("The χ-separation toolbox takes a measured R2′, from a multi-echo spin-echo scan or a supplied map."),
+        "pipeline.do_chi_separation" => Some(CHOICE_REASONS[1]),
+        "separation.r2prime_strategy" => Some(CHOICE_REASONS[2]),
         _ => None,
     }
 }
+
+/// [`choice_reason`]'s sentences.
+const CHOICE_REASONS: [&str; 3] = [
+    "One of the choices that start this pipeline.",
+    "A χ-separation method runs with χ-separation on.",
+    "The χ-separation toolbox takes a measured R2′, from a multi-echo spin-echo scan or a supplied map.",
+];
 
 /// The settings `p` sets differently from QSMxT's defaults, in settings order, each with why.
 fn steps(p: &ReferencePipeline) -> Vec<Step> {
@@ -209,8 +203,35 @@ fn steps(p: &ReferencePipeline) -> Vec<Step> {
     }).collect()
 }
 
-fn steps_table(steps: &[Step]) -> String {
+/// The sentences of `text`, each ended as a sentence.
+fn sentences(text: &str) -> Vec<String> {
+    let text = sentence(&text.split_whitespace().collect::<Vec<_>>().join(" "));
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = text.as_str();
+    // A sentence ends at ". " before a capital letter (not "e.g. x" or "2.89 T").
+    while let Some(i) = rest.char_indices().find(|&(i, c)| {
+        c == '.' && rest[i + 1..].starts_with(' ') && rest[i + 2..].starts_with(|c: char| c.is_uppercase())
+    }).map(|(i, _)| i) {
+        out.push(rest[..=i].to_string());
+        rest = &rest[i + 2..];
+    }
+    if !rest.is_empty() {
+        out.push(rest.to_string());
+    }
+    out
+}
+
+/// The most a table cell says itself; a longer reason goes to a note under the table.
+const CELL_SENTENCES: usize = 2;
+
+/// The steps table, and the notes under it. Each reason is given once on a page: a row set by a
+/// rule already given above says so, and a row whose reasons run past [`CELL_SENTENCES`] gives
+/// its first sentence and the rest in a numbered note.
+fn steps_table(steps: &[Step]) -> (String, Vec<String>) {
     let mut stage = "";
+    // Each reason given so far, by its first sentence, with the row it was given on.
+    let mut given: Vec<(String, &'static str)> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
     let rows: Vec<Vec<String>> = steps.iter().map(|s| {
         let c = &s.change;
         let label = schema::setting(c.path).map_or(c.label, |x| x.full_label);
@@ -222,9 +243,36 @@ fn steps_table(steps: &[Step]) -> String {
         let this_stage = c.section.label();
         let stage_cell = if this_stage == stage { String::new() } else { this_stage.to_string() };
         stage = this_stage;
-        vec![stage_cell, format!("{}{flag}", cell(label)), value, value_text(c.path, &c.from), cell(&s.why.join(" "))]
+        // The sentences no earlier row gave, once each.
+        let mut fresh: Vec<String> = Vec::new();
+        let mut earlier: Vec<&'static str> = Vec::new();
+        for why in &s.why {
+            for x in sentences(why) {
+                // QSMxT's own wording for a pipeline's choices is the same on every such row.
+                if CHOICE_REASONS.contains(&x.as_str()) {
+                    if !fresh.contains(&x) { fresh.push(x) }
+                    continue;
+                }
+                match given.iter().find(|(g, _)| *g == x) {
+                    Some((_, row)) => { if !earlier.contains(row) { earlier.push(row) } }
+                    None if !fresh.contains(&x) => fresh.push(x),
+                    None => {}
+                }
+            }
+        }
+        given.extend(fresh.iter().map(|x| (x.clone(), label)));
+        let why = if fresh.is_empty() {
+            let rows: Vec<String> = earlier.iter().map(|r| format!("*{}*", cell(r))).collect();
+            format!("The same reason as {} above.", rows.join(" and "))
+        } else if fresh.len() <= CELL_SENTENCES {
+            cell(&fresh.join(" "))
+        } else {
+            notes.push(fresh[1..].join(" "));
+            format!("{} (note {})", cell(&fresh[0]), notes.len())
+        };
+        vec![stage_cell, format!("{}{flag}", cell(label)), value, value_text(c.path, &c.from), why]
     }).collect();
-    table(&["Stage", "Setting", "This pipeline", "QSMxT default", "Why"], &rows)
+    (table(&["Stage", "Setting", "This pipeline", "QSMxT default", "Why"], &rows), notes)
 }
 
 // ─── Pages ───
@@ -250,35 +298,47 @@ fn parity(p: &ReferencePipeline) -> String {
         ),
         None => format!(
             "No whole-pipeline parity test yet{}.",
-            issue(PARITY_ISSUES, p.id).map(|i| format!(" ({i})")).unwrap_or_default()
+            p.qsmci_pair_issue.map(|i| format!(" ({})", issue(i))).unwrap_or_default()
         ),
     }
 }
 
 /// A toolbox pipeline's page.
 pub fn pipeline_page(p: &ReferencePipeline) -> String {
+    let (table, notes) = steps_table(&steps(p));
     let order = REFERENCE_PIPELINES.iter().position(|q| q.id == p.id).map_or(0, |i| i + 1);
     let mut out = format!(
         "---\ntitle: \"{name}\"\ndescription: \"{toolbox}'s pipeline in QSMxT: qsmxt run --pipeline {id}.\"\nsidebar:\n  order: {order}\n---\n\n\
          <!-- generated:pipeline-page (from QSM.rs's toolbox pipelines and rules: do not edit; regenerate with {REGENERATE}) -->\n\n\
          ```sh\nqsmxt run study/bids --pipeline {id}\n```\n\n\
-         In the TUI: the Pipeline tab, **{name}**. Taken from {toolbox} ({source}).\n\n\
+         In the TUI: the Pipeline tab, **{name}**.\n\n\
+         **Based on:** {based_on}.\n\n\
          **Parity:** {parity}\n\n\
          ## Use it when\n\n{use_when}\n\n\
          ## Steps and settings\n\n\
          Choosing it resets every reconstruction stage to QSMxT's defaults, then sets these. \
          Every other setting keeps [its default]({BASE}/reference/configuration/).\n\n{steps}\n",
-        name = p.name, toolbox = p.toolbox, id = p.id, source = p.source.trim_end_matches('.'),
-        parity = parity(p), use_when = p.use_when, steps = steps_table(&steps(p)).trim_end(),
+        name = p.name, toolbox = p.toolbox, id = p.id, based_on = p.based_on.trim_end_matches('.'),
+        parity = parity(p), use_when = p.use_when, steps = table.trim_end(),
     );
+    if !notes.is_empty() {
+        out.push_str("\nNotes on the table:\n\n");
+        for (k, n) in notes.iter().enumerate() {
+            out.push_str(&format!("{}. {}\n", k + 1, n));
+        }
+    }
     out.push_str("\n## Intentional differences from the original\n\n");
-    for d in p.differences.iter().chain(DIFFERENCES) {
+    let differences = p.all_differences();
+    if differences.is_empty() {
+        out.push_str("None.\n");
+    }
+    for d in differences {
         out.push_str(&format!("- **{}** {}\n", d.what, d.why));
     }
     out.push_str("\n## Known gaps\n\n");
     match p.note {
         Some(note) => {
-            let link = issue(GAP_ISSUES, p.id).map(|i| format!(" ({i})")).unwrap_or_default();
+            let link = p.note_issue.map(|i| format!(" ({})", issue(i))).unwrap_or_default();
             out.push_str(&format!("{}{link}.\n", note.trim_end_matches('.')));
         }
         None => out.push_str("None known.\n"),
@@ -313,13 +373,26 @@ mod tests {
         }
     }
 
-    /// A known gap links its issue, and a pipeline with no QSM-CI pair links the issue that adds
-    /// one; the tables list only pipelines that exist.
+    /// A reason's sentences split where a sentence ends, not inside a number or abbreviation.
     #[test]
-    fn gaps_and_missing_pairs_link_their_issues() {
+    fn reasons_split_into_sentences() {
+        assert_eq!(sentences("One at 2.89 T. Two, e.g. this"), ["One at 2.89 T.", "Two, e.g. this."]);
+    }
+
+    /// No steps table repeats a reason, and no cell runs past two sentences.
+    #[test]
+    fn steps_tables_give_each_reason_once() {
         for p in REFERENCE_PIPELINES {
-            assert_eq!(p.note.is_some(), issue(GAP_ISSUES, p.id).is_some(), "{}: gap issue", p.id);
-            assert_eq!(p.qsmci_pair.is_none(), issue(PARITY_ISSUES, p.id).is_some(), "{}: parity issue", p.id);
+            let (table, _) = steps_table(&steps(p));
+            let mut seen: Vec<String> = Vec::new();
+            for row in table.lines().skip(2) {
+                let why = row.trim_end_matches(" |").rsplit(" | ").next().unwrap().to_string();
+                for x in sentences(&why) {
+                    assert!(x.starts_with("The same reason as") || CHOICE_REASONS.contains(&x.as_str()) || !seen.contains(&x), "{}: {x:?} twice", p.id);
+                    seen.push(x);
+                }
+                assert!(sentences(&why).len() <= CELL_SENTENCES, "{}: {why:?}", p.id);
+            }
         }
     }
 
