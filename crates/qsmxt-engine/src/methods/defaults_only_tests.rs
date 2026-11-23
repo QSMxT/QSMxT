@@ -116,7 +116,7 @@ fn a_changed_setting_is_stated() {
             "tissue/vasculature separation, with frangi c = 123."),
         (|c| { c.inversion.algorithm = QsmAlgorithm::Qsmart; c.inversion.qsmart.frangi_c_mode = crate::enums::QsmartFrangiCMode::Relative; },
             "tissue/vasculature separation, with Frangi's c set to 0.25 × the median of the vessel magnitude inside the brain mask."),
-        (|c| c.field_mapping.romeo.correct_global = true, "ROMEO (Dymerska et al., 2021) with correct global enabled."),
+        (|c| c.field_mapping.romeo.correct_global = true, "ROMEO (Dymerska et al., 2021) with correct global enabled;"),
         (|c| c.field_mapping.phase_offset_sigma_mm = [3.0, 3.0, 3.0], "(Eckstein et al., 2018; smoothing σ = 3 × 3 × 3 mm)"),
         (|c| { c.field_mapping.b0_estimation = B0Estimation::LinearFit; c.field_mapping.linear_fit.estimate_offset = !LinearFitConfig::default().estimate_offset; },
             "echo time with phase-offset estimation"),

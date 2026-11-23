@@ -727,9 +727,10 @@ mod tests {
     /// The χ-separation toolbox runs mritools' `romeo` command line (QSM.rs's rules
     /// `chi-sep.romeo-*`): its pipelines unwrap with romeo3 weights (no phase linearity), from the
     /// first echo as template, without global correction or re-unwrapping of uncertain voxels.
-    /// QSMxT's own ROMEO settings differ only in the weights (romeo4); every other pipeline keeps
-    /// them, and so does QSMxT's own default inversion; choosing QSMnetME suggests the command
-    /// line's weights (`qsmnetme.romeo-weights`).
+    /// QSMxT's own ROMEO settings differ in the weights (romeo4) and in re-unwrapping uncertain
+    /// voxels (ROMEO.jl's 0.5); every other pipeline keeps them, and so does QSMxT's own default
+    /// inversion; choosing QSMnetME suggests the command line's weights and its 0
+    /// (`qsmnetme.romeo-weights`, `qsmnetme.romeo-no-uncertain-rewrap`).
     #[test]
     fn the_chi_separation_pipelines_unwrap_as_the_romeo_command_line() {
         use crate::config::RomeoConfig;
@@ -756,7 +757,9 @@ mod tests {
         let f = Facts::of_view(&facts());
         let diffs: Vec<_> = rec::reference_values(&c, &f).into_iter()
             .filter(|r| r.rule.starts_with("qsmnetme.romeo-") && r.departs).collect();
-        assert_eq!(diffs.iter().map(|r| r.rule.as_str()).collect::<Vec<_>>(), ["qsmnetme.romeo-weights"]);
+        let mut rules: Vec<_> = diffs.iter().map(|r| r.rule.as_str()).collect();
+        rules.sort_unstable();
+        assert_eq!(rules, ["qsmnetme.romeo-no-uncertain-rewrap", "qsmnetme.romeo-weights"]);
         for r in &diffs {
             rec::apply(&mut c, &r.rule, None, &f).unwrap();
         }
@@ -772,6 +775,44 @@ mod tests {
             }
         }
         assert_eq!(c.field_mapping.romeo, cli);
+    }
+
+    /// QSMxT re-unwraps uncertain voxels at ROMEO.jl's 0.5 in template mode by default
+    /// (qsm-core's `RomeoParams::default()`); the χ-separation and QSMnetME reference rules keep
+    /// the `romeo` command line's 0, and individual mode, which has no temporal step, is not
+    /// asked about it.
+    #[test]
+    fn uncertain_voxels_are_re_unwrapped_by_default_except_where_the_rules_keep_it_off() {
+        use crate::config::RomeoConfig;
+        let d = PipelineConfig::default();
+        assert!(!d.field_mapping.romeo.individual, "template mode by default");
+        assert_eq!(d.field_mapping.romeo.temporal_uncertain_unwrapping, 0.5);
+        assert_eq!(RomeoConfig::default().temporal_uncertain_unwrapping,
+                   qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping);
+        assert!(!crate::command::generate_command(&d).contains("--romeo-temporal-uncertain-unwrapping"));
+        let f = Facts::of_view(&facts());
+        let tuu = |c: &PipelineConfig| rec::reference_values(c, &f).into_iter()
+            .filter(|r| r.rule.ends_with(".romeo-no-uncertain-rewrap")).map(|r| (r.rule, r.departs)).collect::<Vec<_>>();
+        // QSMxT's own pipeline: no rule asks for 0.
+        assert_eq!(tuu(&d), []);
+        // The χ-separation toolbox's pipelines set the command line's 0, and their rule holds.
+        for id in ["chi-sep-ilsqr", "chi-sep-medi", "chi-sepnet"] {
+            let mut c = PipelineConfig::default();
+            choose(&mut c, id, &facts()).unwrap();
+            assert_eq!(c.field_mapping.romeo.temporal_uncertain_unwrapping, 0.0, "{id}");
+            assert!(tuu(&c).iter().all(|(_, departs)| !departs), "{id}: {:?}", tuu(&c));
+        }
+        // QSMnetME: the default departs from its rule's 0 until it is accepted.
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = crate::enums::QsmAlgorithm::Qsmnetme;
+        assert_eq!(tuu(&c), [("qsmnetme.romeo-no-uncertain-rewrap".to_string(), true)]);
+        rec::apply(&mut c, "qsmnetme.romeo-no-uncertain-rewrap", None, &f).unwrap();
+        assert_eq!(c.field_mapping.romeo.temporal_uncertain_unwrapping, 0.0);
+        assert!(crate::command::generate_command(&c).contains("--romeo-temporal-uncertain-unwrapping 0"));
+        // Individual mode: the rule does not apply, so nothing departs.
+        c.field_mapping.romeo.individual = true;
+        c.field_mapping.romeo.temporal_uncertain_unwrapping = 0.5;
+        assert!(tuu(&c).iter().all(|(_, departs)| !departs), "{:?}", tuu(&c));
     }
 
     /// The Outputs tab stays as it is.

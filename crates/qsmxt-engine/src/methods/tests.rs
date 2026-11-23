@@ -562,7 +562,7 @@ fn the_echo_fit_after_romeo_says_what_ran() {
     config.field_mapping.laplacian_unmasked = true; // a Laplacian setting: ROMEO ignores it
     let out = paragraph(&config);
     for said in ["Phase offset removal (Eckstein et al., 2018) and bipolar gradient correction (Eckstein, 2021) were applied.",
-                 "Phase unwrapping was performed using ROMEO (Dymerska et al., 2021).",
+                 "Phase unwrapping was performed using ROMEO (Dymerska et al., 2021);",
                  "a magnitude-weighted fit of phase vs echo time through the origin, as in QSMART (Yaghmaie et al., 2021)",
                  "excluded from the QSMART reconstruction"] {
         assert!(out.contains(said), "{said:?} not in: {out}");
@@ -640,8 +640,28 @@ fn test_romeo_default_mode() {
     // Template unwrapping is the default, so the mode is not stated.
     let config = PipelineConfig::default();
     let out = generate_methods(&config);
-    assert!(out.contains("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021)."), "{out}");
+    assert!(out.contains("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021);"), "{out}");
     assert!(!out.contains("mode"), "{out}");
+}
+
+/// Re-unwrapping uncertain voxels is on by default (ROMEO.jl's 0.5) and stated with its threshold;
+/// turned off, or in individual mode (which has no temporal step), nothing is said.
+#[test]
+fn the_uncertain_voxels_re_unwrapped_are_said_with_their_threshold() {
+    const SAID: &str = "Phase unwrapping was performed using ROMEO (Dymerska et al., 2021); for multi-echo data, \
+        voxels whose temporal unwrapping was uncertain (quality below 0.5) were re-unwrapped spatially.";
+    let out = generate_methods(&PipelineConfig::default());
+    assert!(out.contains(SAID), "{out}");
+    let mut config = PipelineConfig::default();
+    config.field_mapping.romeo.temporal_uncertain_unwrapping = 0.3;
+    assert!(generate_methods(&config).contains("(quality below 0.3)"));
+    config.field_mapping.romeo.temporal_uncertain_unwrapping = 0.0;
+    let out = generate_methods(&config);
+    assert!(out.contains("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021).") && !out.contains("uncertain"), "{out}");
+    let mut config = PipelineConfig::default();
+    config.field_mapping.romeo.individual = true;
+    let out = generate_methods(&config);
+    assert!(!out.contains("uncertain"), "{out}");
 }
 
 #[test]

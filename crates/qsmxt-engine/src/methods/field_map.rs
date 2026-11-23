@@ -140,9 +140,16 @@ fn describe_unwrapping(config: &PipelineConfig, doc: &mut Draft) {
                 " in template-based temporal mode"
             };
             let mut changed = Changed::default();
-            changed.add_fields(&fm.romeo, &d.romeo, &["individual"]);
+            changed.add_fields(&fm.romeo, &d.romeo, &["individual", "temporal_uncertain_unwrapping"]);
+            // Template mode re-unwraps the echoes' uncertain voxels spatially; individual mode
+            // has no temporal step to be uncertain about.
+            let uncertain = match fm.romeo.temporal_uncertain_unwrapping {
+                t if t > 0.0 && !fm.romeo.individual => format!(
+                    "; for multi-echo data, voxels whose temporal unwrapping was uncertain (quality below {t}) were re-unwrapped spatially"),
+                _ => String::new(),
+            };
             doc.cite_method(MethodStage::Unwrapping, "romeo");
-            doc.say(&[Stage::FieldMap], format!("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021){mode}{}.", changed.with()));
+            doc.say(&[Stage::FieldMap], format!("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021){mode}{}{uncertain}.", changed.with()));
         }
         UnwrappingAlgorithm::Laplacian => {
             let solver = match fm.laplacian_solver {
@@ -256,7 +263,8 @@ pub(super) fn describe_complex_fit(config: &PipelineConfig, doc: &mut Draft) {
     let unwrapping = match fm.unwrapping_algorithm {
         UnwrappingAlgorithm::Romeo => {
             let mut changed = Changed::default();
-            changed.add_fields(&fm.romeo, &d.romeo, &["individual", "template"]);
+            // One volume is unwrapped: the echo settings do not apply.
+            changed.add_fields(&fm.romeo, &d.romeo, &["individual", "template", "temporal_uncertain_unwrapping"]);
             doc.cite_method(MethodStage::Unwrapping, "romeo");
             format!("ROMEO (Dymerska et al., 2021){}", changed.with())
         }

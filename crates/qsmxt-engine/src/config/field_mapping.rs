@@ -46,9 +46,11 @@ impl Default for RomeoConfig {
             mag_weight: p.mag_weight,
             mag_weight2: p.mag_weight2,
             bestpath: p.bestpath,
-            // The command line's 0 (re-unwrapping of uncertain voxels off; experimental there):
-            // QSM.rs does not yet match ROMEO.jl above 0.
-            temporal_uncertain_unwrapping: 0.0,
+            // ROMEO.jl's API default (0.5): voxels whose temporal unwrapping is uncertain are
+            // re-unwrapped spatially (ROMEO's fix for veins). Template mode only; individual mode
+            // does not use it. The `romeo` command line's 0 is what the χ-separation and
+            // QSMnetME reference rules set.
+            temporal_uncertain_unwrapping: p.temporal_uncertain_unwrapping,
             max_seeds: p.max_seeds,
             merge_regions: p.merge_regions,
             correct_regions: p.correct_regions,

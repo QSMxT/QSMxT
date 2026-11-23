@@ -129,7 +129,7 @@ fn romeo() -> Vec<Def> {
         d("field_mapping.romeo.temporal_uncertain_unwrapping", FieldMap, "Temporal uncertain", "Re-unwrap voxels whose temporal unwrapping is uncertain", Float)
         .value("Quality threshold", "Quality threshold (0, 1] below which a voxel is re-unwrapped").off(json!(0.0)).flag("--romeo-temporal-uncertain-unwrapping").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Temporal uncertain unwrapping")
-        .cli("ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0)"),
+        .cli("ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5)"),
         d("field_mapping.romeo.max_seeds", FieldMap, "Max seeds", "Maximum number of seed regions (default 1)", Int).flag("--romeo-max-seeds").parent("field_mapping.unwrapping_algorithm")
         .when(|x| x.romeo).full("Maximum seeds")
         .gui("Maximum number of seed regions")
