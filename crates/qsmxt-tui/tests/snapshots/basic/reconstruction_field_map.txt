@@ -4,7 +4,7 @@
 │ PREPROCESSING       │   Per-echo QSM:           [ ]                                                                  │
 │   Geometry          │   Unwrapping:             [ romeo ▾ ] ⓘ iLSQR: Laplacian                                       │
 │   Masking          ⓘ│     Phase offset removal: [x]                                                                  │
-│   Motion            │       Bipolar correction: [ ]                                                                  │
+│   Motion            │     Bipolar correction:   [ ]                                                                  │
 │                     │   B0 estimation:          [ weighted-avg ▾ ]                                                   │
 │ QSM                 │                                                                                                │
 │   Compute QSM       │   + 17 advanced settings · A                                                                   │

@@ -5,7 +5,7 @@
 │   Geometry          │   Unwrapping:                 [ romeo ▾ ] ⓘ iLSQR: Laplacian                                   │
 │   Masking          ⓘ│     Phase offset removal:     [x]                                                              │
 │   Motion            │       Sigma (mm):             7 7 7                                                            │
-│                     │       Bipolar correction:     [ ]                                                              │
+│                     │     Bipolar correction:       [ ]                                                              │
 │ QSM                 │     Individual mode:          [ ]                                                              │
 │   Compute QSM       │     Template echo:            1                                                                │
 │ ▸ Field map        ⓘ│     Correct global:           [ ]                                                              │
