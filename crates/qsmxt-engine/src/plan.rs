@@ -622,6 +622,7 @@ pub(crate) mod tests {
             custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false,
             custom_r2prime: false,
             manufacturer: None,
+            readout_polarity: None,
         }
     }
 

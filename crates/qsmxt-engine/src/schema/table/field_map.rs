@@ -78,8 +78,8 @@ fn phase_offsets() -> Vec<Def> {
         .when(|x| x.combines && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit).full("Phase offset sigma")
         .gui("Gaussian smoothing sigma (x y z)")
         .cli("Phase offset removal smoothing sigma (3 values, in mm; default: 7 7 7, the ROMEO command line's)"),
-        d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)", Bool).basic().flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
-        .when(|x| x.combines && x.c.field_mapping.phase_offset_removal && x.c.field_mapping.b0_estimation != B0Estimation::ComplexFit)
+        d("field_mapping.bipolar_correction", FieldMap, "Bipolar correction", "Remove the phase artefact of bipolar (alternating-polarity) readout gradients (needs at least 3 echoes; fewer: skipped). With the complex fit, MEDI's bipolar echo fit is used instead", Bool).basic().flag("--bipolar-correction").parent("field_mapping.phase_offset_removal")
+        .when(|x| x.combines && (x.c.field_mapping.phase_offset_removal || x.c.field_mapping.b0_estimation == B0Estimation::ComplexFit))
         .cli("Enable bipolar gradient correction (requires >= 3 echoes)"),
     ]
 }

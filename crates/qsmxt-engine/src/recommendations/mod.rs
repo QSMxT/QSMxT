@@ -190,6 +190,10 @@ pub enum Basis {
     /// `required` rules, never a refusal: a run applies it itself, says so in its log and records
     /// it ([`Recommendation::applied_by_run`]).
     Wiring,
+    /// What the scan's acquisition needs: bipolar correction for a bipolar readout
+    /// ([`crate::normalise::scan_adjustments`]). Always `required`, and, like [`Basis::Wiring`],
+    /// applied by a run that is left without it, logged and recorded.
+    Acquisition,
 }
 
 impl Basis {
@@ -201,6 +205,7 @@ impl Basis {
             Basis::Implementation => "QSM.rs's implementation",
             Basis::Qsmxt => "QSMxT's recommendation, not offered by the reference toolbox",
             Basis::Wiring => "an output another setting needs",
+            Basis::Acquisition => "what the scan's acquisition needs",
         }
     }
 }
@@ -320,7 +325,7 @@ impl Recommendation {
     /// ([`PipelineConfig::required_changes`]). QSM.rs's `required` rules are not: a run refuses
     /// them ([`crate::requirements`]).
     pub fn applied_by_run(&self) -> bool {
-        self.basis == Basis::Wiring
+        matches!(self.basis, Basis::Wiring | Basis::Acquisition)
     }
 
     /// Offered as a change, preselected: a departure from a reasoned rule.
@@ -444,6 +449,13 @@ pub struct Facts {
     /// Whether the scan has a measured R2′ for χ-separation (a MESE acquisition, or a supplied
     /// map): QSMxT's own `qsmxt.chi-sep-predict-r2prime` fires only when it is known to have none.
     pub measured_r2prime: Option<bool>,
+    /// The readout polarity of the echoes, when the sidecar says it: a bipolar readout makes bipolar
+    /// correction a required change (`qsmxt.bipolar-readout`, [`crate::normalise`]).
+    pub readout_polarity: Option<crate::scan::ReadoutPolarity>,
+    /// Whether the echoes' phase shows a bipolar readout's odd/even pattern, when a front end that
+    /// holds the data measured it (`qsm_core::utils::bipolar_signature`): with the polarity not
+    /// known, bipolar correction is then suggested (`qsmxt.bipolar-signature`).
+    pub bipolar_signature: Option<bool>,
 }
 
 impl Facts {
@@ -456,6 +468,8 @@ impl Facts {
             dims: Some(f.dims),
             manufacturer: f.manufacturer.clone(),
             measured_r2prime: Some(f.mese_echo_times.is_some() || f.custom_r2prime),
+            readout_polarity: f.readout_polarity,
+            bipolar_signature: None,
         }
     }
 
@@ -469,6 +483,8 @@ impl Facts {
             dims: Some(m.dims),
             manufacturer: None,
             measured_r2prime: None,
+            readout_polarity: None,
+            bipolar_signature: None,
         }
     }
 
@@ -486,6 +502,8 @@ impl Facts {
             dims: v.dims.map(|[x, y, z]| (x, y, z)),
             manufacturer: v.manufacturer.clone(),
             measured_r2prime: v.measured_r2prime,
+            readout_polarity: v.readout_polarity,
+            bipolar_signature: None,
         }
     }
 

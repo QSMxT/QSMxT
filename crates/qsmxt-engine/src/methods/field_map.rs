@@ -60,7 +60,7 @@ pub(super) fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mu
              phase was divided by its echo time to give that echo's field map, and background field \
              removal, dipole inversion and referencing were applied to each echo's field map on its own.".to_string());
     }
-    // MEDI's complex fit fits its own phase offset, and takes no bipolar correction.
+    // MEDI's complex fit fits its own phase offset; with bipolar correction it is MEDI's bipolar fit.
     if fm.b0_estimation == B0Estimation::ComplexFit && !per_echo {
         describe_complex_fit(config, doc);
         return;
@@ -277,7 +277,12 @@ pub(super) fn describe_complex_fit(config: &PipelineConfig, doc: &mut Draft) {
             "MEDI's magnitude-guided region growing (unwrapPhase, MEDI toolbox)".to_string()
         }
     };
+    let (fit_name, bipolar) = if fm.bipolar_correction {
+        ("Fit_ppm_complex_bipolar", ", with a separate phase for the even echoes to account for the bipolar readout")
+    } else {
+        ("Fit_ppm_complex", "")
+    };
     doc.say(&[Stage::FieldMap], format!(
-        "The B0 field map was estimated by a magnitude-weighted nonlinear fit of the complex echo signal (Fit_ppm_complex, MEDI toolbox; Liu et al., 2013{}); the fitted phase per echo spacing was unwrapped using {unwrapping} and divided by the echo spacing.",
+        "The B0 field map was estimated by a magnitude-weighted nonlinear fit of the complex echo signal{bipolar} ({fit_name}, MEDI toolbox; Liu et al., 2013{}); the fitted phase per echo spacing was unwrapped using {unwrapping} and divided by the echo spacing.",
         fit.semi()));
 }

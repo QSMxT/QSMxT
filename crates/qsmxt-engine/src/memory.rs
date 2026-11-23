@@ -714,7 +714,7 @@ pub fn estimate_peak_memory_bytes(
         imaging_frequency: None,
         b0_dir: None,
         mese_echo_times: None,
-        custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false, manufacturer: None,
+        custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false, manufacturer: None, readout_polarity: None,
     };
     crate::plan::plan(config, &facts).peak_memory_bytes
 }
@@ -750,7 +750,7 @@ mod tests {
             imaging_frequency: None,
             b0_dir: None,
             mese_echo_times: None,
-            custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false, manufacturer: None,
+            custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false, manufacturer: None, readout_polarity: None,
         }
     }
 

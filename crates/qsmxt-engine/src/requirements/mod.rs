@@ -532,15 +532,12 @@ pub fn bg_removal_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<Stri
 /// Why the configured B0 estimation cannot run on this run's data, if it cannot: MEDI's complex
 /// fit (QSM.rs `B0EstimationMethod::ComplexFit`) fits every echo's complex signal, so it needs the
 /// magnitude of every echo, increasing and evenly spaced echo times (it models the phase per echo
-/// spacing), and no bipolar correction (QSM.rs refuses it: MEDI's bipolar fit is not ported).
+/// spacing). With bipolar correction it is MEDI's bipolar fit (`Fit_ppm_complex_bipolar`), which
+/// needs the same.
 pub fn field_mapping_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
     let fm = &config.field_mapping;
     if fm.b0_estimation != B0Estimation::ComplexFit {
         return None;
-    }
-    if fm.bipolar_correction {
-        return Some("cannot be used with bipolar correction (MEDI's complex fit for bipolar readouts \
-                     is not available): turn bipolar correction off, or choose another B0 estimation".into());
     }
     if !f.has_magnitude {
         return Some("needs the magnitude of every echo (it fits the complex echoes), and this run has \
@@ -669,6 +666,7 @@ mod tests {
             custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false,
             custom_r2prime: false,
             manufacturer: None,
+            readout_polarity: None,
         }
     }
 
@@ -1261,8 +1259,9 @@ mod tests {
         }
     }
 
-    /// MEDI's complex fit needs every echo's magnitude, evenly spaced echoes and no bipolar
-    /// correction; a single echo is its phase over its echo time, as in QSM.rs.
+    /// MEDI's complex fit needs every echo's magnitude and evenly spaced echoes, with bipolar
+    /// correction (MEDI's bipolar fit) or without; a single echo is its phase over its echo time,
+    /// as in QSM.rs.
     #[test]
     fn complex_fit_says_what_it_needs() {
         let mut c = PipelineConfig::default();
@@ -1277,8 +1276,7 @@ mod tests {
         assert!(check(&run(&[0.010, 0.005], true), &c).errors.len() == 1, "decreasing echo times");
         assert!(check(&run(&ROUNDED, true), &c).errors.is_empty());
         c.field_mapping.bipolar_correction = true;
-        let out = check(&run(&EVEN, true), &c);
-        assert!(out.errors.len() == 1 && out.errors[0].contains("bipolar correction"), "{out:?}");
+        assert!(check(&run(&EVEN, true), &c).errors.is_empty());
         // Without the complex fit none of this applies.
         c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
         assert!(check(&run(&[0.005, 0.010, 0.020], false), &c).errors.is_empty());

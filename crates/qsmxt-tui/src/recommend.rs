@@ -199,8 +199,16 @@ impl App {
             super::app::InputMode::Bids => self.pipeline_view.read_has_mese(),
             _ => None,
         };
+        // The readout polarity, as the manufacturer: the first phase image's (run's) sidecar.
+        let readout_polarity = match self.input_mode {
+            super::app::InputMode::NIfTI => self.nifti_state.phase_files.first().and_then(|p| {
+                super::pipeline_view::sidecar_readout_polarity(&qsmxt_io::dicom::convert::nii_to_json_path(p))
+            }),
+            super::app::InputMode::Bids => self.pipeline_view.read_readout_polarity(),
+            _ => None,
+        };
         Facts { echo_count: self.filter_state.num_echoes.trim().parse().ok(), field_strength, manufacturer,
-                measured_r2prime, ..Default::default() }
+                measured_r2prime, readout_polarity, ..Default::default() }
     }
 
     /// Every rule that applies to the form's config, departed from or not.

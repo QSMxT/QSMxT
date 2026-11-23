@@ -42,8 +42,10 @@ fn field_mapping_stage(cfg: &PipelineConfig) -> PFieldMapping {
         },
         phase_offset_removal: cfg.field_mapping.phase_offset_removal,
         phase_offset_sigma_mm: cfg.field_mapping.phase_offset_sigma_mm,
-        // Bipolar correction is part of the phase offset removal, before any unwrapper.
-        bipolar_correction: cfg.field_mapping.bipolar_correction && cfg.field_mapping.phase_offset_removal,
+        // Bipolar correction is part of the phase offset removal, before any unwrapper; with the
+        // complex fit (which removes no offsets) it is MEDI's bipolar echo fit.
+        bipolar_correction: cfg.field_mapping.bipolar_correction
+            && (cfg.field_mapping.phase_offset_removal || cfg.field_mapping.b0_estimation == B0Estimation::ComplexFit),
         b0_estimation: match cfg.field_mapping.b0_estimation {
             B0Estimation::WeightedAvg => PB0Method::WeightedAvg {
                 weighting: map_b0_weight_type(&cfg.field_mapping),

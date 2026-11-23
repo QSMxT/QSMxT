@@ -113,7 +113,8 @@ pub fn map_field(
     let fm = &config.field_mapping;
     let unwrap_name = format!("{}", fm.unwrapping_algorithm);
     if fm.b0_estimation == crate::enums::B0Estimation::ComplexFit {
-        log::info!("Field mapping: complex fit of {} echoes (Fit_ppm_complex), then {} unwrapping of the fitted phase",
+        let fit = if fm.bipolar_correction && meta.n_echoes >= 3 { "Fit_ppm_complex_bipolar" } else { "Fit_ppm_complex" };
+        log::info!("Field mapping: complex fit of {} echoes ({fit}), then {} unwrapping of the fitted phase",
             meta.n_echoes, unwrap_name);
     } else if removes_phase_offsets(config, meta) {
         log::info!("Field mapping: offset removal + {} unwrapping ({} echoes)", unwrap_name, meta.n_echoes);
@@ -140,6 +141,9 @@ pub fn map_field(
             fm.laplacian_solver, fm.b0_estimation, fm.b0_weight_type);
     }
 
+    if let Some(warning) = bipolar_signature_warning(phases, magnitudes, mask, meta, config) {
+        log::warn!("{warning}");
+    }
     let (fm_config, _, _, _) = crate::bridge::to_pipeline_stages(config);
     let mags = if magnitudes.is_empty() { None } else { Some(magnitudes) };
     let field = crate::fieldmap::run_field_mapping(phases, mags, mask, &scan_metadata(meta), &fm_config)
@@ -159,6 +163,28 @@ pub fn map_field(
         b0_field_ppm: field.b0_field_ppm, total_field_hz, robust_fit_report, reliability: field.reliability,
         qsmart_fit_threshold: field.qsmart_fit_threshold, field_mask: field.valid_mask, excluded,
     })
+}
+
+/// What a run says when bipolar correction is off and the echoes show a bipolar readout's odd/even
+/// phase pattern (QSM.rs's `bipolar_signature`, needing three evenly spaced echoes and their
+/// magnitudes): QSMxT's `qsmxt.bipolar-signature` suggestion, made once the data is read, which a
+/// run cannot do at plan time. `None` when the correction is on, or the echoes show no signature.
+pub fn bipolar_signature_warning(
+    phases: &[&[f64]], magnitudes: &[&[f64]], mask: &[u8], meta: &RunMetadata, config: &PipelineConfig,
+) -> Option<String> {
+    if config.field_mapping.bipolar_correction || config.qsm.per_echo || phases.len() < 3 || magnitudes.len() < 3 {
+        return None;
+    }
+    let (nx, ny, nz) = meta.dims;
+    let (vx, vy, vz) = meta.voxel_size;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
+    let s = qsm_core::fieldmap::bipolar_signature(phases, magnitudes, &meta.echo_times, mask, &grid)?;
+    s.looks_bipolar().then(|| format!(
+        "The echoes' phase alternates between odd and even echoes ({:.2} rad/cm), as a bipolar \
+         (alternating-polarity) readout makes it, and bipolar correction is off. If this scan's readout is \
+         bipolar, rerun with --bipolar-correction (or add \"ReadoutPolarity\": \"bipolar\" to its sidecars): \
+         without it the field map takes the readout's phase errors for field",
+        s.max_gradient()))
 }
 
 /// One echo's field in ppm for a per-echo QSM (`qsm.per_echo`), from its wrapped phase (radians)
@@ -188,6 +214,35 @@ mod tests {
         m.n_echoes = n_echoes;
         m.echo_times = (1..=n_echoes).map(|e| 0.005 * e as f64).collect();
         m
+    }
+
+    /// A run with bipolar correction off warns when the echoes show a bipolar readout, and not
+    /// when they do not or the correction is on.
+    #[test]
+    fn a_bipolar_signature_is_warned_of_when_correction_is_off() {
+        let mut m = meta(3);
+        m.dims = (12, 12, 12);
+        let n = 12 * 12 * 12;
+        let echoes = |ramp: f64| -> Vec<Vec<f64>> {
+            (0..3).map(|e| (0..n).map(|i| {
+                let x = (i % 12) as f64;
+                let alt = if e % 2 == 0 { 0.5 } else { -0.5 };
+                (0.3 + 40.0 * m.echo_times[e] + alt * ramp * x + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+                    - std::f64::consts::PI
+            }).collect()).collect()
+        };
+        let mag = vec![1.0; n];
+        let mags = [mag.as_slice(); 3];
+        let mask = vec![1u8; n];
+        let warn = |p: &[Vec<f64>], c: &PipelineConfig| {
+            bipolar_signature_warning(&p.iter().map(Vec::as_slice).collect::<Vec<_>>(), &mags, &mask, &m, c)
+        };
+        let mut config = PipelineConfig::default();
+        let bipolar = echoes(0.1); // 1 rad/cm odd–even
+        assert!(warn(&bipolar, &config).is_some_and(|w| w.contains("--bipolar-correction")));
+        assert!(warn(&echoes(0.0), &config).is_none());
+        config.field_mapping.bipolar_correction = true;
+        assert!(warn(&bipolar, &config).is_none());
     }
 
     #[test]

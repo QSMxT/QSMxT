@@ -303,8 +303,9 @@ echo spacing. A single echo gives its phase over its echo time.
 
 The fit has its own phase offset, so phase offset removal is not run, whatever
 `--phase-offset-removal` says. It needs the magnitude of every echo and increasing,
-evenly spaced echo times, and bipolar correction is refused (MEDI's fit for bipolar
-readouts is not available); a run that cannot meet these is refused before processing.
+evenly spaced echo times; a run that cannot meet these is refused before processing.
+With `--bipolar-correction` it is MEDI's fit for bipolar readouts (`Fit_ppm_complex_bipolar`),
+which fits a separate phase for the even echoes in every voxel.
 In the TUI it is the "complex-fit" B0 estimation option, with its two parameters below it.
 
 ## Background field removal

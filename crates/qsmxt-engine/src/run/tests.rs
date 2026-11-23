@@ -57,7 +57,7 @@ pub(crate) fn phantom_on(affine: [f64; 16]) -> (ScanFacts, MemoryStore) {
         // 3 T exactly: an ordinary scan converts with its centre frequency and records nothing.
         imaging_frequency: Some(3.0 * qsm_core::constants::GAMMA_BAR_MHZ_PER_T), b0_dir: None,
         mese_echo_times: None, custom_mask: false, custom_dseg: false, custom_qsm: false,
-        custom_r2: false, custom_r2prime: false, manufacturer: None,
+        custom_r2: false, custom_r2prime: false, manufacturer: None, readout_polarity: None,
     };
     (facts, store)
 }
