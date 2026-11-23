@@ -1,12 +1,12 @@
 ---
-title: Run on a cluster (SLURM)
-description: "Run QSMxT over a cohort on an HPC cluster with SLURM."
+title: SLURM jobs
+description: "What qsmxt slurm writes, how the jobs divide the work, memory, and retries."
 ---
 
-## HPC & SLURM
+The steps are in [Run on a cluster (SLURM)](/QSMxT/how-to/slurm/). This page is what
+`qsmxt slurm` does.
 
-For large cohorts, QSMxT can fan work out across an HPC cluster instead of running
-everything on one machine.
+## HPC & SLURM
 
 ```sh
 qsmxt slurm study/bids --account myaccount
@@ -93,19 +93,3 @@ that match `--include`, `--exclude` and `--num-echoes`).
 Because intermediate results are cached to disk, a job that is requeued or resumed
 picks up where it left off rather than recomputing completed stages — handy when a
 cluster preempts or time-limits a job.
-
-### A typical cluster workflow
-
-1. Convert and validate on a login node or small interactive job:
-   ```sh
-   qsmxt dicom-convert /data/dicoms study/bids
-   qsmxt validate study/bids
-   ```
-2. Dial in settings (locally or via the [TUI](/QSMxT/background/tui/)) and save them:
-   ```sh
-   qsmxt init > pipeline.toml
-   ```
-3. Generate and submit the jobs (one per run, then the aggregation job):
-   ```sh
-   qsmxt slurm study/bids --config pipeline.toml --account myaccount --submit
-   ```

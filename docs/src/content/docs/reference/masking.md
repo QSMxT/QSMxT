@@ -1,5 +1,5 @@
 ---
-title: Build a custom mask
+title: Mask recipes
 description: "Masking presets, custom mask sections, combining and refining, two-pass masking."
 ---
 

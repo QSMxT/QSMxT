@@ -15,9 +15,9 @@ qsmxt tui
 
 - **Convert DICOMs to BIDS** — point at a DICOM directory, review the automatic
   series classification, relabel anything that needs it, and convert. (See
-  [DICOM → BIDS](/QSMxT/how-to/convert-dicom/#converting-dicoms-to-bids) for what the classifier handles.)
+  [DICOM conversion](/QSMxT/reference/dicom-conversion/#what-it-handles) for what the classifier handles.)
   Tick *Keep DICOM UIDs* above *Convert to BIDS* to keep the study's UIDs for a
-  later DICOM export ([not for sharing](/QSMxT/how-to/convert-dicom/#keeping-the-studys-dicom-uids)).
+  later DICOM export ([not for sharing](/QSMxT/reference/dicom-conversion/#keeping-the-studys-dicom-uids)).
 - **Point at a dataset** and let QSMxT discover the phase/magnitude runs.
 - **Download an example dataset** — no data of your own to hand? Set
   **Input mode → Example dataset**, tick one or more real in-vivo acquisitions,
@@ -39,7 +39,7 @@ qsmxt tui
 - **Export results as DICOM** — tick *Export DICOM* in the Reconstruction tab's
   DICOM section, and the maps to export, to write them as DICOM series alongside
   the NIfTIs, ready for a PACS or a clinical viewer. (See
-  [Exporting results as DICOM](/QSMxT/how-to/export-dicom/#exporting-results-as-dicom).)
+  [Exporting results as DICOM](/QSMxT/how-to/export-dicom/).)
 - **Run the pipeline** and watch progress without leaving the terminal.
 - **Submit to a cluster** — generate and launch SLURM jobs for large cohorts
   directly from the TUI; scaling out doesn't require the command line.
@@ -187,12 +187,12 @@ display, QSMxT does not try to open it and shows where it was written instead, s
 it to your own computer. A run writes the same drawing next to its results (`pipeline.svg`).
 
 The TUI builds the same configuration the CLI consumes, so anything you set up
-interactively can be reproduced [noninteractively](/QSMxT/how-to/run-bids/)
+interactively can be reproduced [noninteractively](/QSMxT/how-to/run-qsm/)
 with `qsmxt run --config` — or by copying the generated command.
 
 :::note
 The TUI is ideal for exploring a new dataset and dialling in parameters. Once
 you're happy, capture the configuration to a TOML file and reuse it
-[noninteractively](/QSMxT/how-to/run-bids/) for scripted batch
+[noninteractively](/QSMxT/how-to/run-qsm/) for scripted batch
 processing.
 :::

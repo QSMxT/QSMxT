@@ -1,31 +1,16 @@
 ---
-title: Convert DICOM to BIDS
-description: "Turn a folder of DICOMs into a BIDS dataset QSMxT can run on."
+title: DICOM conversion
+description: "What qsmxt dicom-convert recognises, and the BIDS names it writes."
 ---
 
-## Converting DICOMs to BIDS
+`qsmxt dicom-convert` turns a folder of DICOMs into a BIDS dataset; the TUI's *DICOM → BIDS*
+input mode runs the same conversion and lets you relabel a series first. The steps are in
+[Convert DICOM to BIDS](/QSMxT/how-to/convert-dicom/); this page is what the conversion
+recognises and the names it writes.
 
-QSMxT needs [BIDS](https://bids.neuroimaging.io/)-formatted input. The
-`dicom-convert` command builds it for you from a directory of DICOMs, applying an
-automatic best-guess classification to every series with no prompts — ideal for
-scripting and batch jobs.
+## Preview first with `--dry-run`
 
-```sh
-qsmxt dicom-convert <DICOM_DIR> <OUTPUT_DIR>
-```
-
-- `<DICOM_DIR>` — input directory, searched recursively
-- `<OUTPUT_DIR>` — output BIDS directory
-
-:::tip[Want to review as you go?]
-For a new dataset, converting [interactively](/QSMxT/background/tui/)
-in the TUI lets you **inspect the automatic classification and relabel anything it
-got wrong** before writing. The command above is the same conversion, unattended.
-:::
-
-### Preview first with `--dry-run`
-
-Before writing anything, inspect how QSMxT classifies your data:
+`--dry-run` lists how each series will be classified and named, and writes nothing:
 
 ```sh
 qsmxt dicom-convert /data/dicoms study/bids --dry-run
@@ -50,7 +35,7 @@ files, magnitude and phase with different numbers of images), a series whose
 files name different patients, and two original series that look like the same
 images.
 
-### Keeping the study's DICOM UIDs
+## Keeping the study's DICOM UIDs
 
 By default the conversion is fully de-identified (dcm2niix's `-ba y`): the
 sidecars carry the acquisition parameters but no patient fields, dates or DICOM
@@ -64,7 +49,7 @@ does not define:
 qsmxt dicom-convert /data/dicoms study/bids --keep-dicom-uids
 ```
 
-A later [DICOM export](/QSMxT/how-to/export-dicom/#exporting-results-as-dicom) then files its series into
+A later [DICOM export](/QSMxT/how-to/export-dicom/) then files its series into
 the original study in a PACS, without `--source-dicom`.
 
 :::caution[Not for sharing]
@@ -73,7 +58,7 @@ dataset back to it, and through it to the patient. Keep a dataset converted with
 `--keep-dicom-uids` inside your site; convert again without it to share.
 :::
 
-### What it handles
+## What it handles
 
 - **Gradient-echo magnitude, phase, real and imaginary images** — from the DICOM
   image type, GE's private image-type tag, or the Enhanced DICOM frame type; split
@@ -115,10 +100,7 @@ naming both. A series dcm2niix cannot convert leaves nothing behind.
 
 Output is a BIDS tree of `sub-*/[ses-*/]anat/` NIfTIs with JSON sidecars
 (`EchoTime` in seconds), a `dataset_description.json`, a README and a
-`.bidsignore`, ready for the pipeline. Already have NIfTIs? You can assemble a BIDS
-dataset by hand — see [Input data](/QSMxT/reference/inputs/) for the expected
-layout, and run [`qsmxt validate`](/QSMxT/reference/inputs/#checking-a-dataset)
-to check it's pipeline-ready.
+`.bidsignore`, ready for the pipeline. Already have NIfTIs? See [Non-BIDS or partial data](/QSMxT/data/non-bids/).
 
 ## What `qsmxt dicom-convert` writes
 

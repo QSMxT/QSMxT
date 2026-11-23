@@ -1,12 +1,13 @@
 ---
-title: Export results as DICOM
-description: "Write QSMxT results back as DICOM series for PACS and viewers."
+title: DICOM export
+description: "What --export-dicom writes, how the series are identified, and how values are scaled."
 ---
+
+The steps are in [Export results as DICOM](/QSMxT/how-to/export-dicom/). This page is what
+the export writes.
 
 ## Exporting results as DICOM
 
-Some workflows want the maps back in DICOM — to push them into a PACS, open them
-in a clinical viewer, or hand them to a radiologist beside the source study.
 `--export-dicom` writes a DICOM series for every final map alongside the NIfTIs:
 
 ```sh
@@ -63,11 +64,13 @@ qsmxt run study/bids --do-chisep --export-dicom \
 In the TUI, the Reconstruction tab's DICOM section lists the maps the settings
 make, each ticked; untick the ones to leave out.
 
-The [multi-orientation](/QSMxT/how-to/multi-orientation/#multi-orientation-cosmos-and-sti)
+The [multi-orientation](/QSMxT/reference/multi-orientation/#multi-orientation-cosmos-and-sti)
 reconstructions stay NIfTI-only.
 
-**The segmentation as a DICOM SEG.** The
-[segmentation](/QSMxT/how-to/reference-and-stats/#segmentation-and-per-structure-statistics)
+## The segmentation as a DICOM SEG
+
+The
+[segmentation](/QSMxT/reference/referencing-and-stats/#segmentation-and-per-structure-statistics)
 is written as one DICOM Segmentation object (`sub-01_dseg_dicoms/sub-01_dseg.dcm`):
 each structure is a binary segment, drawn on a series exported with it on the
 same grid, so a viewer overlays it there (OHIF, Weasis 4.3 or later, and 3D Slicer
@@ -82,7 +85,9 @@ can name them in any language. A supplied segmentation (`--use-custom-dseg`) nee
 use FreeSurfer's numbering, so its labels are coded only as intracranial structures
 and named from its `dseg.tsv`.
 
-**Filing them beside the source study.** By default the derived series carry a synthesised identity: patient fields are
+## Filing them beside the source study
+
+By default the derived series carry a synthesised identity: patient fields are
 left empty and a stable `StudyInstanceUID` is derived from the subject and
 session. That's fine for a local viewer, but a PACS will file the maps as a study
 of their own. Point `--source-dicom` at the original DICOMs and QSMxT inherits the
@@ -95,7 +100,7 @@ qsmxt run study/bids --export-dicom --source-dicom /data/dicoms/sub-01
 ```
 
 Without the original DICOMs to hand, a dataset converted with
-[`qsmxt dicom-convert --keep-dicom-uids`](/QSMxT/how-to/convert-dicom/#keeping-the-studys-dicom-uids) does
+[`qsmxt dicom-convert --keep-dicom-uids`](/QSMxT/reference/dicom-conversion/#keeping-the-studys-dicom-uids) does
 nearly as well: its sidecars keep the study's `StudyInstanceUID` and
 `FrameOfReferenceUID`, so the exported series file into the original study and
 line up with its images, though with no patient fields. `--source-dicom` still
@@ -114,7 +119,7 @@ ignores them shows raw 0–65535 counts. The scaling is fitted per volume, so it
 not comparable across subjects — **for quantitative analysis use the NIfTIs**.
 :::
 
-A few more things worth knowing:
+## Geometry, encoding and failures
 
 - Slice geometry (`ImageOrientationPatient`, `ImagePositionPatient`,
   `SliceLocation`, spacing) is read from the output NIfTI's affine, so the series
@@ -130,9 +135,5 @@ A few more things worth knowing:
 - Export is best-effort: a failure is logged and the run still succeeds.
 - `--export-dicom` is a pipeline setting, so it can live in a
   [config file](/QSMxT/reference/configuration/) as `export_dicom = true` under
-  `[pipeline]`, and it carries through to [`qsmxt slurm`](/QSMxT/how-to/slurm/#hpc--slurm).
+  `[pipeline]`, and it carries through to [`qsmxt slurm`](/QSMxT/how-to/slurm/).
   `--source-dicom` and `--dicom-outputs` are flags on `qsmxt run` itself.
-
-This is the mirror image of [`dicom-convert`](/QSMxT/how-to/convert-dicom/#converting-dicoms-to-bids) below,
-which brings DICOMs *in*. Both directions are built into the binary — no external
-converter to install.

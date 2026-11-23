@@ -1,7 +1,11 @@
 ---
-title: Prepare your data
-description: "Vendor and acquisition notes: real/imaginary images, uncombined coils, GE data, 2D slice gaps, your own inputs."
+title: How QSMxT reads your data
+description: "What the pipeline does to real/imaginary, per-coil, GE and 2D data before it starts."
 ---
+
+Most data needs nothing from you: QSMxT reads what the scanner wrote and prepares it before
+the pipeline starts. This page says what it does, for the cases the [Your data](/QSMxT/data/)
+pages mention.
 
 ## Real and imaginary images
 
@@ -80,31 +84,10 @@ for QSM stops before any processing with a message saying so. `--ignore-slice-ga
 only make SWI, T2\*/R2\* or other non-QSM outputs continue with a warning. Without
 `SliceThickness` nothing can be checked, and the run proceeds; dcm2niix writes it.
 
-## Bringing your own inputs
+## Field strength and centre frequency
 
-QSMxT will use maps produced by other tools from `<bids>/derivatives/<TOOL>/`,
-following the same `sub-*/[ses-*/]anat/` layout:
-
-| Option | Supplies | Filename |
-| --- | --- | --- |
-| `--use-custom-masks [TOOL]` | brain mask | `*_mask.nii*` |
-| `--use-custom-qsm <TOOL>` | susceptibility map | `*_Chimap.nii*` |
-| `--use-custom-r2 <TOOL>` | R2 map | `*_R2map.nii*` |
-| `--use-custom-r2prime <TOOL>` | R2' map | `*_R2primemap.nii*` |
-
-A supplied map must be on the scan's grid. When `--axial-resampling` resamples the run to a
-cardinal-aligned grid, a map on the acquired grid is resampled with the echoes. A susceptibility,
-R2 or R2' map on any other grid is refused when the run starts, before anything is computed, with
-a message naming the file and both grids. So is a segmentation (`--use-custom-dseg`) that only the
-statistics or a region `--qsm-reference` read. A brain mask, or a segmentation with
-`--do-segmentation`, that is not on the scan's grid is replaced by one the run makes, with a
-warning.
-
-Supplying R2' directly removes the MESE requirement for source separation, since
-R2 is only needed to compute it. `qsmxt validate` lists the derivative tools it
-can see for each run.
-
-A bring-your-own R2 or R2' map that only covers part of the brain carries the
-same caveat as a MESE slab: leave the uncovered voxels at zero rather than
-filling them, since a zero R2 is read as an absent measurement and excluded,
-while a small non-zero one is taken at face value.
+Every run needs `EchoTime` and `MagneticFieldStrength` in its sidecars. Phase is converted to
+ppm with the scanner's centre frequency, `ImagingFrequency`, when a sidecar gives it (dcm2niix
+writes it), and with γ̄ times `MagneticFieldStrength` otherwise. The centre frequency is the
+field the scanner actually ran at (2.89 T on many Siemens "3 T" scanners), so it is the
+more accurate of the two. The methods text says which one each run used.

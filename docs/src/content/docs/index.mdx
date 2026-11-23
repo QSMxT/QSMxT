@@ -106,7 +106,8 @@ options, including building from source.
 <CardGrid>
 	<LinkCard title="Installation" description="One-line install for Linux, macOS, and Windows." href="/QSMxT/start/install/" />
 	<LinkCard title="Quick start" description="From raw data to QSM maps in minutes." href="/QSMxT/start/tutorial-tui/" />
-	<LinkCard title="Running interactively" description="Convert, configure, and run from the TUI — the recommended path." href="/QSMxT/background/tui/" />
+	<LinkCard title="Run QSM" description="From a BIDS dataset to susceptibility maps, in the TUI or on the command line." href="/QSMxT/how-to/run-qsm/" />
+	<LinkCard title="Your data" description="What QSMxT does for GE, single-echo, 2D, 7 T, rodent and other data." href="/QSMxT/data/" />
 	<LinkCard title="Coming from QSMxT 8.x" description="What changed in the Rust rewrite, and where to find 8.x." href="/QSMxT/start/coming-from-8x/" />
 </CardGrid>
 
@@ -122,4 +123,5 @@ Every run also writes a `methods.md` to the derivatives directory: a methods
 paragraph describing what ran, with the citations for the specific methods your
 data and settings exercised, and `pipeline.svg`, a picture of the pipeline. A
 run that ended up processed differently from the rest (a supplied mask it could
-not use, say) gets its own methods text in `changes/`.
+not use, say) gets its own methods text in `changes/`. See
+[Cite QSMxT and write the methods](/QSMxT/how-to/cite/).

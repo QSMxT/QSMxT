@@ -27,4 +27,4 @@ and described in [Algorithms](/QSMxT/reference/methods/).
 `--masking-input` overrides the image the mask is computed from and combines
 with `--mask-preset` — e.g. `--mask-preset bet --masking-input magnitude-first`
 runs BET on the first-echo magnitude. For fully custom masking, see `--mask`
-in [Algorithms](/QSMxT/how-to/build-mask/#masking).
+in [Mask recipes](/QSMxT/reference/masking/#masking).

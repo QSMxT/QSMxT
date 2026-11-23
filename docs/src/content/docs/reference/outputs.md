@@ -184,7 +184,7 @@ without running anything or writing any file.
 ### The reference summary
 
 Every susceptibility map is referenced (see
-[Referencing](/QSMxT/how-to/reference-and-stats/#referencing)), and each map's sidecar
+[Referencing](/QSMxT/reference/referencing-and-stats/#referencing)), and each map's sidecar
 records what with `QsmReference` (`mean`, `none`, or the region), `QsmReferenceOffsetPpm`
 (the value subtracted), `QsmReferenceVoxels` (how many voxels it was measured over)
 and, for a region, `QsmReferenceLabels` (its label ids). The same facts for every

@@ -5,7 +5,7 @@ description: Save and reproduce pipeline settings with a TOML configuration file
 
 Anything you can set on the `qsmxt run` command line can also live in a TOML
 configuration file. A config file makes runs reproducible and is the cleanest way
-to drive batch and [HPC](/QSMxT/how-to/slurm/#hpc--slurm) processing.
+to drive batch and [HPC](/QSMxT/how-to/slurm/) processing.
 
 ## What's in it
 
@@ -33,7 +33,7 @@ algorithm = "cosmos"     # or "sti"
 lambda = 0.0
 ```
 
-See [multi-orientation](/QSMxT/how-to/multi-orientation/#multi-orientation-cosmos-and-sti)
+See [multi-orientation](/QSMxT/reference/multi-orientation/#multi-orientation-cosmos-and-sti)
 for what the pattern matches and what will be refused.
 
 The combined magnitude is published unless `pipeline.do_magnitude = false`
@@ -76,7 +76,7 @@ With two-pass artefact reduction, the reliable mask's sections and how they comb
 `masking.two_pass_sections` and `masking.two_pass_combine` (`"or"` or `"and"`; left out, it is
 the main mask's `masking.combine`), and how the second pass is made and merged is
 `masking.two_pass_mode` (`"local"`, the default, or `"original"`, the published algorithm; see
-[two-pass modes](/QSMxT/how-to/build-mask/#two-pass-modes)):
+[two-pass modes](/QSMxT/reference/masking/#two-pass-modes)):
 
 ```toml
 [masking]

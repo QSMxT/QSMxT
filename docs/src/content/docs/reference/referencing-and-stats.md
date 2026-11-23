@@ -1,6 +1,6 @@
 ---
-title: Reference χ and per-structure statistics
-description: "Reference susceptibility to a region, segment, and get per-structure statistics."
+title: Referencing and per-structure statistics
+description: "What zero means in a susceptibility map, segmentation, and the per-structure statistics tables."
 ---
 
 ## Referencing

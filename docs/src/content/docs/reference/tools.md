@@ -27,7 +27,7 @@ Generate or refine binary masks.
 | `hd-bet` | Deep-learning brain extraction (HD-BET); whole volume by default; `--window`, `--low-memory` or `--patch XxYxZ` for sliding-window patches, `--tta`. Weights are downloaded on first use |
 | `rs2-net` | Deep-learning **rodent** brain extraction (RS2-Net); `--tta`, `--tile-step`. Weights are downloaded on first use |
 | `mindgrab` | Deep-learning brain extraction for any contrast (MindGrab); `--tta`. Needs the image's NIfTI affine. Weights are downloaded on first use |
-| `preset` | Run a [`--mask-preset`](/QSMxT/how-to/build-mask/#masking) recipe on an image: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab` |
+| `preset` | Run a [`--mask-preset`](/QSMxT/reference/masking/#masking) recipe on an image: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab` |
 | `robust` | Alias for `preset robust-threshold` |
 | `erode` / `dilate` | Morphological erosion / dilation |
 | `close` | Morphological closing |
@@ -46,7 +46,7 @@ op does is defined once, in the same code the pipeline runs, so a mask built
 here matches the one a `--mask` section would produce.
 
 `and` and `or` are the standalone form of the pipeline's
-[`--mask-combine`](/QSMxT/how-to/build-mask/#combining-sections), for trying
+[`--mask-combine`](/QSMxT/reference/masking/#combining-sections), for trying
 combinations on masks you already have without a pipeline run. Their `--op`
 refinements run on the *combined* mask, like `--mask-refine` does. The
 consensus recipe by hand, step by step:
@@ -228,7 +228,7 @@ qsmxt invert tgv --help
 
 `cosmos` and `sti` take several `--input` field maps plus one `--b0-direction` per
 orientation, and expect them already co-registered onto a common grid. See
-[multi-orientation](/QSMxT/how-to/multi-orientation/#multi-orientation-cosmos-and-sti).
+[multi-orientation](/QSMxT/reference/multi-orientation/#multi-orientation-cosmos-and-sti).
 
 ## Source separation — `qsmxt separate`
 
@@ -301,7 +301,7 @@ qsmxt resample --phase phase.nii --magnitude mag.nii \
 ```
 
 :::note
-These tools share the same implementations the [pipeline](/QSMxT/how-to/run-bids/)
+These tools share the same implementations the [pipeline](/QSMxT/how-to/run-qsm/)
 uses, so a step run standalone produces the same result as the corresponding
 stage of `qsmxt run`.
 :::

@@ -17,7 +17,7 @@ QSMxT scans the directory recursively, classifies each series automatically
 (gradient-echo magnitude and phase, echo count, individual coils,
 combined/derived reconstructions), and writes a [BIDS](https://bids.neuroimaging.io/)
 dataset. Add `--dry-run` to preview the classification without writing anything.
-See [DICOM → BIDS](/QSMxT/how-to/convert-dicom/#converting-dicoms-to-bids).
+See [Convert DICOM to BIDS](/QSMxT/how-to/convert-dicom/).
 
 (Already have a BIDS dataset? Skip to step 2.)
 
@@ -36,7 +36,7 @@ removal, and iLSQR dipole inversion. Pick algorithms inline or process a subset:
 qsmxt run study/bids --qsm-algorithm rts --include "sub-01*"
 ```
 
-See [Running noninteractively](/QSMxT/how-to/run-bids/).
+See [Run QSM](/QSMxT/how-to/run-qsm/) and [Look at your results](/QSMxT/how-to/results/).
 
 ## What you get
 
@@ -47,8 +47,7 @@ lists citations for the exact methods your data and settings used.
 
 ## Next steps
 
-- [Running interactively](/QSMxT/background/tui/) — the TUI workflow
-- [Running noninteractively](/QSMxT/how-to/run-bids/) — every stage and option
-- [Configuration](/QSMxT/reference/configuration/) — save settings to a TOML file
-- [Input data](/QSMxT/reference/inputs/) — what your dataset needs to contain
-- [Algorithms](/QSMxT/reference/methods/) — choose the right methods
+- [Look at your results](/QSMxT/how-to/results/): where the maps are, and what to check
+- [Cite QSMxT and write the methods](/QSMxT/how-to/cite/)
+- [Your data](/QSMxT/data/): what QSMxT does for GE, single-echo, 2D, 7 T, rodent and other data
+- [Settings](/QSMxT/reference/configuration/): every setting, and saving them to a TOML file

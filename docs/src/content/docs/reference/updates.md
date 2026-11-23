@@ -1,7 +1,9 @@
 ---
-title: Update QSMxT
-description: "Keep QSMxT up to date, try the main branch, and read announcements."
+title: Updates and announcements
+description: "How qsmxt update works, the main branch, the update check and announcements."
 ---
+
+The steps are in [Update QSMxT](/QSMxT/how-to/update/). This page is how updating works.
 
 ## Keeping up to date
 
