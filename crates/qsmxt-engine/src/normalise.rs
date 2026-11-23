@@ -122,8 +122,7 @@ impl Adjustment {
 /// The trigger of a change the scan's readout polarity makes ([`scan_adjustments`]): not a setting.
 pub const READOUT_FACT: &str = "scan.readout_polarity";
 
-const BIPOLAR_SOURCE: &str = "QSMxT; Eckstein 2021 (PhD thesis, TU Wien, Section 3.1.3); QSMxT/QSMxT#564 \
-    (EMTP travelling heads, bipolar GE MR750w: without correction 89 % of voxels > 3 Hz off, χ scaled ×3.6–5.7)";
+const BIPOLAR_SOURCE: &str = "QSMxT; Eckstein 2021 (PhD thesis, TU Wien, Section 3.1.3); QSMxT/QSMxT#564";
 
 /// Whether bipolar correction is in play in `c` on a scan with `n_echoes` (when known): QSM is
 /// reconstructed from a field map that combines the echoes (not per echo, not a total-field
@@ -148,9 +147,8 @@ fn bipolar_in_play(c: &PipelineConfig, n_echoes: Option<usize>) -> bool {
 /// ([`BIPOLAR_OFFSET_REMOVAL_RULE`]), unless the Laplacian field is kept outside the mask, which
 /// refuses it.
 ///
-/// Decided 2026-11-23 (orchestrator decision 222(2), QSMxT#564): without correction the field of
-/// a bipolar scan is wrong almost everywhere (on the EMTP travelling heads' bipolar GE MR750w, 89 %
-/// of voxels more than 3 Hz off, χ scaled ×3.6–5.7 on the local protocol). A front end offers it as
+/// Decided 2026-11-23 (QSMxT#564): without correction, a bipolar scan's field map is wrong almost
+/// everywhere and χ can be scaled several-fold. A front end offers it as
 /// a "Required change" ([`Basis::Acquisition`]); a run left without it applies it, says so in its
 /// log and records it, as [`PipelineConfig::normalised`]'s changes (decision 183).
 pub fn scan_adjustments(
