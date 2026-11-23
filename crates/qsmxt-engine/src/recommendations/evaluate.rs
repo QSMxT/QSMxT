@@ -170,7 +170,7 @@ fn trigger_name(core_path: &str, value_name: &str) -> String {
         // The echo combination by its method's name: "Complex fit" (MEDI's Fit_ppm_complex).
         "field_mapping.b0_estimation" => value_name.to_string(),
         "inversion.apply_heidi" => "HEIDI streaking reduction".to_string(),
-        _ => format!("{} {}", in_sentence(label_of(core_path)), value_name),
+        _ => format!("{} {}", in_sentence(&label_of(core_path)), value_name),
     }
 }
 
