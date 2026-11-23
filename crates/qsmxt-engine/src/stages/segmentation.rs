@@ -75,6 +75,7 @@ pub fn synthseg(
         topology_cleanup: config.topology_cleanup,
         sigma_smoothing: config.sigma_smoothing,
         inference: crate::config::synthseg_inference(config.patch),
+        ..Default::default() // PROBE: head_crop, posteriors (QSM.rs#281)
     };
     let weights = qsm_core::models::primary_weight(config.version.weights_id())
         .map_err(|e| EngineError::Config(format!("synthseg weights: {}", e)))?;

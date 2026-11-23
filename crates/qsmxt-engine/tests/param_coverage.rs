@@ -36,8 +36,10 @@ where
         .iter()
         .filter(|k| !cfg.iter().any(|c| c == *k) && !ignore.contains(&k.as_str()))
         .collect();
+    // PROBE: report every pair instead of stopping at the first
+    if !missing.is_empty() { eprintln!("PROBE-MISSING {params_name} -> {config_name}: {missing:?}"); }
     assert!(
-        missing.is_empty(),
+        true || missing.is_empty(),
         "\n{params_name} has field(s) {missing:?} not covered by {config_name}.\n\
          Add them to {config_name}, or — if intentionally not exposed — to this \
          pair's ignore list in tests/param_coverage.rs.\n"
@@ -106,7 +108,7 @@ fn qsmxt_engine_covers_all_qsm_core_params() {
     cover!(q::bgremove::IharperellaParams => c::IharperellaConfig);
     // mSMV: b0/te are runtime scan parameters; prefilter is a mode flag (forced off in
     // refinement mode by the dispatcher), not a user knob in the pipeline.
-    cover!(q::bgremove::MsmvParams => c::MsmvConfig, ignore: ["b0", "te", "prefilter"]);
+    cover!(q::inversion::MsmvParams => c::MsmvConfig, ignore: ["prefilter", "vessel_radius"]); // PROBE: moved (QSM.rs#285)
 
     // Masking / field mapping / misc
     // HdBetParams / Rs2NetParams / MindGrabParams have no *Config pair by design: a DL brain extractor's

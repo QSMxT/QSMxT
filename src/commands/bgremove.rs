@@ -50,6 +50,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 min_radius: args.min_radius.unwrap_or(d.min_radius),
                 deconvolve: args.deconvolve.unwrap_or(d.deconvolve),
                 grid: grid_cfg.core_grid(),
+                radius_step: qsm_core::bgremove::VsharpParams::default().radius_step, // PROBE (QSM.rs#293)
             };
             if let qsm_core::bgremove::VsharpGrid::Isotropic { spacing_mm } = params.working_grid(&grid) {
                 if !(spacing_mm.is_finite() && spacing_mm > 0.0) {
@@ -59,7 +60,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             info!("V-SHARP working grid: {:?}", params.working_grid(&grid));
             let (lf, em) = qsm_core::bgremove::vsharp(
                 &field_nifti.data, &mask, &grid, &params, |_, _| {},
-            );
+            ).map_err(|e| crate::error::QsmxtError::Config(e.to_string()))?; // PROBE: now Result (QSM.rs#279)
             (c, (lf, field_nifti), em)
         }
         BgremoveCommand::Pdf(args) => {
@@ -75,11 +76,12 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let d = qsm_core::bgremove::PdfParams::default();
             let params = qsm_core::bgremove::PdfParams {
                 tol: args.tol.unwrap_or(d.tol),
-                max_iter: None,
+                ..qsm_core::bgremove::PdfParams::default() // PROBE: max_iter -> n_cg/space/n_pad (QSM.rs#258)
             };
+            let n_std = vec![1.0f64; field_nifti.data.len()]; // PROBE: noise map now required (QSM.rs#258)
             let lf = qsm_core::bgremove::pdf(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
-            );
+                &field_nifti.data, &n_std, &mask, &grid, bdir, &params, |_, _| {},
+            ).map_err(|e| crate::error::QsmxtError::Config(e.to_string()))?;
             (c, (lf, field_nifti), mask)
         }
         BgremoveCommand::Lbv(args) => {
@@ -170,21 +172,9 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
             info!("Background removal (mSMV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
-            let d = qsm_core::bgremove::MsmvParams::default();
-            let params = qsm_core::bgremove::MsmvParams {
-                radius: args.radius.unwrap_or(d.radius),
-                maxk: args.maxk.unwrap_or(d.maxk),
-                b0: args.field_strength.unwrap_or(d.b0),
-                te: args.te.unwrap_or(d.te),
-                // Standalone (prefilter) by default; --refine skips the SMV prefilter to
-                // treat the input as an already-local field from a primary BFR.
-                prefilter: !args.refine,
-            };
-            // mSMV preserves the brain edge (no erosion): it returns the mask unchanged.
-            let (lf, em) = qsm_core::bgremove::msmv(
-                &field_nifti.data, &mask, &grid, &params, |_, _| {},
-            );
-            (c, (lf, field_nifti), em)
+            // PROBE: bgremove::msmv removed; mSMV is now MEDI-internal, inversion::msmv needs R2* (QSM.rs#285)
+            let _ = (&field_nifti, &mask, &grid, &c);
+            return Err(crate::error::QsmxtError::Config("PROBE: bgremove msmv removed in QSM.rs#285".into()));
         }
         BgremoveCommand::Bfrnet(args) => {
             let c = args.common;
@@ -215,6 +205,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 radius: args.radius.unwrap_or(d.radius),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
+                ..qsm_core::bgremove::HarperellaParams::default() // PROBE: pad (QSM.rs#270)
             };
             let (lf, em) = qsm_core::bgremove::harperella(
                 harperella_input(&phase_nifti.data, args.te, args.field_strength),
@@ -239,6 +230,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let params = qsm_core::bgremove::IharperellaParams {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
+                ..qsm_core::bgremove::IharperellaParams::default() // PROBE: pad (QSM.rs#270)
             };
             let (lf, em) = qsm_core::bgremove::iharperella(
                 harperella_input(&phase_nifti.data, args.te, args.field_strength),

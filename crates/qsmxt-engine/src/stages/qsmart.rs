@@ -78,7 +78,7 @@ pub fn qsmart(
     );
     let mut core = Core::new(observer);
     let chi = qsm_core::pipeline::run_qsmart(
-        field_ppm, mask, magnitude, &scan_metadata(meta), &inversion_config(config, meta),
+        field_ppm, mask, None /* PROBE: reliability R_0 (QSM.rs#247) */, magnitude, &scan_metadata(meta), &inversion_config(config, meta),
         qsm_core::pipeline::QsmReference::None, &mut core,
     ).map_err(|e| EngineError::Config(format!("qsmart: {}", e)))?;
     Ok(Qsmart { chi, intermediates: core.outputs })

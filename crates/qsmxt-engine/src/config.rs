@@ -6,6 +6,21 @@ use crate::masking::*;
 // Generates a serde struct with Default sourced from qsm-core.
 
 macro_rules! param_config {
+    // PROBE: arm with per-field default expressions, for fields whose qsm-core default is an
+    // Option or that qsm-core no longer has.
+    ($name:ident manual $core:path {  $($field:ident : $ty:ty = $e:expr),* $(,)? }) => {
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+        #[serde(default)]
+        pub struct $name { $(pub $field: $ty),* }
+
+        impl Default for $name {
+            fn default() -> Self {
+                #[allow(unused)]
+                let p = <$core>::default();
+                Self { $($field: { let f: &dyn Fn(&$core) -> $ty = &$e; f(&p) }),* }
+            }
+        }
+    };
     ($name:ident from $core:path { $($field:ident : $ty:ty),* $(,)? }) => {
         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         #[serde(default)]
@@ -26,30 +41,43 @@ macro_rules! param_config {
 param_config!(RtsConfig from qsm_core::inversion::RtsParams {
     delta: f64, mu: f64, rho: f64, tol: f64, max_iter: usize, lsmr_iter: usize
 });
-param_config!(TvConfig from qsm_core::inversion::TvParams {
-    lambda: f64, rho: f64, tol: f64, max_iter: usize
+// PROBE: rho is Option (None = 100*lambda) since QSM.rs#225
+param_config!(TvConfig manual qsm_core::inversion::TvParams {
+    lambda: f64 = |p| p.lambda, rho: f64 = |p| p.rho.unwrap_or(100.0 * p.lambda),
+    tol: f64 = |p| p.tol, max_iter: usize = |p| p.max_iter
 });
 param_config!(TkdConfig from qsm_core::inversion::TkdParams { threshold: f64 });
-param_config!(NltvConfig from qsm_core::inversion::NltvParams {
-    lambda: f64, mu: f64, tol: f64, max_iter: usize, newton_iter: usize
+// PROBE: newton_iter -> max_iter_newton (+ tol_newton, rho) (QSM.rs#230)
+param_config!(NltvConfig manual qsm_core::inversion::NltvParams {
+    lambda: f64 = |p| p.lambda, mu: f64 = |p| p.mu, tol: f64 = |p| p.tol, max_iter: usize = |p| p.max_iter,
+    newton_iter: usize = |p| p.max_iter_newton
 });
 param_config!(NdiConfig from qsm_core::inversion::NdiParams {
     tau: f64, alpha: f64, max_iter: usize, auto_stop: bool
 });
-param_config!(FansiConfig from qsm_core::inversion::FansiParams {
-    alpha1: f64, mu1: f64, mu2: f64, alpha0: f64, mu0: f64, max_iter: usize,
-    tol_update: f64, tol_delta: f64, phase_scale: f64
+// PROBE: mu1/alpha0/mu0 Option, phase_scale removed (QSM.rs#236/#237)
+param_config!(FansiConfig manual qsm_core::inversion::FansiParams {
+    alpha1: f64 = |p| p.alpha1, mu1: f64 = |p| p.mu1.unwrap_or(100.0 * p.alpha1), mu2: f64 = |p| p.mu2,
+    alpha0: f64 = |p| p.alpha0.unwrap_or(2.0 * p.alpha1), mu0: f64 = |p| p.mu0.unwrap_or(2.0 * 100.0 * p.alpha1),
+    max_iter: usize = |p| p.max_iter, tol_update: f64 = |p| p.tol_update, tol_delta: f64 = |p| p.tol_delta,
+    phase_scale: f64 = |_| 1.0
 });
-param_config!(L1qsmConfig from qsm_core::inversion::L1QsmParams {
-    alpha1: f64, mu1: f64, mu2: f64, mu3: f64, lambda: f64, max_iter: usize,
-    tol_update: f64, tol_delta: f64, phase_scale: f64
+// PROBE: mu1 Option, phase_scale removed (QSM.rs#236/#237)
+param_config!(L1qsmConfig manual qsm_core::inversion::L1QsmParams {
+    alpha1: f64 = |p| p.alpha1, mu1: f64 = |p| p.mu1.unwrap_or(100.0 * p.alpha1), mu2: f64 = |p| p.mu2,
+    mu3: f64 = |p| p.mu3, lambda: f64 = |p| p.lambda, max_iter: usize = |p| p.max_iter,
+    tol_update: f64 = |p| p.tol_update, tol_delta: f64 = |p| p.tol_delta, phase_scale: f64 = |_| 1.0
 });
-param_config!(WhqsmConfig from qsm_core::inversion::WhQsmParams {
-    alpha1: f64, mu1: f64, mu2: f64, beta: f64, muh: f64, max_iter: usize,
-    tol_update: f64, tol_delta: f64, phase_scale: f64
+// PROBE: phase_scale removed (QSM.rs#233/#234)
+param_config!(WhqsmConfig manual qsm_core::inversion::WhQsmParams {
+    alpha1: f64 = |p| p.alpha1, mu1: f64 = |p| p.mu1, mu2: f64 = |p| p.mu2, beta: f64 = |p| p.beta,
+    muh: f64 = |p| p.muh, max_iter: usize = |p| p.max_iter,
+    tol_update: f64 = |p| p.tol_update, tol_delta: f64 = |p| p.tol_delta, phase_scale: f64 = |_| 1.0
 });
-param_config!(HdqsmConfig from qsm_core::inversion::HdQsmParams {
-    alpha_l2: f64, mu1_l2: f64, mu2: f64, max_iter_l1: usize, max_iter_l2: usize, tol_update: f64
+// PROBE: mu1_l2 Option (QSM.rs#242); None = 100*alpha_l2 per docs
+param_config!(HdqsmConfig manual qsm_core::inversion::HdQsmParams {
+    alpha_l2: f64 = |p| p.alpha_l2, mu1_l2: f64 = |p| p.mu1_l2.unwrap_or(100.0 * p.alpha_l2), mu2: f64 = |p| p.mu2,
+    max_iter_l1: usize = |p| p.max_iter_l1, max_iter_l2: usize = |p| p.max_iter_l2, tol_update: f64 = |p| p.tol_update
 });
 param_config!(MediConfig from qsm_core::inversion::MediParams {
     lambda: f64, merit: bool, smv: bool, smv_radius: f64, data_weighting: i32,
@@ -468,8 +496,9 @@ param_config!(IharperellaConfig from qsm_core::bgremove::IharperellaParams {
 // mSMV boundary-shadow refinement. Only radius/maxk are user knobs here; b0/te are
 // runtime scan parameters (overridden from ScanMetadata by qsm-core), and prefilter is
 // forced off by the dispatcher in refinement mode.
-param_config!(MsmvConfig from qsm_core::bgremove::MsmvParams {
-    radius: f64, maxk: usize
+// PROBE: bgremove::MsmvParams gone; mSMV now lives in MEDI (inversion::MsmvParams, QSM.rs#284/#285)
+param_config!(MsmvConfig manual qsm_core::inversion::MsmvParams {
+    radius: f64 = |_| 5.0, maxk: usize = |p| p.maxk
 });
 param_config!(BetConfig from qsm_core::bet::BetParams {
     fractional_intensity: f64, smoothness: f64, gradient_threshold: f64,
@@ -526,9 +555,9 @@ impl Default for TgvConfig {
         let widen = |x: f32| x.to_string().parse::<f64>().unwrap_or(x as f64);
         let p = qsm_core::inversion::TgvParams::default();
         Self {
-            iterations: p.iterations, erosions: p.erosions,
+            iterations: p.iterations.unwrap_or(0) /* PROBE: Option since QSM.rs#231; 0 = auto */, erosions: p.erosions,
             alpha0: widen(p.alpha0), alpha1: widen(p.alpha1),
-            step_size: widen(p.step_size), tol: widen(p.tol),
+            step_size: widen(p.step_size), tol: 0.0 /* PROBE: TgvParams::tol removed (QSM.rs#231) */,
         }
     }
 }
@@ -663,8 +692,8 @@ pub fn synthseg_low_memory_patch() -> usize {
 /// The sliding window `patch` asks for, at qsm-core's low-memory step (half a patch).
 pub fn synthseg_inference(patch: Option<usize>) -> qsm_core::segment::SynthSegInference {
     use qsm_core::segment::SynthSegInference as I;
-    let I::SlidingWindow { tile_step, .. } = I::LOW_MEMORY else { unreachable!("a sliding window") };
-    patch.map_or(I::FullVolume, |patch| I::SlidingWindow { patch, tile_step })
+    let I::SlidingWindow { overlap, .. } = I::LOW_MEMORY else { unreachable!("a sliding window") }; // PROBE: tile_step -> overlap (QSM.rs#281)
+    patch.map_or(I::FullVolume, |patch| I::SlidingWindow { patch, overlap })
 }
 
 /// Whole-brain segmentation via SynthSeg, and the per-structure statistics drawn from it.

@@ -78,7 +78,7 @@ pub fn remove_background(
     let result = qsm_core::pipeline::run_bg_removal(
         &qsm_core::crop::crop_volume(field_ppm, &cb),
         &qsm_core::crop::crop_volume(mask, &cb),
-        &scan_metadata_in(meta, &cb), &bg_config, &mut |done, total| observer.progress(done, total),
+        &scan_metadata_in(meta, &cb), &bg_config, None /* PROBE: magnitude (PDF needs it), QSM.rs#258 */, &mut |done, total| observer.progress(done, total),
     ).map_err(|e| EngineError::Config(format!("bg removal: {}", e)))?;
     Ok(LocalField {
         local_field_ppm: qsm_core::crop::uncrop_volume(&result.local_field_ppm, &cb, 0.0),

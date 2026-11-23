@@ -18,7 +18,7 @@ use crate::scan::ScanFacts;
 /// or the EPG dictionary's `TEₙ = n·ESP` train no longer describe the acquisition: QSM.rs's own
 /// tolerances (0.1 ms, the rounding of echo times in DICOM headers and BIDS sidecars), so a run
 /// refused here is exactly one QSM.rs would refuse with an `InputError` mid-run.
-const ARLO_TOLERANCE_S: f64 = qsm_core::utils::ARLO_TE_SPACING_TOLERANCE_S;
+#[allow(dead_code)] const ARLO_TOLERANCE_S: f64 = 1e-4; // PROBE: ARLO_TE_SPACING_TOLERANCE_S removed (QSM.rs#264)
 const EPG_TOLERANCE_S: f64 = qsm_core::utils::EPG_TE_TOLERANCE_S;
 
 /// An output the pipeline can be asked for, or that another can turn on.
@@ -321,7 +321,7 @@ pub fn arlo_problem(f: &ScanFacts) -> Option<String> {
     if f.n_echoes < 3 {
         return Some(format!("needs at least 3 echoes, and this run has {}", f.n_echoes));
     }
-    if !qsm_core::utils::use_arlo(&f.echo_times, ARLO_TOLERANCE_S) {
+    if qsm_core::r2star::arlo_echo_times_problem(&f.echo_times).is_some() { // PROBE: use_arlo removed; ARLO now takes uneven spacing (QSM.rs#264)
         let (_, dev) = spacing_deviation(&f.echo_times, false);
         return Some(format!(
             "needs equally spaced echo times (ARLO integrates with one spacing), and this run's \

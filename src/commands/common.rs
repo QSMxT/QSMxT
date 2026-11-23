@@ -185,9 +185,12 @@ pub fn compute_r2star(
     }
     let (mask, _) = load_mask(mask_path)?;
     let grid = nifti_grid(&reference);
-    let (r2star_map, _s0_map) = qsm_core::utils::r2star_arlo(
-        &interleaved, &mask, echo_times, &grid,
-    )?;
+    // PROBE: r2star_arlo removed; arlo() is echo-major and unmasked (QSM.rs#264)
+    let _ = &grid;
+    let ne = echo_times.len();
+    let echo_major: Vec<f64> = (0..ne).flat_map(|e| { let il = &interleaved; (0..n_voxels).map(move |v| il[v * ne + e]) }).collect();
+    let mut r2star_map = qsm_core::r2star::arlo(&echo_major, echo_times, n_voxels)?;
+    for (r, &m) in r2star_map.iter_mut().zip(&mask) { if m == 0 { *r = 0.0; } }
     Ok((r2star_map, reference))
 }
 

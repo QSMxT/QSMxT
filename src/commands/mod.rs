@@ -786,7 +786,7 @@ mod integration_tests {
         let (vx, vy, vz) = field.voxel_size;
         let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
         let core = |p: &qsm_core::bgremove::VsharpParams| {
-            qsm_core::bgremove::vsharp(&field.data, &m, &grid, p, |_, _| {}).0
+            qsm_core::bgremove::vsharp(&field.data, &m, &grid, p, |_, _| {}).unwrap().0 /* PROBE (QSM.rs#279) */
         };
         let read = |p: &std::path::Path| qsm_core::io::read_nifti_file(p).unwrap().data;
         let off = read(&output);

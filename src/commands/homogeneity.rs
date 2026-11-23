@@ -13,7 +13,7 @@ pub fn execute(args: HomogeneityArgs) -> crate::Result<()> {
 
     let corrected = qsm_core::utils::makehomogeneous(
         &nifti.data, &grid, args.sigma, args.nbox,
-    );
+    )?; // PROBE: now Result (QSM.rs#279)
 
     save_nifti(&args.output, &corrected, &nifti)?;
     info!("Corrected magnitude saved to {}", args.output.display());

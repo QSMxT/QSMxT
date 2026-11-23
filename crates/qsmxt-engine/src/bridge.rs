@@ -140,7 +140,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             UnwrappingAlgorithm::Laplacian => PUnwrap::Laplacian,
         },
         phase_offset_removal: cfg.field_mapping.phase_offset_removal,
-        phase_offset_sigma: cfg.field_mapping.phase_offset_sigma,
+        phase_offset_sigma_mm: cfg.field_mapping.phase_offset_sigma, // PROBE: renamed + now mm, not voxels (QSM.rs#293)
         bipolar_correction: cfg.field_mapping.bipolar_correction,
         b0_estimation: match cfg.field_mapping.b0_estimation {
             B0Estimation::WeightedAvg => PB0Method::WeightedAvg {
@@ -183,8 +183,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             min_radius: cfg.bg_removal.vsharp.min_radius,
             deconvolve: cfg.bg_removal.vsharp.deconvolve,
             grid: cfg.bg_removal.vsharp.core_grid(),
+            radius_step: qsm_core::bgremove::VsharpParams::default().radius_step, // PROBE: new (QSM.rs#293)
         },
-        pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, max_iter: None },
+        pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, ..Default::default() }, // PROBE: max_iter -> n_cg/space/n_pad (QSM.rs#258)
         lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
         ismv: qsm_core::bgremove::IsmvParams {
             tol: cfg.bg_removal.ismv.tol,
@@ -205,21 +206,18 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             radius: cfg.bg_removal.harperella.radius,
             max_iter: cfg.bg_removal.harperella.max_iter,
             tol: cfg.bg_removal.harperella.tol,
+            ..Default::default() // PROBE: pad (QSM.rs#270)
         },
         iharperella: qsm_core::bgremove::IharperellaParams {
             max_iter: cfg.bg_removal.iharperella.max_iter,
             tol: cfg.bg_removal.iharperella.tol,
+            ..Default::default() // PROBE: pad (QSM.rs#270)
         },
         sdf: qsm_core::bgremove::SdfParams::default(),
         // mSMV boundary-shadow refinement (Roberts 2024), applied on top of the primary BFR
         // when enabled. b0/te are overridden from scan metadata and prefilter is forced off
         // (refinement mode) by the qsm-core dispatcher; only radius/maxk come from config.
-        msmv: qsm_core::bgremove::MsmvParams {
-            radius: cfg.bg_removal.msmv.radius,
-            maxk: cfg.bg_removal.msmv.maxk,
-            ..qsm_core::bgremove::MsmvParams::default()
-        },
-        msmv_refine: cfg.bg_removal.msmv_refine,
+        // PROBE: msmv / msmv_refine removed from BgRemovalConfig (QSM.rs#284/#285)
         tile: cfg.dl_tile(),
     };
 
@@ -236,18 +234,20 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             },
         },
         tv: qsm_core::inversion::TvParams {
-            lambda: cfg.inversion.tv.lambda, rho: cfg.inversion.tv.rho,
+            lambda: cfg.inversion.tv.lambda, rho: Some(cfg.inversion.tv.rho), // PROBE: Option (QSM.rs#225)
             tol: cfg.inversion.tv.tol, max_iter: cfg.inversion.tv.max_iter,
         },
         rts: qsm_core::inversion::RtsParams {
             delta: cfg.inversion.rts.delta, mu: cfg.inversion.rts.mu,
             rho: cfg.inversion.rts.rho, tol: cfg.inversion.rts.tol,
             max_iter: cfg.inversion.rts.max_iter, lsmr_iter: cfg.inversion.rts.lsmr_iter,
+            ..Default::default() // PROBE: tau, gamma (QSM.rs#227)
         },
         nltv: qsm_core::inversion::NltvParams {
             lambda: cfg.inversion.nltv.lambda, mu: cfg.inversion.nltv.mu,
             tol: cfg.inversion.nltv.tol, max_iter: cfg.inversion.nltv.max_iter,
-            newton_iter: cfg.inversion.nltv.newton_iter,
+            max_iter_newton: cfg.inversion.nltv.newton_iter, // PROBE: newton_iter renamed (QSM.rs#230)
+            ..Default::default() // PROBE: rho, tol_newton, b0, echo_times, te (QSM.rs#230/#276)
         },
         medi: qsm_core::inversion::MediParams {
             lambda: cfg.inversion.medi.lambda,
@@ -260,6 +260,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             cg_max_iter: cfg.inversion.medi.cg_max_iter,
             max_iter: cfg.inversion.medi.max_iter,
             tol: cfg.inversion.medi.tol,
+            ..Default::default() // PROBE: b0, echo_times, te, csf*, zeropad, smv_shrink_mask, msmv (QSM.rs#243/#262/#276/#285/#288)
         },
         tfi: qsm_core::inversion::TfiParams {
             lambda: cfg.inversion.tfi.lambda,
@@ -270,6 +271,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             cg_max_iter: cfg.inversion.tfi.cg_max_iter,
             max_iter: cfg.inversion.tfi.max_iter,
             tol: cfg.inversion.tfi.tol,
+            ..Default::default() // PROBE: merit, linear, b0, echo_times, te (QSM.rs#251/#276)
         },
         ilsqr: qsm_core::inversion::IlsqrParams {
             tol: cfg.inversion.ilsqr.tol, max_iter: cfg.inversion.ilsqr.max_iter,
@@ -282,29 +284,29 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             ..Default::default()
         },
         fansi: qsm_core::inversion::FansiParams {
-            alpha1: cfg.inversion.fansi.alpha1, mu1: cfg.inversion.fansi.mu1,
-            mu2: cfg.inversion.fansi.mu2, alpha0: cfg.inversion.fansi.alpha0,
-            mu0: cfg.inversion.fansi.mu0, max_iter: cfg.inversion.fansi.max_iter,
+            alpha1: cfg.inversion.fansi.alpha1, mu1: Some(cfg.inversion.fansi.mu1),
+            mu2: cfg.inversion.fansi.mu2, alpha0: Some(cfg.inversion.fansi.alpha0),
+            mu0: Some(cfg.inversion.fansi.mu0), max_iter: cfg.inversion.fansi.max_iter,
             tol_update: cfg.inversion.fansi.tol_update, tol_delta: cfg.inversion.fansi.tol_delta,
-            phase_scale: cfg.inversion.fansi.phase_scale,
             is_tgv: false,
+            ..Default::default() // PROBE: phase_scale -> b0/echo_times/te; mu Options (QSM.rs#237/#276)
         },
         l1qsm: qsm_core::inversion::L1QsmParams {
-            alpha1: cfg.inversion.l1qsm.alpha1, mu1: cfg.inversion.l1qsm.mu1,
+            alpha1: cfg.inversion.l1qsm.alpha1, mu1: Some(cfg.inversion.l1qsm.mu1), // PROBE
             mu2: cfg.inversion.l1qsm.mu2, mu3: cfg.inversion.l1qsm.mu3,
             lambda: cfg.inversion.l1qsm.lambda, max_iter: cfg.inversion.l1qsm.max_iter,
             tol_update: cfg.inversion.l1qsm.tol_update, tol_delta: cfg.inversion.l1qsm.tol_delta,
-            phase_scale: cfg.inversion.l1qsm.phase_scale,
+            ..Default::default() // PROBE: phase_scale -> b0/echo_times/te (QSM.rs#237/#276)
         },
         whqsm: qsm_core::inversion::WhQsmParams {
             alpha1: cfg.inversion.whqsm.alpha1, mu1: cfg.inversion.whqsm.mu1,
             mu2: cfg.inversion.whqsm.mu2, beta: cfg.inversion.whqsm.beta,
             muh: cfg.inversion.whqsm.muh, max_iter: cfg.inversion.whqsm.max_iter,
             tol_update: cfg.inversion.whqsm.tol_update, tol_delta: cfg.inversion.whqsm.tol_delta,
-            phase_scale: cfg.inversion.whqsm.phase_scale,
+            ..Default::default() // PROBE: phase_scale -> weight/b0/echo_times/te (QSM.rs#234/#276)
         },
         hdqsm: qsm_core::inversion::HdQsmParams {
-            alpha_l2: cfg.inversion.hdqsm.alpha_l2, mu1_l2: cfg.inversion.hdqsm.mu1_l2,
+            alpha_l2: cfg.inversion.hdqsm.alpha_l2, mu1_l2: Some(cfg.inversion.hdqsm.mu1_l2), // PROBE (QSM.rs#242)
             mu2: cfg.inversion.hdqsm.mu2, max_iter_l1: cfg.inversion.hdqsm.max_iter_l1,
             max_iter_l2: cfg.inversion.hdqsm.max_iter_l2, tol_update: cfg.inversion.hdqsm.tol_update,
         },
@@ -323,14 +325,15 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_pe_est_ite: cfg.inversion.amp_pe.max_pe_est_ite,
             cvg_thd: cfg.inversion.amp_pe.cvg_thd,
             tikhonov_beta: cfg.inversion.amp_pe.tikhonov_beta,
+            ..Default::default() // PROBE: normalize_weight (QSM.rs#253)
         },
         tgv: qsm_core::inversion::TgvParams {
-            iterations: cfg.inversion.tgv.iterations,
+            iterations: (cfg.inversion.tgv.iterations > 0).then_some(cfg.inversion.tgv.iterations), // PROBE (QSM.rs#231)
             erosions: cfg.inversion.tgv.erosions,
             alpha0: cfg.inversion.tgv.alpha0 as f32,
             alpha1: cfg.inversion.tgv.alpha1 as f32,
             step_size: cfg.inversion.tgv.step_size as f32,
-            tol: cfg.inversion.tgv.tol as f32,
+            ..Default::default() // PROBE: tol removed, te added (QSM.rs#231/#276)
         },
         qsmart: qsm_core::utils::QsmartParams {
             ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
@@ -351,6 +354,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             // ppm and b0_dir keep qsm-core defaults
             ..Default::default()
         },
+        star: Default::default(), // PROBE: new StarParams (QSM.rs#220/#283)
         // Overlap-tiling for the DL inversions: presence of `tile_size` enables it (core size);
         // `tile_halo` defaults to 8 (qsm-core's TileConfig default) when omitted. `None` =
         // whole-volume. Stored as `(core, halo)` so this crate needn't pull qsm-core's onnx feature.
@@ -381,6 +385,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                 time_step: cfg.inversion.heidi.denoise_time_step,
                 conductance: cfg.inversion.heidi.denoise_conductance,
             }),
+            ..Default::default() // PROBE: b0, echo_times, te (QSM.rs#249/#276)
         },
     };
 
@@ -738,7 +743,7 @@ mod tests {
     #[test]
     fn ilsqr_padding_propagates_to_core_params() {
         let mut cfg = PipelineConfig::default();
-        assert_eq!(cfg.inversion.ilsqr.pad_mm, qsm_core::inversion::DEFAULT_PAD_MM);
+        assert_eq!(cfg.inversion.ilsqr.pad_mm, qsm_core::inversion::IlsqrParams::default().pad_mm /* PROBE: DEFAULT_PAD_MM removed (QSM.rs#245) */);
         cfg.inversion.ilsqr.pad_mm = 32.0;
         let (_, _, inv, _) = to_pipeline_stages(&cfg);
         assert_eq!(inv.ilsqr.pad_mm, 32.0);

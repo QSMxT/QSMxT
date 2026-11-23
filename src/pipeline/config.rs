@@ -1031,7 +1031,7 @@ mod tests {
     #[test]
     fn ilsqr_pad_mm_from_cli() {
         let d = config_from_cli(&["qsmxt", "run", "<bids>"]);
-        assert_eq!(d.inversion.ilsqr.pad_mm, qsm_core::inversion::DEFAULT_PAD_MM);
+        assert_eq!(d.inversion.ilsqr.pad_mm, qsm_core::inversion::IlsqrParams::default().pad_mm /* PROBE: DEFAULT_PAD_MM removed (QSM.rs#245) */);
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--ilsqr-pad-mm", "32"]);
         assert_eq!(c.inversion.ilsqr.pad_mm, 32.0);
         assert_eq!(c.inversion.qsmart.ilsqr_pad_mm, d.inversion.qsmart.ilsqr_pad_mm, "QSMART keeps its own");

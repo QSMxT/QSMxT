@@ -49,6 +49,7 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     let chi = qsm_core::pipeline::run_qsmart(
         &field.data,
         &mask,
+        None, // PROBE: reliability R_0 (QSM.rs#247)
         magnitude.as_deref(),
         &scan_meta,
         &inv_config,

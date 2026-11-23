@@ -173,10 +173,10 @@ pub fn tgv_params_from_config(c: &TgvConfig) -> qsm_core::inversion::TgvParams {
     qsm_core::inversion::TgvParams {
         alpha0: c.alpha0 as f32,
         alpha1: c.alpha1 as f32,
-        iterations: c.iterations,
+        iterations: (c.iterations > 0).then_some(c.iterations), // PROBE (QSM.rs#231)
         erosions: c.erosions,
         step_size: c.step_size as f32,
-        tol: c.tol as f32,
+        ..Default::default() // PROBE: tol removed, te added (QSM.rs#231/#276)
     }
 }
 
@@ -194,7 +194,7 @@ pub fn tgv(
                 "TGV-QSM on the B0 field map (iterations={}, alphas=[{}, {}] ppm, erosions={})",
                 tgv.iterations, tgv.alpha1, tgv.alpha0, tgv.erosions,
             );
-            qsm_core::inversion::TgvInput::FieldPpm(data)
+            qsm_core::inversion::TgvInput::FieldPpm { field: data, echo_times: &meta.echo_times, b0_t } // PROBE (QSM.rs#231)
         }
         TgvSource::WrappedPhase => {
             log::info!(

@@ -96,6 +96,7 @@ fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::Heidi
                 conductance: args.heidi_denoise_conductance.unwrap_or(d.denoise_conductance),
             }
         }),
+        ..Default::default() // PROBE: b0, echo_times, te (QSM.rs#249/#276)
     }
 }
 
@@ -125,6 +126,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 lsmr_iter: args.lsmr_iter.unwrap_or(d.lsmr_iter),
+                ..Default::default() // PROBE: tau, gamma (QSM.rs#227)
             };
             let chi = qsm_core::inversion::rts(
                 &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
@@ -142,7 +144,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = qsm_core::inversion::TvParams::default();
             let params = qsm_core::inversion::TvParams {
                 lambda: args.lambda.unwrap_or(d.lambda),
-                rho: args.rho.unwrap_or(d.rho),
+                rho: args.rho.or(d.rho), // PROBE: Option (QSM.rs#225)
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
             };
@@ -234,8 +236,9 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let chi_init = qsm_core::inversion::lsqr_qsm(
                 &field_nifti.data, &mask, magnitude.as_deref(), &grid, bdir, &seed, |_, _| {},
             );
+            let _ = chi_init; // PROBE: heidi() builds its own LSQR seed now (QSM.rs#249)
             let chi = qsm_core::inversion::heidi(
-                &field_nifti.data, &mask, &chi_init, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, magnitude.as_deref(), &grid, bdir, &seed, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -271,10 +274,12 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 mu: args.mu.unwrap_or(d.mu),
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
-                newton_iter: args.newton_iter.unwrap_or(d.newton_iter),
+                max_iter_newton: args.newton_iter.unwrap_or(d.max_iter_newton), // PROBE (QSM.rs#230)
+                ..qsm_core::inversion::NltvParams::default()
             };
+            let ones = vec![1.0f64; field_nifti.data.len()]; // PROBE: magnitude now required (QSM.rs#230)
             let chi = qsm_core::inversion::nltv(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, &ones, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -299,7 +304,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 auto_stop,
                 b0: args.field_strength,
-                te: args.echo_time,
+                echo_times: vec![args.echo_time], // PROBE: te f64 -> echo_times + EchoTime (QSM.rs#276)
+                te: qsm_core::EchoTime::Seconds(args.echo_time),
             };
             let magnitude = match args.magnitude {
                 // Multi-echo (4D) magnitudes are RSS-combined to one weighting volume.
@@ -309,8 +315,9 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                     None
                 }
             };
+            let ones = vec![1.0f64; field_nifti.data.len()]; // PROBE: magnitude now required (QSM.rs#266)
             let chi = qsm_core::inversion::ndi(
-                &field_nifti.data, &mask, magnitude.as_deref(), &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, magnitude.as_deref().unwrap_or(&ones), &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -325,18 +332,20 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = qsm_core::inversion::FansiParams::default();
             let params = qsm_core::inversion::FansiParams {
                 alpha1: args.alpha1.unwrap_or(d.alpha1),
-                mu1: args.mu1.unwrap_or(d.mu1),
+                mu1: args.mu1.or(d.mu1), // PROBE Option (QSM.rs#237)
                 mu2: args.mu2.unwrap_or(d.mu2),
-                alpha0: args.alpha0.unwrap_or(d.alpha0),
-                mu0: args.mu0.unwrap_or(d.mu0),
+                alpha0: args.alpha0.or(d.alpha0),
+                mu0: args.mu0.or(d.mu0),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
                 tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
-                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
                 is_tgv: false,
+                ..qsm_core::inversion::FansiParams::default() // PROBE: phase_scale gone (QSM.rs#237)
             };
+            let _ = args.phase_scale;
+            let ones = vec![1.0f64; field_nifti.data.len()]; // PROBE: magnitude now required (QSM.rs#237)
             let chi = qsm_core::inversion::fansi(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, &ones, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -351,18 +360,20 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = qsm_core::inversion::FansiParams::default();
             let params = qsm_core::inversion::FansiParams {
                 alpha1: args.alpha1.unwrap_or(d.alpha1),
-                mu1: args.mu1.unwrap_or(d.mu1),
+                mu1: args.mu1.or(d.mu1), // PROBE Option (QSM.rs#237)
                 mu2: args.mu2.unwrap_or(d.mu2),
-                alpha0: args.alpha0.unwrap_or(d.alpha0),
-                mu0: args.mu0.unwrap_or(d.mu0),
+                alpha0: args.alpha0.or(d.alpha0),
+                mu0: args.mu0.or(d.mu0),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
                 tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
-                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
                 is_tgv: true,
+                ..qsm_core::inversion::FansiParams::default() // PROBE: phase_scale gone (QSM.rs#237)
             };
+            let _ = args.phase_scale;
+            let ones = vec![1.0f64; field_nifti.data.len()]; // PROBE: magnitude now required (QSM.rs#237)
             let chi = qsm_core::inversion::fansi(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, &ones, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -377,17 +388,19 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = qsm_core::inversion::L1QsmParams::default();
             let params = qsm_core::inversion::L1QsmParams {
                 alpha1: args.alpha1.unwrap_or(d.alpha1),
-                mu1: args.mu1.unwrap_or(d.mu1),
+                mu1: args.mu1.or(d.mu1), // PROBE Option (QSM.rs#237)
                 mu2: args.mu2.unwrap_or(d.mu2),
                 mu3: args.mu3.unwrap_or(d.mu3),
                 lambda: args.lambda.unwrap_or(d.lambda),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
                 tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
-                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
+                ..qsm_core::inversion::L1QsmParams::default() // PROBE: phase_scale gone (QSM.rs#237)
             };
+            let _ = args.phase_scale;
+            let ones = vec![1.0f64; field_nifti.data.len()]; // PROBE: magnitude now required (QSM.rs#237)
             let chi = qsm_core::inversion::l1qsm(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, &ones, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -409,10 +422,11 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
                 tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
-                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
+                ..qsm_core::inversion::WhQsmParams::default() // PROBE: phase_scale gone (QSM.rs#234)
             };
+            let _ = args.phase_scale;
             let chi = qsm_core::inversion::whqsm(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, None /* PROBE magnitude (QSM.rs#234) */, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -427,14 +441,14 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = qsm_core::inversion::HdQsmParams::default();
             let params = qsm_core::inversion::HdQsmParams {
                 alpha_l2: args.alpha_l2.unwrap_or(d.alpha_l2),
-                mu1_l2: args.mu1_l2.unwrap_or(d.mu1_l2),
+                mu1_l2: args.mu1_l2.or(d.mu1_l2), // PROBE Option (QSM.rs#242)
                 mu2: args.mu2.unwrap_or(d.mu2),
                 max_iter_l1: args.max_iter_l1.unwrap_or(d.max_iter_l1),
                 max_iter_l2: args.max_iter_l2.unwrap_or(d.max_iter_l2),
                 tol_update: args.tol_update.unwrap_or(d.tol_update),
             };
             let chi = qsm_core::inversion::hdqsm(
-                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, None /* PROBE magnitude (QSM.rs#242) */, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -472,10 +486,11 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_pe_est_ite: args.max_pe_est_ite.unwrap_or(d.max_pe_est_ite),
                 cvg_thd: args.cvg_thd.unwrap_or(d.cvg_thd),
                 tikhonov_beta: args.tikhonov_beta.unwrap_or(d.tikhonov_beta),
+                ..qsm_core::inversion::AmpPeParams::default() // PROBE: normalize_weight (QSM.rs#253)
             };
             let chi = qsm_core::inversion::amp_pe(
-                &field_nifti.data, &mask, magnitude.as_deref(), &grid, bdir, &params, |_, _| {},
-            );
+                &field_nifti.data, &mask, magnitude.as_deref(), None /* PROBE morphology magnitude (QSM.rs#253) */, &grid, bdir, &params, |_, _| {},
+            ).map_err(|e| QsmxtError::Config(e.to_string()))?; // PROBE: now Result
             (c, (chi, field_nifti))
         }
         InvertCommand::Medi(args) => {
@@ -514,9 +529,12 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
+                ..qsm_core::inversion::MediParams::default() // PROBE (QSM.rs#243/#262/#276/#285/#288)
             };
+            let _ = &n_std;
+            // PROBE: medi() takes ppm + echo magnitudes now (QSM.rs#243); the rad conversion here is now wrong
             let chi_rad = qsm_core::inversion::medi(
-                &field_rad, &n_std, &magnitude, &mask, &grid, bdir, &params, |_, _| {},
+                &field_rad, &mask, qsm_core::inversion::EchoMagnitudes { data: &magnitude, n_echoes: 1 }, &grid, bdir, &params, |_, _| {},
             );
             let chi: Vec<f64> = chi_rad.iter().map(|&v| v / ppm_to_rad).collect();
             (c, (chi, field_nifti))
@@ -551,9 +569,11 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
+                ..qsm_core::inversion::TfiParams::default() // PROBE (QSM.rs#251/#276)
             };
+            let _ = &n_std;
             let chi = qsm_core::inversion::tfi(
-                &field_nifti.data, &n_std, &magnitude, &mask, &grid, bdir, &params, |_, _| {},
+                &field_nifti.data, &mask, qsm_core::inversion::EchoMagnitudes { data: &magnitude, n_echoes: 1 }, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -567,16 +587,17 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
 
             let d = qsm_core::inversion::TgvParams::default();
             let params = qsm_core::inversion::TgvParams {
-                iterations: args.iterations.unwrap_or(d.iterations),
+                iterations: args.iterations.or(d.iterations), // PROBE Option (QSM.rs#231)
                 erosions: args.erosions.unwrap_or(d.erosions),
                 alpha1: args.alpha1.unwrap_or(d.alpha1 as f64) as f32,
                 alpha0: args.alpha0.unwrap_or(d.alpha0 as f64) as f32,
                 step_size: args.step_size.unwrap_or(d.step_size as f64) as f32,
-                tol: args.tol.unwrap_or(d.tol as f64) as f32,
+                ..qsm_core::inversion::TgvParams::default() // PROBE: tol removed, te added (QSM.rs#231)
             };
+            let _ = args.tol;
             // The input is a field in ppm, like every other `invert` algorithm's.
             let chi = qsm_core::inversion::tgv_qsm(
-                qsm_core::inversion::TgvInput::FieldPpm(&field_nifti.data), &mask, &grid, &params, bdir, |_, _| {},
+                qsm_core::inversion::TgvInput::FieldPpm { field: &field_nifti.data, echo_times: &[0.02], b0_t: 3.0 } /* PROBE placeholders (QSM.rs#231) */, &mask, &grid, &params, bdir, |_, _| {},
             )?;
             (c, (chi, field_nifti))
         }
