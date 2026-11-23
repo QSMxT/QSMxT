@@ -1668,7 +1668,7 @@ does after it ([HEIDI streaking reduction](/QSMxT/reference/methods/#heidi-strea
 says which inversions suit it); `--lsqr-*` and `--magnitude` then do nothing.
 
 `qsmxt invert tgv --reference-divergence --reference-edge-erosion --reference-output-box`
-reproduces QuantitativeSusceptibilityMappingTGV.jl's divergence, mask erosion and output
+uses QuantitativeSusceptibilityMappingTGV.jl's divergence, mask erosion and output
 box, for comparison with that package; `qsmxt run` always uses the exact adjoint, erodes
 from the array's edge too, and returns χ inside the eroded mask only.
 

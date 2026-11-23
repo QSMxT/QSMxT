@@ -44,7 +44,7 @@ multi-echo spin-echo (MESE) scan of the same session.
 3. Each scan gets `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
    `desc-total_Chimap` in `anat/`. Iron-rich deep grey matter stands out in the paramagnetic map.
 
-To reproduce the χ-separation toolbox or DECOMPOSE exactly, start from its
+To run with the settings the χ-separation toolbox or DECOMPOSE's authors use, start from its
 [toolbox pipeline](/QSMxT/toolbox-pipelines/). Have an R2 or R2′ map from another tool? Supply
 it instead ([Non-BIDS or partial data](/QSMxT/data/non-bids/)).
 

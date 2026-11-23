@@ -43,7 +43,7 @@ What starts ticked depends on the kind of advice:
 - **Suggested**: better on some data but not all (for example in vivo, but not on the simulated
   head), such as NDI's in-mask weight normaliser. It starts unticked.
 - **Reference**: what the method's authors used, with no reason given that it is better. It is
-  offered so that you can reproduce their pipeline, but it is not a recommendation, so it starts
+  offered so your run uses the settings the authors use, but it is not a recommendation, so it starts
   unticked.
 
 Where there are several ways to resolve one setting (values that disagree, or turning off the
