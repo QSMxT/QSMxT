@@ -20,7 +20,12 @@
 //! QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs
 //! ```
 //!
+//! The toolbox pipeline pages (`toolbox-pipelines/<id>.md`, whole pages) and the overview's table
+//! of them are generated the same way ([`pipelines`]).
+//!
 //! (`qsmxt`'s CLI reference is regenerated the same way: `cargo test --bin qsmxt cli_reference`.)
+
+pub mod pipelines;
 
 use qsm_core::catalogue::{self, Citation, Method, Stage};
 use serde_json::Value;
@@ -40,7 +45,7 @@ pub const README: &str = "README.md";
 const REGENERATE: &str = "regenerate with QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs";
 
 /// `page` (the text of the file `path`, one of [`CONFIGURATION`], [`METHODS`],
-/// [`SOURCE_SEPARATION`] and [`README`]) with its generated blocks rendered afresh. An error names a block whose markers
+/// [`SOURCE_SEPARATION`], [`README`] and [`pipelines::OVERVIEW`]) with its generated blocks rendered afresh. An error names a block whose markers
 /// are missing or out of order, or a file that has no generated blocks.
 pub fn render_page(path: &str, page: &str) -> Result<String, String> {
     let blocks = match path {
@@ -48,6 +53,7 @@ pub fn render_page(path: &str, page: &str) -> Result<String, String> {
         METHODS => algorithm_blocks().into_iter().filter(|(name, ..)| *name != SEPARATION_BLOCK).collect(),
         SOURCE_SEPARATION => algorithm_blocks().into_iter().filter(|(name, ..)| *name == SEPARATION_BLOCK).collect(),
         README => vec![("algorithms", "QSM.rs's method catalogue", readme_algorithms())],
+        pipelines::OVERVIEW => vec![("pipelines", "QSM.rs's toolbox pipelines", pipelines::pipelines_table())],
         _ => return Err(format!("{path} has no generated blocks")),
     };
     let mut out = page.to_string();
@@ -436,6 +442,54 @@ mod tests {
     #[test]
     fn readme_algorithms_are_current() {
         check(README);
+    }
+
+    #[test]
+    fn toolbox_pipelines_overview_is_current() {
+        check(pipelines::OVERVIEW);
+    }
+
+    /// Every toolbox pipeline has its page, each committed page is what renders (and renders the
+    /// same twice), and the directory holds no page for a pipeline that no longer exists.
+    /// `QSMXT_UPDATE_DOCS=1` writes the pages and removes stale ones instead.
+    #[test]
+    fn every_toolbox_pipeline_has_a_current_page() {
+        use qsm_core::pipeline::reference_pipelines::REFERENCE_PIPELINES;
+        let update = std::env::var_os("QSMXT_UPDATE_DOCS").is_some();
+        let mut expected = vec!["index.md".to_string()];
+        for p in REFERENCE_PIPELINES {
+            let path = pipelines::page_path(p);
+            let rendered = pipelines::pipeline_page(p);
+            assert_eq!(rendered, pipelines::pipeline_page(p), "{}: renders differently twice", p.id);
+            expected.push(format!("{}.md", p.id));
+            let file = repo().join(&path);
+            if update {
+                std::fs::write(&file, &rendered).unwrap();
+                continue;
+            }
+            let committed = std::fs::read_to_string(&file).unwrap_or_default();
+            assert!(committed == rendered,
+                "{path} is missing or out of date: run `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs` \
+                 and commit the result");
+        }
+        for entry in std::fs::read_dir(repo().join(pipelines::DIR)).unwrap() {
+            let name = entry.unwrap().file_name().into_string().unwrap();
+            if !expected.contains(&name) {
+                assert!(update, "{}/{name} is not a toolbox pipeline's page", pipelines::DIR);
+                std::fs::remove_file(repo().join(pipelines::DIR).join(&name)).unwrap();
+            }
+        }
+    }
+
+    /// Parity is QSM-CI's to report (decision 217): no page or table claims that a pipeline
+    /// reproduces its toolbox.
+    #[test]
+    fn no_toolbox_pipeline_page_claims_parity() {
+        use qsm_core::pipeline::reference_pipelines::REFERENCE_PIPELINES;
+        let pages = REFERENCE_PIPELINES.iter().map(pipelines::pipeline_page).chain([pipelines::pipelines_table()]);
+        for page in pages {
+            assert!(!page.to_lowercase().contains("reproduc"), "{page}");
+        }
     }
 
     /// The settings reference lists every registry setting once.

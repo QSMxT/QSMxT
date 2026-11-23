@@ -31,6 +31,7 @@ Don't edit these by hand; the tests named fail until they are regenerated and co
 |---|---|---|
 | `reference/cli.md` (whole page) | the `qsmxt` binary's argument definitions (`src/cli_reference.rs`) | `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference` |
 | The `settings` block in `reference/configuration.md` | the settings registry | `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs` |
+| `toolbox-pipelines/<id>.md` (whole pages, one per toolbox pipeline) and the `pipelines` table in `toolbox-pipelines/index.md` | QSM.rs's toolbox pipelines and pipeline rules, resolved through `qsmxt_engine::pipelines` (`crates/qsmxt-engine/src/reference_docs/pipelines.rs`) | `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs` |
 | The `*-methods` tables in `reference/methods.md` and `how-to/source-separation.md`, and the algorithm tables in the repository's `README.md` | QSM.rs's method catalogue and the settings registry (`crates/qsmxt-engine/src/reference_docs.rs`) | the same |
 
 A generated block sits between `<!-- generated:NAME start … -->` and `<!-- generated:NAME end -->`;

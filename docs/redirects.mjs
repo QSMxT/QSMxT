@@ -46,7 +46,7 @@ export const moved = {
 			'keeping-the-studys-dicom-uids': '/how-to/convert-dicom/#keeping-the-studys-dicom-uids',
 			'output': '/reference/outputs/#output',
 			'parallelism-on-a-single-node': '/how-to/slurm/#parallelism-on-a-single-node',
-			'pipelines': '/toolbox-pipelines/#pipelines-1',
+			'pipelines': '/toolbox-pipelines/#starting-one',
 			'preview-first-with---dry-run': '/how-to/convert-dicom/#preview-first-with---dry-run',
 			'recommendations': '/background/recommendations/#recommendations-1',
 			'the-reference-summary': '/reference/outputs/#the-reference-summary',
@@ -87,7 +87,7 @@ export const moved = {
 	'/guides/running-interactively/': {
 		to: '/background/tui/',
 		anchors: {
-			'pipelines': '/toolbox-pipelines/#pipelines',
+			'pipelines': '/toolbox-pipelines/#starting-one',
 			'recommendations': '/background/recommendations/#recommendations',
 			'updates-and-announcements': '/how-to/update/#updates-and-announcements',
 		},

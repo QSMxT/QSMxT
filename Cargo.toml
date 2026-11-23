@@ -10,7 +10,7 @@ version = "0.0.0"  # set automatically by release CI from git tag
 # The one QSM.rs pin every crate uses: a QSM.rs release tag for a release, a QSM.rs main commit
 # (rev) between releases. qsmbly pins qsmxt-engine, so it resolves the same qsm-core.
 # tests/qsm_core_pin.rs checks it against Cargo.lock.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "dff62e20144fb9c79a31b88ae7b1617010b49282" }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "4a3334d31411dbdb665f25be35b4c47cc0db4d62" }
 
 [package]
 name = "qsmxt"

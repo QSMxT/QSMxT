@@ -162,7 +162,9 @@ export default defineConfig({
 				},
 				{
 					label: 'Toolbox pipelines',
-					items: [{ label: 'Overview', slug: 'toolbox-pipelines' }],
+					// The overview and one generated page per pipeline, in QSM.rs's order
+					// (each page's `sidebar.order`).
+					items: [{ autogenerate: { directory: 'toolbox-pipelines' } }],
 				},
 				{
 					label: 'Reference',
