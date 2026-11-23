@@ -45,7 +45,7 @@ Notes on the table:
 
 ## Intentional differences from the original
 
-None.
+- **The QSM that the separation starts from is converted with the same centre frequency as the separation itself.** The toolbox's script gives that QSM step (STI Suite's iLSQR) a field strength typed separately from its centre frequency, which can be the nominal one; one value keeps the two steps consistent.
 
 ## Known gaps
 
