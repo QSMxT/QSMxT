@@ -83,7 +83,6 @@ Reference values of the chosen methods (for the first run's scan):
   Laplacian solver: FFT, 12-voxel padding — STAR-QSM uses FFT, 12-voxel padding
   Laplacian unwrapping of the raw phase: on — STAR-QSM uses on
   Phase unwrapping: Laplacian — DECOMPOSE-QSM uses Laplacian
-  Phase unwrapping: Laplacian — STAR-QSM uses Laplacian
   QSM inversion: STAR-QSM — DECOMPOSE-QSM uses STAR-QSM
   Padding (STAR-QSM): 0 × 0 × 0 voxels — DECOMPOSE-QSM uses 0 × 0 × 0 voxels
   Echo time (STAR-QSM): Sum of echo times — STAR-QSM uses Sum of echo times

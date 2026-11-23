@@ -1,16 +1,16 @@
   QSMxT   1 Input   2 Pipeline   3 Reconstruction   4 Execution   5 Methods
 ────────────────────────────────━━━━━━━━━━━━━━━━━━── Pipeline: QSMxT defaults ──
 ╭ Reconstruction › QSM › Background ───────────────────────────────────────────────────────────────────────────────────╮
-│ PREPROCESSING       │   BG removal:           [ vsharp ▾ ]                                                           │
-│   Geometry          │     Erode mask:         0                                                                      │
-│   Masking          ⓘ│     Polish mask:        [ ] ⓘ iLSQR: on                                                        │
-│   Motion            │     UKB mask trim:      [ ]                                                                    │
-│                     │     Deconvolve:         [ ]                                                                    │
-│ QSM                 │     Max radius:         12                                                                     │
-│   Compute QSM       │     Min radius:         2                                                                      │
-│   Field map        ⓘ│     Radius step:        1                                                                      │
-│ ▸ Background       ⓘ│     Working grid:       [ isotropic ▾ ]                                                        │
-│   Inversion        ⓘ│       Grid spacing:     1                                                                      │
+│ PREPROCESSING       │   BG removal:             [ vsharp ▾ ]                                                         │
+│   Geometry          │     Erode mask:           0                                                                    │
+│   Masking          ⓘ│     Polish mask:          [ ] ⓘ iLSQR: on                                                      │
+│   Motion            │     UK Biobank mask trim: [ ]                                                                  │
+│                     │     Deconvolve:           [ ]                                                                  │
+│ QSM                 │     Max radius:           12                                                                   │
+│   Compute QSM       │     Min radius:           2                                                                    │
+│   Field map        ⓘ│     Radius step:          1                                                                    │
+│ ▸ Background       ⓘ│     Working grid:         [ isotropic ▾ ]                                                      │
+│   Inversion        ⓘ│       Grid spacing:       1                                                                    │
 │   COSMOS/STI       –│                                                                                                │
 │   Reference        ⓘ│                                                                                                │
 │   χ-separation   off│                                                                                                │
