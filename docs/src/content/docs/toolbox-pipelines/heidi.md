@@ -27,11 +27,11 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 | Stage | Setting | This pipeline | QSMxT default | Why |
 | --- | --- | --- | --- | --- |
-| Background | Background removal (`--bf-algorithm`) | SHARP | V-SHARP | The authors' LSQR/HEIDI pipeline inverts a SHARP local field. |
-| Inversion | QSM inversion (`--qsm-algorithm`) | LSQR | iLSQR | The HEIDI package first inverts the local field with LSQR, a least-squares fit with almost no regularisation, and fills its ill-conditioned cone with HEIDI. Other methods with little or no smoothing work as well as this first step. |
-|  | HEIDI streaking reduction (`--heidi`) | on | off | The same reason as *QSM inversion* above. |
-|  | ITK float arithmetic (`--heidi-denoise-reference-itk`) | on | off | The HEIDI package denoises the field with ITK's GradientAnisotropicDiffusion executable, which works in float. |
-| Reference | QSM reference (`--qsm-reference`) | None | Mean | The authors' LSQR/HEIDI pipeline saves HEIDI's χ in ppm without referencing it. |
+| Background | Background removal (`--bf-algorithm`) | SHARP | V-SHARP | The HEIDI package inverts a local field from SHARP. |
+| Inversion | QSM inversion (`--qsm-algorithm`) | LSQR | iLSQR | The HEIDI package first inverts the local field with LSQR, a least-squares fit with almost no regularisation, which keeps the measured data that HEIDI builds on. |
+|  | HEIDI streaking reduction (`--heidi`) | on | off | HEIDI then fills in the ill-conditioned part of the data from its surroundings, which reduces streaking. |
+|  | ITK float arithmetic (`--heidi-denoise-reference-itk`) | on | off | The HEIDI package smooths the field with ITK's anisotropic diffusion filter, which computes in single precision. |
+| Reference | QSM reference (`--qsm-reference`) | None | Mean | The HEIDI package saves its susceptibility map without referencing it. |
 
 ## Intentional differences from the original
 

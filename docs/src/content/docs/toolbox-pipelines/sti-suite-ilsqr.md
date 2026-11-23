@@ -27,22 +27,22 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 | Stage | Setting | This pipeline | QSMxT default | Why |
 | --- | --- | --- | --- | --- |
-| Masking | Mask | `magnitude-last,threshold:sti-gui,largest-component,imfill` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | STI Suite's QSM_GUI masks the magnitude above the level its threshold tool starts at. (note 1) |
-|  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | QSM_GUI thresholds the magnitude as loaded, with no bias-field correction. |
-| Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | STI Suite's QSM_GUI unwraps each echo with MRPhaseUnwrap (Laplacian). |
-|  | Laplacian solver (`--laplacian-solver`) | FFT | DCT | STI Suite's MRPhaseUnwrap is the FFT-based Laplacian solver, with 12 voxels of padding. |
+| Masking | Mask | `magnitude-last,threshold:sti-gui,largest-component,imfill` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | STI Suite's GUI masks the magnitude above the level its threshold tool starts at. (note 1) |
+|  | Inhomogeneity correction (`--no-inhomogeneity-correction`) | off | on | STI Suite's GUI thresholds the magnitude as loaded, with no bias-field correction. |
+| Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | STI Suite unwraps each echo with its Laplacian unwrapping. |
+|  | Laplacian solver (`--laplacian-solver`) | FFT | DCT | STI Suite's Laplacian unwrapping is FFT-based, with 12 voxels of padding. |
 |  | Laplacian FFT padding (`--laplacian-fft-pad`) | 12 voxels | 64 voxels | The same reason as *Laplacian solver* above. |
-|  | Laplacian unwrapping of the raw phase (`--laplacian-unmasked`) | on | off | STI Suite's QSM_GUI gives MRPhaseUnwrap the raw wrapped phase, not the phase masked first. |
-|  | Phase offset removal (`--phase-offset-removal`) | off, for scans with two or more echoes | on | STI Suite's QSM_GUI unwraps each echo's phase as it is given, with no phase-offset removal first. |
+|  | Laplacian unwrapping of the raw phase (`--laplacian-unmasked`) | on | off | STI Suite's Laplacian unwrapping runs on the raw wrapped phase, not on phase masked first. |
+|  | Phase offset removal (`--phase-offset-removal`) | off, for scans with two or more echoes | on | STI Suite unwraps each echo's phase as it is, with no phase-offset removal first. |
 |  | Echo weighting (`--b0-weight-type`) | Echo time, for scans with two or more echoes | Phase SNR | Dividing the summed phase by the summed echo times weights each echo's field by its echo time. |
-| Background | Polish mask (`--bf-polish-mask`) | on | off | STI Suite's QSM_GUI polishes V-SHARP's mask (largest connected component, holes filled) and inverts the field inside it. |
-| Inversion | Maximum iterations (`--ilsqr-max-iter`) | 40 | 100 | STI Suite's QSM_GUI calls QSM_iLSQR with niter 40. |
-|  | Precision (`--ilsqr-precision`) | Single | Double | STI Suite's QSM_iLSQR runs both LSQR solves in single precision. |
-| Reference | QSM reference (`--qsm-reference`) | None | Mean | STI Suite's QSM_GUI keeps the inversion's χ as it is, without referencing it. |
+| Background | Polish mask (`--bf-polish-mask`) | on | off | STI Suite keeps the largest connected piece of V-SHARP's mask, with its holes filled, and inverts the field inside it. |
+| Inversion | Maximum iterations (`--ilsqr-max-iter`) | 40 | 100 | STI Suite's GUI runs iLSQR for 40 iterations. |
+|  | Precision (`--ilsqr-precision`) | Single | Double | STI Suite's iLSQR runs its least-squares solves in single precision. |
+| Reference | QSM reference (`--qsm-reference`) | None | Mean | STI Suite keeps the inversion's susceptibility as it is, without referencing it. |
 
 Notes on the table:
 
-1. QSM_GUI thresholds the last echo's magnitude (the last volume loaded). QSM_GUI keeps the thresholded mask's largest connected component (bwlabeln, regionprops). QSM_GUI fills every hole of that component (regionprops' FilledImage). QSM_GUI does not erode its mask (V-SHARP erodes it).
+1. STI Suite's GUI thresholds the last echo's magnitude. STI Suite's GUI keeps the largest connected piece of the thresholded mask. STI Suite's GUI fills every hole in that piece. STI Suite's GUI does not erode its mask; V-SHARP erodes it later.
 
 ## Intentional differences from the original
 

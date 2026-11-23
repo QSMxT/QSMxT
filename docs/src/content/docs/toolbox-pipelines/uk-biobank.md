@@ -27,16 +27,16 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 | Stage | Setting | This pipeline | QSMxT default | Why |
 | --- | --- | --- | --- | --- |
-| Masking | Mask | `magnitude,hd-bet:window,signal-erode` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | UK Biobank masks with its T1 structural brain mask registered to the SWI, which an SWI run does not have; on UK Biobank data, HD-BET on the magnitude came closest to it of the masks from the SWI alone (about 3.4 mm higher at the brain's inferior edge, otherwise close). HD-BET runs in 192×192×96 sliding windows, as in the comparison behind the HD-BET mask; on the whole volume its mask was 0.5-1 % smaller at the brain's inferior edge. |
-| Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | UK Biobank unwraps each echo with STI Suite's MRPhaseUnwrap (Laplacian). |
-|  | Laplacian solver (`--laplacian-solver`) | FFT | DCT | UK Biobank calls MRPhaseUnwrap with padsize [64 64 64]: the FFT Schofield-Zhu solver with 64 voxels of padding. |
-|  | Laplacian field kept outside the mask (`--laplacian-keep-outside`) | on | off | UK Biobank hands V_SHARP its combined unwrapped phase over the whole volume, which V_SHARP reads outside the mask it is given. |
-|  | Phase offset removal (`--phase-offset-removal`) | off, for scans with two or more echoes | on | UK Biobank removes the phase offsets when it combines the coils (MCPC-3D-S) and unwraps the combined echoes with no further offset removal. |
+| Masking | Mask | `magnitude,hd-bet:window,signal-erode` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | UK Biobank's own mask comes from its T1 scan, which an SWI run does not have; HD-BET on the magnitude came closest to it of the masks the SWI alone can give. HD-BET runs in 192×192×96 sliding windows, as in the comparison that chose it; on the whole volume its mask was slightly smaller at the brain's inferior edge. |
+| Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | UK Biobank unwraps each echo with STI Suite's Laplacian unwrapping. |
+|  | Laplacian solver (`--laplacian-solver`) | FFT | DCT | UK Biobank's Laplacian unwrapping is FFT-based, with 64 voxels of padding. |
+|  | Laplacian field kept outside the mask (`--laplacian-keep-outside`) | on | off | UK Biobank gives V-SHARP the unwrapped field over the whole volume, and V-SHARP reads it outside the mask. |
+|  | Phase offset removal (`--phase-offset-removal`) | off, for scans with two or more echoes | on | UK Biobank removes phase offsets when it combines the coils, and unwraps the combined echoes with no further offset removal. |
 |  | Echo weighting (`--b0-weight-type`) | Assumed decay, for scans with two or more echoes | Phase SNR | UK Biobank weights the echoes by TE·exp(−TE/T2\*) with T2\* = 40 ms. |
-| Background | UKB mask trim (`--bf-ukb-mask-trim`) | on | off | One of the choices that start this pipeline. |
-| Inversion | Padding (`--ilsqr-pad-mm`) | 64 mm | 12 mm | UK Biobank calls QSM_iLSQR with padsize [64 64 64]. |
-|  | Precision (`--ilsqr-precision`) | Single | Double | STI Suite's QSM_iLSQR runs both LSQR solves in single precision. |
-| Reference | QSM reference (`--qsm-reference`) | None | Mean | UK Biobank keeps QSM_iLSQR's χ as it is, without referencing it. |
+| Background | UKB mask trim (`--bf-ukb-mask-trim`) | on | off | UK Biobank trims its mask to voxels with reliable phase, before and after background removal. |
+| Inversion | Padding (`--ilsqr-pad-mm`) | 64 mm | 12 mm | UK Biobank pads iLSQR's grid by 64 mm per side. |
+|  | Precision (`--ilsqr-precision`) | Single | Double | STI Suite's iLSQR runs its least-squares solves in single precision. |
+| Reference | QSM reference (`--qsm-reference`) | None | Mean | UK Biobank keeps iLSQR's susceptibility as it is, without referencing it. |
 
 ## Intentional differences from the original
 

@@ -27,22 +27,22 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 | Stage | Setting | This pipeline | QSMxT default | Why |
 | --- | --- | --- | --- | --- |
-| Masking | Mask | `magnitude-first,bet:0.20,min-intensity:100,majority,close:2` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | QSMART's authors mask with FSL bet2 -f 0.2 on the N4-corrected first-echo magnitude. (note 1) |
-|  | Inhomogeneity correction method (`--inhomogeneity-method`) | N4 | makehomogeneous | QSMART corrects the first echo's magnitude with ANTs' N4BiasFieldCorrection before BET. |
-|  | Image geometry (`--n4-geometry`) | make_nii | Scanner | QSMART hands N4 the magnitude in a file written by make_nii, whose axis-aligned header decides where N4's shrunk grid falls. |
+| Masking | Mask | `magnitude-first,bet:0.20,min-intensity:100,majority,close:2` | `phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` | QSMART's authors mask with FSL's brain extraction on the bias-corrected first echo. (note 1) |
+|  | Inhomogeneity correction method (`--inhomogeneity-method`) | N4 | makehomogeneous | QSMART corrects the first echo's magnitude with ANTs' N4 before brain extraction. |
+|  | Image geometry (`--n4-geometry`) | make_nii | Scanner | QSMART gives N4 the magnitude with a simplified, axis-aligned image header, which slightly changes N4's correction. |
 | Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | Laplacian unwrapping is not thrown off by the unreliable phase at the brain's edge, which QSMART keeps in its mask. |
-|  | Laplacian solver (`--laplacian-solver`) | Mirror | DCT | QSMART's lapunwrap.m solves on the mirrored volume. |
+|  | Laplacian solver (`--laplacian-solver`) | Mirror | DCT | QSMART's Laplacian unwrapping solves on a mirrored copy of the volume. |
 |  | Laplacian unwrapping of the raw phase (`--laplacian-unmasked`) | on | off | QSMART unwraps each echo's raw phase over the whole volume, and its echo fit fits every voxel. |
 |  | Phase offset removal (`--phase-offset-removal`) | off, for scans with two or more echoes | on | QSMART unwraps each echo's raw phase, with no phase-offset removal first. |
 |  | B0 estimation (`--b0-estimation`) | QSMART echo fit | Weighted average | QSMART's echo fit gives the reliability map QSMART uses at the brain's edge, which it keeps in its mask. |
-| Inversion | QSM inversion (`--qsm-algorithm`) | QSMART | iLSQR | One of the choices that start this pipeline. |
-|  | Precision (`--ilsqr-precision`) | Single | Double | QSMART's two stages call STI Suite's QSM_iLSQR, which runs both LSQR solves in single precision. |
-|  | Offset adjustment grid (`--qsmart-offset-grid`) | QSMART's | FFT | QSMART's adjust_offset.m builds its dipole kernel on its own grid (-N/2:N/2-1), half a step off the FFT grid on odd matrix sizes. |
-| Reference | QSM reference (`--qsm-reference`) | None | Mean | QSMART's result is adjust_offset's combined χ, which nothing references afterwards. |
+| Inversion | QSM inversion (`--qsm-algorithm`) | QSMART | iLSQR | QSMART inverts the total field in two stages, one for the brain's edge and veins and one for the rest. |
+|  | Precision (`--ilsqr-precision`) | Single | Double | QSMART's iLSQR, STI Suite's, runs its least-squares solves in single precision. |
+|  | Offset adjustment grid (`--qsmart-offset-grid`) | QSMART's | FFT | QSMART's final offset adjustment builds its dipole kernel half a step off the FFT grid on odd matrix sizes. |
+| Reference | QSM reference (`--qsm-reference`) | None | Mean | QSMART's result is its combined susceptibility map, which nothing references afterwards. |
 
 Notes on the table:
 
-1. QSMART runs BET on the first echo's magnitude (root-sum-of-squares over coils). QSMART runs bet2 with -f 0.2. QSMART removes the BET mask's voxels whose N4-corrected magnitude is below 100. QSMART smooths its mask with bwmorph3(mask, 'majority'). QSMART closes its mask with a sphere of radius 2 voxels (sph_radius1). QSMART keeps the brain's edge instead of eroding it away, and its Laplacian unwrapping and echo fit are what handle the unreliable phase there. With a path-based unwrapper, errors at the edge become artefacts across the cortex.
+1. QSMART runs brain extraction on the first echo's magnitude. QSMART runs brain extraction with a fractional threshold of 0.2. QSMART removes mask voxels whose bias-corrected magnitude is below 100. QSMART smooths its mask with a 3×3×3 majority filter. QSMART closes its mask with a ball of radius 2 voxels. QSMART keeps the brain's edge rather than eroding it, and relies on Laplacian unwrapping and its echo fit to handle the unreliable phase there.
 
 ## Intentional differences from the original
 

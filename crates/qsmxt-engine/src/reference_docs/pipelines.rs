@@ -158,21 +158,21 @@ fn rules_for(p: &ReferencePipeline, target: &PipelineConfig, facts: &ViewFacts, 
     out
 }
 
-/// Why `p` sets `path`, where no rule says: its own choices, and what QSMxT does with them.
+/// Why `p` sets `path` when it is one of the pipeline's own choices (QSM.rs's `choose_reasons`),
+/// or one QSMxT sets with them.
 fn choice_reason(p: &ReferencePipeline, path: &str) -> Option<&'static str> {
-    if p.choose.iter().any(|(s, _)| rec::qsmxt_path(s) == Some(path)) {
-        return Some(CHOICE_REASONS[0]);
+    if let Some(i) = p.choose.iter().position(|(s, _)| rec::qsmxt_path(s) == Some(path)) {
+        return p.choose_reasons.get(i).copied();
     }
     match path {
-        "pipeline.do_chi_separation" => Some(CHOICE_REASONS[1]),
-        "separation.r2prime_strategy" => Some(CHOICE_REASONS[2]),
+        "pipeline.do_chi_separation" => Some(CHOICE_REASONS[0]),
+        "separation.r2prime_strategy" => Some(CHOICE_REASONS[1]),
         _ => None,
     }
 }
 
 /// [`choice_reason`]'s sentences.
-const CHOICE_REASONS: [&str; 3] = [
-    "One of the choices that start this pipeline.",
+const CHOICE_REASONS: [&str; 2] = [
     "A χ-separation method runs with χ-separation on.",
     "The χ-separation toolbox takes a measured R2′, from a multi-echo spin-echo scan or a supplied map.",
 ];
@@ -195,9 +195,11 @@ fn steps(p: &ReferencePipeline) -> Vec<Step> {
         }
         let scan_only = !before.iter().any(|b| b.path == change.path && b.to == change.to);
         let on = scan_only.then(|| scan_conditions(&rules.iter().map(|r| r.rule.clone()).collect::<Vec<_>>()));
-        let mut why: Vec<String> = rules.iter().map(|r| sentence(&r.reason)).collect();
+        // A pipeline's own choice gives QSM.rs's reason for it (`choose_reasons`); any other
+        // setting, the reasons of the rules that set it.
+        let mut why: Vec<String> = choice_reason(p, change.path).map(sentence).into_iter().collect();
         if why.is_empty() {
-            why.extend(choice_reason(p, change.path).map(str::to_string));
+            why = rules.iter().map(|r| sentence(&r.reason)).collect();
         }
         Step { change, on, why }
     }).collect()
@@ -367,6 +369,7 @@ mod tests {
     #[test]
     fn every_setting_a_pipeline_sets_has_a_reason() {
         for p in REFERENCE_PIPELINES {
+            assert_eq!(p.choose_reasons.len(), p.choose.len(), "{}: a reason for each choice", p.id);
             for s in steps(p) {
                 assert!(!s.why.is_empty(), "{}: no reason for {}", p.id, s.change.path);
             }

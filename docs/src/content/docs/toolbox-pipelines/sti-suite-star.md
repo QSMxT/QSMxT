@@ -27,15 +27,15 @@ Choosing it resets every reconstruction stage to QSMxT's defaults, then sets the
 
 | Stage | Setting | This pipeline | QSMxT default | Why |
 | --- | --- | --- | --- | --- |
-| Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | STI Suite's QSM_GUI unwraps each echo with MRPhaseUnwrap (Laplacian). |
-|  | Laplacian solver (`--laplacian-solver`) | FFT | DCT | STI Suite's MRPhaseUnwrap is the FFT-based Laplacian solver, with 12 voxels of padding. |
+| Field map | Phase unwrapping (`--unwrapping-algorithm`) | Laplacian | ROMEO | STI Suite unwraps each echo with its Laplacian unwrapping. |
+|  | Laplacian solver (`--laplacian-solver`) | FFT | DCT | STI Suite's Laplacian unwrapping is FFT-based, with 12 voxels of padding. |
 |  | Laplacian FFT padding (`--laplacian-fft-pad`) | 12 voxels | 64 voxels | The same reason as *Laplacian solver* above. |
-|  | Laplacian unwrapping of the raw phase (`--laplacian-unmasked`) | on | off | STI Suite's QSM_GUI gives MRPhaseUnwrap the raw wrapped phase, not the phase masked first. |
-|  | Phase offset removal (`--phase-offset-removal`) | off, for scans with two or more echoes | on | STI Suite's QSM_GUI unwraps each echo's phase as it is given, with no phase-offset removal first. |
+|  | Laplacian unwrapping of the raw phase (`--laplacian-unmasked`) | on | off | STI Suite's Laplacian unwrapping runs on the raw wrapped phase, not on phase masked first. |
+|  | Phase offset removal (`--phase-offset-removal`) | off, for scans with two or more echoes | on | STI Suite unwraps each echo's phase as it is, with no phase-offset removal first. |
 |  | Echo weighting (`--b0-weight-type`) | Echo time, for scans with two or more echoes | Phase SNR | Dividing the summed phase by the summed echo times weights each echo's field by its echo time. |
-| Background | Polish mask (`--bf-polish-mask`) | on | off | STI Suite's QSM_GUI polishes V-SHARP's mask (largest connected component, holes filled) and inverts the field inside it. |
-| Inversion | QSM inversion (`--qsm-algorithm`) | STAR-QSM | iLSQR | One of the choices that start this pipeline. |
-| Reference | QSM reference (`--qsm-reference`) | None | Mean | STI Suite's QSM_GUI keeps the inversion's χ as it is, without referencing it. |
+| Background | Polish mask (`--bf-polish-mask`) | on | off | STI Suite keeps the largest connected piece of V-SHARP's mask, with its holes filled, and inverts the field inside it. |
+| Inversion | QSM inversion (`--qsm-algorithm`) | STAR-QSM | iLSQR | STI Suite's GUI inverts the field with STAR-QSM. |
+| Reference | QSM reference (`--qsm-reference`) | None | Mean | STI Suite keeps the inversion's susceptibility as it is, without referencing it. |
 
 ## Intentional differences from the original
 
