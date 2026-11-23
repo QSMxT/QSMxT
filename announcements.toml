@@ -41,15 +41,12 @@ id = "2026-11-21-methods-text-references"
 date = "2026-11-21"
 title = "Corrected references in QSMxT's methods text"
 body = """
-QSMxT v12.2.0 corrects 25 references in the methods text it writes for your
-results. Some had the wrong DOI, journal, volume, issue, authors or title. For
-example, RESHARP's DOI pointed to a different paper, NeXtQSM was cited in the
-wrong journal, and L1-QSM cited a different paper by the same group. Every
-reference was checked against its Crossref or DataCite record.
+QSMxT v12.2.0 corrects some of the references in the methods text it writes for
+your results.
 
-If you copied QSMxT's methods text into a paper, abstract or thesis, please check
-its references against the corrected list in the release notes. Your QSM
-results themselves are not affected.
+If you've used QSMxT's methods text in a publication, it's worth checking its
+references against the list in the release notes. Your QSM results are not
+affected.
 
 Run `qsmxt update` to get the corrected text."""
 link = "https://github.com/QSMxT/QSMxT/releases/tag/v12.2.0"
