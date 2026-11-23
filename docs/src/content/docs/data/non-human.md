@@ -15,8 +15,8 @@ millimetres.
 ## What it doesn't do / limits
 
 - **Brain extraction** with BET, HD-BET and MindGrab expects a human brain.
-- **Background removal** with V-SHARP (the default) uses kernels of 2 to 12 mm on a 1 mm
-  grid. In a mouse brain that is most of the brain.
+- **Background removal** with V-SHARP (the default) uses kernels sized for human brains, so on
+  a small brain it may leave background field behind.
 - **Segmentation** (SynthSeg), and so per-structure statistics and a region reference, is
   trained on human brains only.
 - **Deep-learning inversions** were trained on human data.
@@ -27,9 +27,9 @@ millimetres.
 - Mask with RS2-Net, made for rodent brains: `--mask-preset rs2-net` (needs a deep-learning
   build). Or with BET, presenting the image at human scale: `--mask-preset bet
   --bet-voxel-scale 10` (10 is usual for mouse).
-- Size V-SHARP to the brain: `--vsharp-grid native`, with `--vsharp-max-radius` and
-  `--vsharp-min-radius` in millimetres suited to it. Or use a background method without a
-  fixed radius, such as PDF (`--bf-algorithm pdf`).
+- Check the background removal: look at the local field (`derivatives/qsmxt/workflow/sub-*/bgremove/*_localfield.nii`) or
+  the χ map for smooth shading across the brain. If background remains, try PDF
+  (`--bf-algorithm pdf`).
 - Use a classical inversion (the default, iLSQR, is one).
 - Reference χ to the mean (the default) or supply your own parcellation
   ([Non-BIDS or partial data](/QSMxT/data/non-bids/)).

@@ -20,7 +20,9 @@ multi-echo spin-echo (MESE) scan of the same session.
 
 ## What it doesn't do / limits
 
-- `qsmxt dicom-convert` does not name spin-echo scans: the MESE ends up in `extra_data/`.
+- `qsmxt dicom-convert` does not name spin-echo scans yet: the MESE ends up in `extra_data/`.
+  Recognising it automatically is tracked in
+  [QSMxT#624](https://github.com/QSMxT/QSMxT/issues/624).
 - R2 needs at least three echoes, equally spaced, with the first at the echo spacing.
 - Only `r2star-qsm` (the default) and `decompose` work from the GRE alone. The other methods
   need R2′, and are empty where the MESE did not reach.
