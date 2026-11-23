@@ -1,6 +1,6 @@
 ---
-title: Quick start
-description: From a DICOM or BIDS dataset to quantitative susceptibility maps in minutes.
+title: "Tutorial: first QSM map in the TUI"
+description: "From a DICOM or BIDS dataset to a susceptibility map with the interactive interface."
 ---
 
 There are two ways to drive QSMxT: **interactively** in the TUI (recommended) or
@@ -17,7 +17,7 @@ qsmxt tui
 
 The TUI walks you through each step, with menus for every algorithm and sensible
 defaults pre-filled. It's the best way to start, especially with a new dataset.
-See [Running interactively](/QSMxT/guides/running-interactively/).
+See [Running interactively](/QSMxT/background/tui/).
 
 ## No data yet? Fetch an example
 
@@ -66,53 +66,3 @@ scanner's carrier frequency (about 2.89 T), not the nominal 3.0 T. QSM scales pp
 by this value, so the accurate one is the correct one. The sidecar records the
 `ImagingFrequency` it came from.
 :::
-
-## The command-line way
-
-Prefer to script it? The same workflow in two commands.
-
-### 1. Convert DICOMs to BIDS
-
-```sh
-qsmxt dicom-convert /path/to/dicoms study/bids
-```
-
-QSMxT scans the directory recursively, classifies each series automatically
-(gradient-echo magnitude and phase, echo count, individual coils,
-combined/derived reconstructions), and writes a [BIDS](https://bids.neuroimaging.io/)
-dataset. Add `--dry-run` to preview the classification without writing anything.
-See [DICOM → BIDS](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids).
-
-(Already have a BIDS dataset? Skip to step 2.)
-
-### 2. Run the pipeline
-
-```sh
-qsmxt run study/bids
-```
-
-QSMxT discovers every phase/magnitude run in the dataset and reconstructs a QSM
-map for each, writing results to `study/bids/derivatives/qsmxt/`. With no
-configuration it uses sensible defaults: ROMEO unwrapping, V-SHARP background
-removal, and iLSQR dipole inversion. Pick algorithms inline or process a subset:
-
-```sh
-qsmxt run study/bids --qsm-algorithm rts --include "sub-01*"
-```
-
-See [Running noninteractively](/QSMxT/guides/running-noninteractively/).
-
-## What you get
-
-Outputs land under `derivatives/qsmxt/` as BIDS-compliant NIfTIs — one QSM map
-per run, plus any [supplementary outputs](/QSMxT/reference/tools/) you enabled
-(SWI, T2\*, R2\*, RSS-combined magnitude). A `methods.md` describes what ran and
-lists citations for the exact methods your data and settings used.
-
-## Next steps
-
-- [Running interactively](/QSMxT/guides/running-interactively/) — the TUI workflow
-- [Running noninteractively](/QSMxT/guides/running-noninteractively/) — every stage and option
-- [Configuration](/QSMxT/reference/configuration/) — save settings to a TOML file
-- [Input data](/QSMxT/reference/inputs/) — what your dataset needs to contain
-- [Algorithms](/QSMxT/reference/algorithms/) — choose the right methods
