@@ -5,7 +5,7 @@ description: Save and reproduce pipeline settings with a TOML configuration file
 
 Anything you can set on the `qsmxt run` command line can also live in a TOML
 configuration file. A config file makes runs reproducible and is the cleanest way
-to drive batch and [HPC](/QSMxT/how-to/slurm/#hpc--slurm) processing.
+to drive batch and [HPC](/QSMxT/how-to/slurm/) processing.
 
 ## What's in it
 
@@ -20,7 +20,7 @@ No default depends on the method: a file runs the methods and settings it says, 
 choosing a method never changes another setting. Where a chosen method's reference
 pipeline uses something else (PDF background removal for MEDI, for example), QSMxT says so
 in the log, in `qsmxt run --dry` and in the methods text's Note, and the TUI offers it (see
-[Recommendations](/QSMxT/background/recommendations/#recommendations-1)).
+[Recommendations](/QSMxT/background/recommendations/#on-the-command-line)).
 
 Multi-orientation reconstruction lives in its own `[multi_orientation]` section,
 off unless `group_by` names a pattern:
@@ -33,7 +33,7 @@ algorithm = "cosmos"     # or "sti"
 lambda = 0.0
 ```
 
-See [multi-orientation](/QSMxT/how-to/multi-orientation/#multi-orientation-cosmos-and-sti)
+See [multi-orientation](/QSMxT/reference/multi-orientation/)
 for what the pattern matches and what will be refused.
 
 The combined magnitude is published unless `pipeline.do_magnitude = false`
@@ -76,7 +76,7 @@ With two-pass artefact reduction, the reliable mask's sections and how they comb
 `masking.two_pass_sections` and `masking.two_pass_combine` (`"or"` or `"and"`; left out, it is
 the main mask's `masking.combine`), and how the second pass is made and merged is
 `masking.two_pass_mode` (`"local"`, the default, or `"original"`, the published algorithm; see
-[two-pass modes](/QSMxT/how-to/build-mask/#two-pass-modes)):
+[two-pass modes](/QSMxT/reference/masking/#two-pass-modes)):
 
 ```toml
 [masking]
@@ -162,7 +162,7 @@ that is off by default (iSMV's `max_iter`, DECOMPOSE's
 `lsqcurvefit.max_function_evaluations`).
 
 Recommendations you chose not to follow (see
-[Recommendations](/QSMxT/background/recommendations/#recommendations-1)) are kept in the
+[Recommendations](/QSMxT/background/recommendations/#on-the-command-line)) are kept in the
 file, each with the value of its setting at the time. Only recommended, suggested and discouraged
 findings are kept; one for a reference-pipeline difference is dropped when the file is read. A change to the setting brings the
 recommendation back:

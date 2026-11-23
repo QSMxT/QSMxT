@@ -10,7 +10,7 @@ your BIDS data. Below are the valid values for each algorithm option.
 ## Coil combination
 
 Runs whose phase is stored per receive coil (`coil-<NN>` entity, see
-[Inputs](/QSMxT/how-to/prepare-data/#uncombined-receive-coils)) are combined with
+[Inputs](/QSMxT/data/uncombined-coils/)) are combined with
 **MCPC-3D-S** (Eckstein et al., MRM 2018) before masking. The coil-summed
 Hermitian inner product of the first two echoes gives the field evolution with the
 coil phase offsets cancelled; it is unwrapped once (with the `--unwrapping-algorithm`
@@ -257,7 +257,7 @@ every echo's map is defined, referenced as any QSM is.
 
 Nothing combines or compares the echoes, so `--b0-estimation` and its settings, phase offset
 removal and bipolar correction do not run (the TUI hides them). DECOMPOSE takes the echoes'
-maps (see [Susceptibility source separation](/QSMxT/how-to/source-separation/#susceptibility-source-separation)), and choosing
+maps (see [Susceptibility source separation](/QSMxT/reference/source-separation/#methods)), and choosing
 DECOMPOSE recommends this option. A single-echo scan's QSM is its echo's. Per-echo QSM is
 refused before processing with the routes that reconstruct from every echo at once (TGV,
 QSMART, iQSM, iQSM+ and iQFM), with two-pass artefact reduction, and with the χ-separation
@@ -687,7 +687,7 @@ command — is the [TUI](/QSMxT/background/tui/): it exposes every
 option with sensible defaults and shows the equivalent `qsmxt run` command live as
 you change them. You can also set them in a
 [configuration file](/QSMxT/reference/configuration/), or run the matching
-[standalone tool](/QSMxT/reference/tools/) (e.g. `qsmxt invert tgv --help`) to
+[step command](/QSMxT/reference/cli/) (e.g. `qsmxt invert tgv --help`) to
 experiment directly.
 
 ### MEDI's CSF zero reference and TFI's data term

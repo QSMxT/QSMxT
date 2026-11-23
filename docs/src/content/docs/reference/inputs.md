@@ -4,7 +4,7 @@ description: What a QSMxT-compatible BIDS dataset looks like, and which outputs 
 ---
 
 QSMxT reads [BIDS](https://bids.neuroimaging.io/) datasets. If you convert your
-DICOMs with [`qsmxt dicom-convert`](/QSMxT/how-to/convert-dicom/#converting-dicoms-to-bids)
+DICOMs with [`qsmxt dicom-convert`](/QSMxT/how-to/convert-dicom/)
 the layout is handled for you, and this page is mostly reference. If you are
 assembling a dataset by hand, or wondering why an output did not appear, start
 here.
@@ -98,7 +98,7 @@ rounded to 0.01 ms in a sidecar (4.92, 9.84, 14.77, 19.68 ms) are accepted.
 
 A run that cannot give these is refused before processing.
 
-[Source separation](/QSMxT/how-to/source-separation/#susceptibility-source-separation)
+[Source separation](/QSMxT/reference/source-separation/#methods)
 (`--do-chisep`) splits into two groups. The `r2star-qsm` and `decompose` methods
 work from multi-echo GRE magnitude alone (`r2star-qsm` needs what R2\* needs). The
 other six are based on R2', so they need a MESE acquisition as well, or R2PRIMEnet
@@ -119,3 +119,63 @@ Before any run is processed, QSMxT checks every run against what was asked for:
 A named `--use-custom-*` derivative that is missing for a run counts as asked for.
 `qsmxt validate` shows the same checks per run without processing anything.
 :::
+
+## Bringing your own inputs
+
+QSMxT will use maps produced by other tools from `<bids>/derivatives/<TOOL>/`,
+following the same `sub-*/[ses-*/]anat/` layout:
+
+| Option | Supplies | Filename |
+| --- | --- | --- |
+| `--use-custom-masks [TOOL]` | brain mask | `*_mask.nii*` |
+| `--use-custom-qsm <TOOL>` | susceptibility map | `*_Chimap.nii*` |
+| `--use-custom-r2 <TOOL>` | R2 map | `*_R2map.nii*` |
+| `--use-custom-r2prime <TOOL>` | R2' map | `*_R2primemap.nii*` |
+
+A supplied map must be on the scan's grid. When `--axial-resampling` resamples the run to a
+cardinal-aligned grid, a map on the acquired grid is resampled with the echoes. A susceptibility,
+R2 or R2' map on any other grid is refused when the run starts, before anything is computed, with
+a message naming the file and both grids. So is a segmentation (`--use-custom-dseg`) that only the
+statistics or a region `--qsm-reference` read. A brain mask, or a segmentation with
+`--do-segmentation`, that is not on the scan's grid is replaced by one the run makes, with a
+warning.
+
+Supplying R2' directly removes the MESE requirement for source separation, since
+R2 is only needed to compute it. `qsmxt validate` lists the derivative tools it
+can see for each run.
+
+A bring-your-own R2 or R2' map that only covers part of the brain carries the
+same caveat as a MESE slab: leave the uncovered voxels at zero rather than
+filling them, since a zero R2 is read as an absent measurement and excluded,
+while a small non-zero one is taken at face value.
+
+## What `qsmxt dicom-convert` writes
+
+| Series | Name in `sub-*/[ses-*/]anat/` |
+| --- | --- |
+| Gradient-echo magnitude / phase / real / imaginary, one echo | `*_part-mag_T2starw` (`part-phase`, `part-real`, `part-imag`) |
+| The same, several echoes | `*_echo-<N>_part-mag_MEGRE` |
+| T1-weighted structural (MPRAGE, SPACE/TFE T1, MP2RAGE `UNI`) | `*_T1w` |
+| MP2RAGE inversion images | `*_inv-<N>_MP2RAGE` |
+| Scanner susceptibility map | `*_rec-scanner_Chimap` |
+| Scanner T2\* / R2\* map | `*_rec-scanner_T2starmap`, `*_rec-scanner_R2starmap` |
+| Scanner T1 map | `*_T1map` |
+| Scanner SWI | `*_rec-swi_part-mag_T2starw` |
+| Scanner minimum-intensity projection | `*_rec-mip_T2starw` |
+| Another reconstruction of the same images | `*_rec-<label>_…`, e.g. `rec-filtered`, `rec-scanner` |
+
+The plain original image of each kind is the one without a `rec-` label; that is
+the one `qsmxt run` uses. The magnitude follows the phase: when the phase comes
+from a particular reconstruction (ASPIRE's coil combination, say), the magnitude
+from that reconstruction is the main one, and the scanner's own combination is
+`rec-scanner`. A scanner map without a protocol name (Bruker's parametric maps) is
+filed with the acquisition it was made from. A map made from a series that
+is kept in `extra_data/` goes there too. When dcm2niix cannot separate the
+echoes of a series into files, QSMxT converts each echo time separately, or, when
+the echo tags are the same for every image, each volume (`rec-…volN`). Phase
+sidecars get the `Units` BIDS requires: `rad` when the phase is already in
+radians (as dcm2niix writes Philips phase), otherwise `arbitrary`. Any other series (scouts, reformats, FLAIR, diffusion,
+Dixon, other vendor maps) is kept in `sub-*/[ses-*/]extra_data/` as dcm2niix
+names it. These are not BIDS files, and `.bidsignore` lists `extra_data`. The
+`.bidsignore` also lists the MP2RAGE inversion images, because BIDS requires
+sidecar fields for them (such as `NumberShots`) that DICOM headers do not carry.

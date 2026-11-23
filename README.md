@@ -244,7 +244,7 @@ v9 is a ground-up rewrite in Rust. Template and group-space building and the web
 UI are not part of v9 — the Python line remains available on the
 [`python-legacy`](https://github.com/QSMxT/QSMxT/tree/python-legacy) branch and the
 [`v8.3.4`](https://github.com/QSMxT/QSMxT/releases/tag/v8.3.4) release.
-See [what changed](https://qsmxt.github.io/QSMxT/start/coming-from-8x/).
+See [what changed](https://qsmxt.github.io/QSMxT/start/install/#coming-from-qsmxt-8x).
 
 ## Citation
 

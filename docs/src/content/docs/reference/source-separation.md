@@ -1,11 +1,11 @@
 ---
 title: Susceptibility source separation
-description: "Separate paramagnetic and diamagnetic susceptibility, and where R2′ comes from."
+description: "Where R2′ comes from, and the source-separation methods and their settings."
 ---
 
 ## Where R2′ comes from
 
-R2′ (`--do-r2primemap`, and every R2′-based [source separation](#susceptibility-source-separation))
+R2′ (`--do-r2primemap`, and every R2′-based [source separation](#methods))
 comes from one of three places, chosen by `--r2prime-strategy`:
 
 | `--r2prime-strategy` | R2′ is |
@@ -18,7 +18,7 @@ comes from one of three places, chosen by `--r2prime-strategy`:
 `derivatives/<TOOL>/`. So with the default `auto`, an R2′-based separation does not
 need a MESE: without one it runs on R2PRIMEnet's prediction, which is trained at
 3 T only (see below), and the R2′ sidecar's `R2primeSource` says which it was. χ-sepnet's
-default route makes that prediction itself ([below](#susceptibility-source-separation)).
+default route makes that prediction itself ([below](#methods)).
 
 Both measured and predicted R2′ maps have negative values set to zero.
 
@@ -68,7 +68,7 @@ uncalibrated; better, acquire a MESE or supply an R2′ with
 source row. The authors publish a 7 T variant that maps 7 T R2* to
 3 T-equivalent R2′; it is not implemented yet.
 
-## Susceptibility source separation
+## Methods
 
 Enable with `--do-chisep` to split susceptibility into paramagnetic and
 diamagnetic components, and choose the method with `--chisep`.
@@ -176,7 +176,7 @@ Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
 `desc-total_Chimap`.
 
 Separation is fitted over the voxels the susceptibility map is defined on — its
-support, written as `desc-qsm_mask` (see [Referencing](/QSMxT/how-to/reference-and-stats/#referencing)) — not over
+support, written as `desc-qsm_mask` (see [Referencing](/QSMxT/background/pipeline/#referencing)) — not over
 the whole brain mask: the rim that background-field removal eroded has no χ to
 separate. The methods that also fit the local field are limited to where that
 field is defined. R2' and R2\* are restricted to the same voxels before fitting,

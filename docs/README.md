@@ -12,8 +12,11 @@ npm run dev       # local server at http://localhost:4321/QSMxT/
 
 ## Layout
 
-- `src/content/docs/`: one Markdown page per URL, in five groups: `start/`, `how-to/`,
-  `toolbox-pipelines/`, `reference/` and `background/` (plus `index.mdx`, the home page).
+- `src/content/docs/`: one Markdown page per URL. The sidebar's five sections are in
+  `start/` (Get started), `how-to/` (Guides), `data/` (Your data), `reference/` and
+  `toolbox-pipelines/` (Reference) and `background/` (How it works), plus `index.mdx`, the home
+  page. Each topic has one home: a guide holds the steps, a data note what QSMxT does for that
+  kind of data, a reference page the full detail.
 - `astro.config.mjs`: the sidebar, the site's head scripts, the link checker
   ([starlight-links-validator](https://starlight-links-validator.vercel.app)) and the redirects.
 - `redirects.mjs`: every old page URL and where its content went. Moving or renaming a page, or
@@ -29,12 +32,12 @@ Don't edit these by hand; the tests named fail until they are regenerated and co
 
 | What | From | Regenerate |
 |---|---|---|
-| `reference/cli.md` (whole page) | the `qsmxt` binary's argument definitions (`src/cli_reference.rs`) | `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference` |
+| The `cli-*` blocks in `reference/cli.md` (every command's options) | the `qsmxt` binary's argument definitions (`src/cli_reference.rs`) | `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference` |
 | The `settings` block in `reference/configuration.md` | the settings registry | `QSMXT_UPDATE_DOCS=1 cargo test -p qsmxt-engine reference_docs` |
-| The `*-methods` tables in `reference/methods.md` and `how-to/source-separation.md`, and the algorithm tables in the repository's `README.md` | QSM.rs's method catalogue and the settings registry (`crates/qsmxt-engine/src/reference_docs.rs`) | the same |
+| The `*-methods` tables in `reference/methods.md` and `reference/source-separation.md`, and the algorithm tables in the repository's `README.md` | QSM.rs's method catalogue and the settings registry (`crates/qsmxt-engine/src/reference_docs.rs`) | the same |
 
 A generated block sits between `<!-- generated:NAME start … -->` and `<!-- generated:NAME end -->`;
 the prose around it is hand-written. `src/cli_reference.rs` also checks the hand-written pages:
-every `--flag` they name exists, every command is in `reference/commands.md` and
-`reference/tools.md`, every algorithm value is described in the method pages, and every output
+every `--flag` they name exists, every command has its heading and blocks in `reference/cli.md`,
+every algorithm value is described in the method pages, and every output
 file is in `reference/outputs.md`.

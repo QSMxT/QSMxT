@@ -1,49 +1,113 @@
-//! The generated command-line reference (`docs/src/content/docs/reference/cli.md`), and the
-//! checks that keep the hand-written docs from drifting from the binary (#282).
+//! The command-line reference (`docs/src/content/docs/reference/cli.md`), and the checks that
+//! keep the hand-written docs from drifting from the binary (#282).
 //!
-//! The page is rendered from clap's own model of `qsmxt` — every subcommand, argument, possible
-//! value and default — so it cannot list a flag the binary does not have or miss one it does.
-//! `cli_reference_is_current` fails when the committed page differs from what the binary
-//! renders; regenerate it with
+//! The page is hand-written prose around generated blocks. Every block is rendered from clap's
+//! own model of `qsmxt` (every subcommand, argument, possible value and default), so the page
+//! cannot list a flag the binary does not have or miss one it does: `cli-commands` is the table
+//! of commands, `cli-<command>` a command's summary with its options (or its table of
+//! subcommands), and `cli-<command>-subcommands` each subcommand's options. `qsmxt slurm` and
+//! `qsmxt aggregate` take `qsmxt run`'s pipeline options, which are listed once, under `run`.
+//! `cli_reference_is_current` fails when a committed block differs from what the binary renders,
+//! or a command has no block; regenerate them with
 //!
 //! ```sh
 //! QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference
 //! ```
+
+use std::collections::BTreeSet;
 
 use clap::{Arg, ArgAction, Command, CommandFactory};
 
 /// The page, relative to the repository root.
 pub const CLI_REFERENCE: &str = "docs/src/content/docs/reference/cli.md";
 
-/// Render the whole reference page.
-pub fn render() -> String {
+const MARK_TAIL: &str = " (from the qsmxt binary's argument definitions: do not edit; regenerate with \
+    QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference) -->";
+
+/// Every generated block of the page, by name, in page order.
+pub fn blocks() -> Vec<(String, String)> {
     let mut cmd = crate::cli::Cli::command();
     cmd.build();
-    let mut out = String::from(
-        "---\n\
-         title: CLI reference\n\
-         description: Every qsmxt command, option, accepted value and default, generated from the binary.\n\
-         ---\n\n\
-         <!-- Generated from qsmxt's own argument definitions by src/cli_reference.rs. Do not edit:\n\
-         \x20    run `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference` to regenerate. -->\n\n\
-         This page is generated from the `qsmxt` binary's argument definitions, so it lists exactly\n\
-         the commands and options the binary accepts. `qsmxt <command> --help` prints the same\n\
-         text. For what the options *do*, see [Commands](/QSMxT/reference/commands/),\n\
-         [Methods index](/QSMxT/reference/methods/) and [Standalone tools](/QSMxT/reference/tools/).\n\n",
-    );
-    out.push_str("## Commands\n\n");
+    let run_longs: BTreeSet<String> = cmd.find_subcommand("run").map(longs).unwrap_or_default();
+    let mut out = Vec::new();
+    let mut table = String::from("| Command | What it does |\n| --- | --- |\n");
     for sub in visible_subcommands(&cmd) {
-        out.push_str(&format!("- [`qsmxt {}`](#{})\n", sub.get_name(), anchor(&format!("qsmxt {}", sub.get_name()))));
+        let about = sub.get_about().map(|a| first_paragraph(&a.to_string())).unwrap_or_default();
+        table.push_str(&format!("| [`qsmxt {}`](#{}) | {} |\n", sub.get_name(),
+            anchor(&format!("qsmxt {}", sub.get_name())), escape(&about)));
     }
-    out.push('\n');
+    out.push(("cli-commands".to_string(), table));
     for sub in visible_subcommands(&cmd) {
-        render_command(&mut out, sub, "qsmxt", 2);
+        let path = format!("qsmxt {}", sub.get_name());
+        // A command that takes most of `qsmxt run`'s options lists only its own; the rest are
+        // `run`'s, listed once there.
+        let shared = if sub.get_name() != "run" {
+            let own = longs(sub);
+            let common = own.intersection(&run_longs).count();
+            (common * 2 >= run_longs.len()).then(|| run_longs.difference(&own).cloned().collect::<Vec<_>>())
+        } else {
+            None
+        };
+        let mut head = String::new();
+        render_body(&mut head, sub, &path, shared.as_deref().map(|e| (e, &run_longs)));
+        out.push((format!("cli-{}", sub.get_name()), head));
+        let subs = visible_subcommands(sub);
+        if !subs.is_empty() {
+            let mut details = String::new();
+            for s in subs {
+                render_command(&mut details, s, &path, 3);
+            }
+            out.push((format!("cli-{}-subcommands", sub.get_name()), details));
+        }
     }
-    // One trailing newline, whatever the last section left.
-    while out.ends_with("\n\n") {
-        out.pop();
+    for (_, text) in out.iter_mut() {
+        while text.ends_with("\n\n") {
+            text.pop();
+        }
     }
     out
+}
+
+/// `page` with every generated block replaced by what the binary renders. An error names the
+/// blocks the page lacks, or has but the binary does not.
+pub fn render(page: &str) -> Result<String, String> {
+    let mut page = page.to_string();
+    let blocks = blocks();
+    let mut missing = Vec::new();
+    for (name, text) in &blocks {
+        let start = format!("<!-- generated:{name} start");
+        let end = format!("<!-- generated:{name} end -->");
+        let (Some(s), Some(e)) = (page.find(&start), page.find(&end)) else {
+            missing.push(name.clone());
+            continue;
+        };
+        let body_start = s + page[s..].find("-->").map(|i| i + 3).unwrap_or(start.len());
+        if e < body_start {
+            return Err(format!("{CLI_REFERENCE}: block {name} ends before it starts"));
+        }
+        page.replace_range(s..e, &format!("{start}{MARK_TAIL}\n\n{text}\n"));
+    }
+    if !missing.is_empty() {
+        return Err(format!("{CLI_REFERENCE} has no generated block for: {}. Add each as \
+            `<!-- generated:NAME start -->` / `<!-- generated:NAME end -->` under its command's \
+            heading", missing.join(", ")));
+    }
+    let known: BTreeSet<&str> = blocks.iter().map(|(n, _)| n.as_str()).collect();
+    let stale: Vec<&str> = page.match_indices("<!-- generated:").filter_map(|(i, _)| {
+        let name = page[i + 15..].split(' ').next()?;
+        (!known.contains(name)).then_some(name)
+    }).collect();
+    if !stale.is_empty() {
+        return Err(format!("{CLI_REFERENCE} has generated blocks for commands the binary lacks: {}",
+            stale.join(", ")));
+    }
+    Ok(page)
+}
+
+/// A command's long option names.
+fn longs(cmd: &Command) -> BTreeSet<String> {
+    cmd.get_arguments().filter(|a| !a.is_hide_set()).filter_map(|a| a.get_long().map(String::from))
+        .filter(|l| l != "help" && l != "version").collect()
 }
 
 fn visible_subcommands(cmd: &Command) -> Vec<&Command> {
@@ -78,6 +142,16 @@ fn sentence(text: &str) -> String {
 fn render_command(out: &mut String, cmd: &Command, parent: &str, level: usize) {
     let path = format!("{parent} {}", cmd.get_name());
     out.push_str(&format!("{} `{path}`\n\n", "#".repeat(level.min(6))));
+    render_body(out, cmd, &path, None);
+    for s in visible_subcommands(cmd) {
+        render_command(out, s, &path, level + 1);
+    }
+}
+
+/// A command's summary, then its subcommands' table, or its usage and options. `run_options`:
+/// the command takes `qsmxt run`'s options (the second), all but the first, and `run`'s are not
+/// listed again.
+fn render_body(out: &mut String, cmd: &Command, path: &str, run_options: Option<(&[String], &BTreeSet<String>)>) {
     if let Some(about) = cmd.get_long_about().or_else(|| cmd.get_about()) {
         out.push_str(&escape(about.to_string().trim()));
         out.push_str("\n\n");
@@ -91,18 +165,27 @@ fn render_command(out: &mut String, cmd: &Command, parent: &str, level: usize) {
                 anchor(&format!("{path} {}", s.get_name())), escape(&about)));
         }
         out.push('\n');
-        for s in subs {
-            render_command(out, s, &path, level + 1);
-        }
         return;
     }
-    let mut usage = cmd.clone().bin_name(path.clone());
+    let mut usage = cmd.clone().bin_name(path.to_string());
     let usage = usage.render_usage().to_string();
     let usage = usage.trim_start_matches("Usage:").trim();
     out.push_str(&format!("```sh\n{usage}\n```\n\n"));
 
+    let none = BTreeSet::new();
+    let run_longs = run_options.map_or(&none, |(_, l)| l);
+    if let Some((except, _)) = run_options {
+        let mut line = String::from("It also takes every [`qsmxt run`](#qsmxt-run) option");
+        if !except.is_empty() {
+            let names: Vec<String> = except.iter().map(|l| format!("`--{l}`")).collect();
+            line.push_str(&format!(" except {}", names.join(", ")));
+        }
+        out.push_str(&line);
+        out.push_str(". Those are listed there; below are its own.\n\n");
+    }
     let args: Vec<&Arg> = cmd.get_arguments()
         .filter(|a| !a.is_hide_set() && !matches!(a.get_id().as_str(), "help" | "version"))
+        .filter(|a| !a.get_long().is_some_and(|l| run_longs.contains(l)))
         .collect();
     if args.is_empty() {
         return;
@@ -180,43 +263,36 @@ mod tests {
             .unwrap_or_else(|e| panic!("{rel}: {e}"))
     }
 
-    /// The committed reference is what the binary renders. Regenerate with
-    /// `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference`.
+    /// The committed page's generated blocks are what the binary renders, and every command has
+    /// them. Regenerate with `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt cli_reference`.
     #[test]
     fn cli_reference_is_current() {
         let path = repo().join(CLI_REFERENCE);
-        let rendered = render();
+        let committed = fs_err::read_to_string(&path).unwrap();
+        let rendered = render(&committed).unwrap_or_else(|e| panic!("{e}"));
         if std::env::var_os("QSMXT_UPDATE_DOCS").is_some() {
             fs_err::write(&path, &rendered).unwrap();
             return;
         }
-        let committed = fs_err::read_to_string(&path).unwrap_or_default();
         assert!(committed == rendered,
             "{} is out of date with the CLI: run `QSMXT_UPDATE_DOCS=1 cargo test --bin qsmxt \
              cli_reference` and commit the result", Path::new(CLI_REFERENCE).display());
     }
 
-    /// Every command the binary has is in the hand-written command overview, and every
-    /// standalone tool's subcommands are in the tools page.
+    /// Every command has its own heading on the page, which the table of commands links to.
     #[test]
-    fn every_command_is_in_the_commands_and_tools_pages() {
-        let commands = doc("reference/commands.md");
-        let tools = doc("reference/tools.md");
-        let cmd = crate::cli::Cli::command();
-        for sub in visible_subcommands(&cmd) {
-            let name = sub.get_name();
-            assert!(commands.contains(&format!("`{name}`")), "reference/commands.md does not list `{name}`");
-            for s in visible_subcommands(sub) {
-                assert!(tools.contains(&format!("`{}`", s.get_name())),
-                    "reference/tools.md does not list `qsmxt {name} {}`", s.get_name());
-            }
+    fn every_command_has_a_heading() {
+        let page = doc("reference/cli.md");
+        for sub in visible_subcommands(&crate::cli::Cli::command()) {
+            let heading = format!("## `qsmxt {}`", sub.get_name());
+            assert!(page.lines().any(|l| l == heading), "reference/cli.md has no `{heading}` heading");
         }
     }
 
     /// The pages that describe the methods: the methods index first, then the guides and
     /// background pages that hold a stage's options.
-    const METHOD_PAGES: [&str; 6] = ["reference/methods.md", "how-to/build-mask.md", "background/geometry.md",
-        "how-to/source-separation.md", "how-to/multi-orientation.md", "how-to/reference-and-stats.md"];
+    const METHOD_PAGES: [&str; 6] = ["reference/methods.md", "reference/masking.md", "background/geometry.md",
+        "reference/source-separation.md", "reference/multi-orientation.md", "background/pipeline.md"];
 
     fn method_pages() -> String {
         METHOD_PAGES.map(doc).join("\n")
@@ -298,7 +374,7 @@ mod tests {
     /// are exactly the recipe the preset runs.
     #[test]
     fn mask_preset_expansions_in_the_docs_are_the_recipes() {
-        let algorithms = doc("how-to/build-mask.md");
+        let algorithms = doc("reference/masking.md");
         for (name, recipe) in qsmxt_engine::mask_presets() {
             let mut flags: Vec<String> = recipe.sections.iter()
                 .map(|s| format!("--mask {}", s.compact_spec())).collect();
@@ -307,7 +383,7 @@ mod tests {
             }
             flags.extend(recipe.refinements.iter().map(|r| format!("--mask-refine {}", r.compact_spec())));
             let row = format!("| `{name}` | `{}` |", flags.join(" "));
-            assert!(algorithms.contains(&row), "how-to/build-mask.md lacks the expansion row\n{row}");
+            assert!(algorithms.contains(&row), "reference/masking.md lacks the expansion row\n{row}");
         }
     }
 

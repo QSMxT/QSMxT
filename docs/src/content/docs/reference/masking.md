@@ -1,5 +1,5 @@
 ---
-title: Build a custom mask
+title: Mask recipes
 description: "Masking presets, custom mask sections, combining and refining, two-pass masking."
 ---
 
@@ -160,5 +160,5 @@ map. QSM.rs (`pipeline::two_pass`) records the measurements behind the default a
 how each inversion treats the holes.
 
 To try this on files without a pipeline run, use
-[`qsmxt mask preset bet-and-phase`, or `qsmxt mask and` / `or`](/QSMxT/reference/tools/#masking--qsmxt-mask)
+[`qsmxt mask preset bet-and-phase`, or `qsmxt mask and` / `or`](/QSMxT/reference/cli/#qsmxt-mask)
 on masks you already have.
