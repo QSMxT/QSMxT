@@ -686,6 +686,24 @@ mod tests {
         assert!(app.pipelines.preview.is_some());
     }
 
+    /// A known gap is noted with its details and in the preview (STI Suite's STAR-QSM path: its
+    /// own brain mask is not available).
+    #[test]
+    fn a_known_gap_is_noted_and_previewed() {
+        let mut app = four_echoes();
+        key(&mut app, KeyCode::Char('2'));
+        let star = pipelines::pipelines().iter().position(|p| p.id == "sti-suite-star").expect("STI Suite STAR-QSM");
+        // The list starts at QSMxT's defaults, which is the first of `pipelines()`.
+        for _ in 0..star {
+            key(&mut app, KeyCode::Down);
+        }
+        let text = screen(&mut app);
+        assert!(text.contains("Note: STI Suite's STAR-QSM path"), "{text}");
+        key(&mut app, KeyCode::Enter);
+        let text = screen(&mut app);
+        assert!(text.contains("Apply STI Suite") && text.contains("Note: STI Suite's STAR-QSM path"), "{text}");
+    }
+
     /// The tab: the list, the comparison, Enter's preview, and Apply.
     #[test]
     fn the_tab_previews_then_applies() {
@@ -697,11 +715,11 @@ mod tests {
         key(&mut app, KeyCode::Down);
         let text = screen(&mut app);
         assert!(text.contains("MEDI toolbox 2024.11.26") && text.contains("Choosing it changes"), "{text}");
-        // MEDI's known gap is noted with its details and in its preview; QSMxT's defaults have none.
-        assert!(text.contains("Note: For bipolar readouts"), "{text}");
+        // A pipeline with no known gap has no note (MEDI's bipolar gap closed in QSM.rs#496).
+        assert!(!text.contains("Note:"), "{text}");
         key(&mut app, KeyCode::Enter);
         let text = screen(&mut app);
-        assert!(text.contains("Apply MEDI toolbox") && text.contains("Note: For bipolar readouts"), "{text}");
+        assert!(text.contains("Apply MEDI toolbox") && !text.contains("Note:"), "{text}");
         assert_eq!(app.pipeline_status().text(), "QSMxT defaults", "nothing changes before Apply");
         key(&mut app, KeyCode::Enter);
         assert!(app.pipelines.preview.is_none());
