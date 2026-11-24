@@ -439,13 +439,7 @@ fn qsmart_keeps_its_intermediates_in_each_pass_step() {
         &fs_err::read_to_string(output.provenance_path(&run.key, "unwrap")).unwrap()).unwrap();
     assert!(prov["parameters"]["qsmart_fit_threshold"].is_f64(), "{prov}");
 
-    let names = [
-        qsm_core::pipeline::qsmart::outputs::VESSEL_MASK,
-        qsm_core::pipeline::qsmart::outputs::LOCAL_FIELD_STAGE1,
-        qsm_core::pipeline::qsmart::outputs::CHI_STAGE1,
-        qsm_core::pipeline::qsmart::outputs::LOCAL_FIELD_STAGE2,
-        qsm_core::pipeline::qsmart::outputs::CHI_STAGE2,
-    ];
+    let names = qsmxt_engine::stages::qsmart::REPORTED;
     let state = PipelineState::load_or_create(&output.state_path(&run.key), &config, &run.key, false);
     let mut written = Vec::new();
     for step in ["qsmart", "qsmart-reliable"] {

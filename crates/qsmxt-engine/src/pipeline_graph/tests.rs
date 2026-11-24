@@ -165,7 +165,7 @@ fn the_chi_separation_graph() {
 fn qsmart_graphs() {
     // QSMART, its inputs prepared as its own (set here; nothing sets them for it): the total field and the echo fit's reliability map
     // from QSMART's Laplacian unwrapping and echo fit, every echo's magnitude for its own vessel
-    // magnitude (kept), and five intermediates of its own out.
+    // magnitude (kept), and its intermediates out.
     let mut config = PipelineConfig::default();
     config.inversion.algorithm = QsmAlgorithm::Qsmart;
     config.field_mapping.unwrapping_algorithm = crate::enums::UnwrappingAlgorithm::Laplacian;
@@ -188,7 +188,13 @@ fn qsmart_graphs() {
     let u = g.node("unwrap").unwrap();
     assert!(u.settings.contains(&"raw phase over the whole volume".to_string()), "{:?}", u.settings);
     let q = g.node("qsmart").unwrap();
-    assert_eq!(q.writes.len(), 6);
+    assert_eq!(q.writes.len(), 1 + crate::stages::qsmart::REPORTED.len());
+    // No vessel proximity without stage 2's σ2.
+    let mut no_sigma2 = config.clone();
+    no_sigma2.inversion.qsmart.sdf_sigma2_stage2 = 0.0;
+    let qn = graph(&no_sigma2, &facts()).node("qsmart").unwrap().writes.clone();
+    assert_eq!(qn.len(), crate::stages::qsmart::REPORTED.len());
+    assert!(!qn.contains(&item_key(&Item::QsmartIntermediate(Pass::Main, crate::stages::qsmart::outputs::VESSEL_PROXIMITY_STAGE2))));
     assert!(q.reads.contains(&item_key(&Item::FieldReliability)) && q.reads.contains(&item_key(&Item::VesselMagnitude)));
     assert!(!q.writes.contains(&item_key(&Item::QsmartIntermediate(Pass::Main, crate::stages::qsmart::VESSEL_MAGNITUDE))));
     // With motion correction, QSMART makes it from the motion-corrected echoes itself.
@@ -205,7 +211,13 @@ fn qsmart_graphs() {
     let g = graph(&config, &facts());
     assert!(g.has_edge("magnitude", "qsmart"));
     let q = g.node("qsmart").unwrap();
-    assert_eq!(q.writes.len(), 6);
+    assert_eq!(q.writes.len(), 1 + crate::stages::qsmart::REPORTED.len());
+    // No vessel proximity without stage 2's σ2.
+    let mut no_sigma2 = config.clone();
+    no_sigma2.inversion.qsmart.sdf_sigma2_stage2 = 0.0;
+    let qn = graph(&no_sigma2, &facts()).node("qsmart").unwrap().writes.clone();
+    assert_eq!(qn.len(), crate::stages::qsmart::REPORTED.len());
+    assert!(!qn.contains(&item_key(&Item::QsmartIntermediate(Pass::Main, crate::stages::qsmart::outputs::VESSEL_PROXIMITY_STAGE2))));
     assert!(!q.reads.contains(&item_key(&Item::FieldReliability)));
     assert!(q.settings.contains(&"vessels on the combined magnitude".to_string()), "{:?}", q.settings);
     assert!(!g.node("unwrap").unwrap().writes.contains(&item_key(&Item::FieldReliability)));

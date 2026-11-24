@@ -200,7 +200,6 @@ impl Item {
             let (c, e) = a?.split_once(',')?;
             Some((n(c)?, n(e)?))
         };
-        use qsm_core::pipeline::qsmart::outputs as q;
         Some(match (name, args) {
             ("AcquiredPhase", a) => Item::AcquiredPhase(echo(a)?),
             ("AcquiredMagnitude", a) => Item::AcquiredMagnitude(echo(a)?),
@@ -231,9 +230,9 @@ impl Item {
             ("QsmartIntermediate", Some(a)) => {
                 let (p, n) = a.split_once(',')?;
                 let n = n.trim().strip_prefix('"')?.strip_suffix('"')?;
-                let name = [crate::stages::qsmart::VESSEL_MAGNITUDE, q::VESSEL_MASK, q::LOCAL_FIELD_STAGE1, q::CHI_STAGE1,
-                            q::LOCAL_FIELD_STAGE2, q::CHI_STAGE2]
-                    .into_iter().find(|&known| known == n)?;
+                let name = std::iter::once(crate::stages::qsmart::VESSEL_MAGNITUDE)
+                    .chain(crate::stages::qsmart::REPORTED)
+                    .find(|&known| known == n)?;
                 Item::QsmartIntermediate(pass(p)?, name)
             }
             ("Smwi", a) => Item::Smwi(contrast(a)?),

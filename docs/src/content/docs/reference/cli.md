@@ -2772,9 +2772,12 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 the field with `qsmxt fieldmap laplacian --laplacian-solver mirror --laplacian-unmasked
 --b0-estimation qsmart-echofit --reliability-output r0.nii`, then pass
 `--reliability r0.nii` and every echo's magnitude (4D) as `--magnitude`. `--intermediates DIR` also
-writes QSMART's own maps into `DIR` as `<name>.nii`: `vessel_mask` (1 = vessel),
-`localfield_stage1`, `chimap_stage1`, `localfield_stage2`, `chimap_stage2`, and
-`vessel_magnitude` when QSMART makes its own from the echoes.
+writes QSMART's own maps into `DIR` as `<name>.nii`: `vessel_bottom_hat`, `vesselness`,
+`vessel_mask` (1 = vessel), `curvature`, per stage `initial_proximity_stage1`/`_stage2`,
+`vessel_proximity_stage2`, `proximity_stage1`/`_stage2`, `alpha_stage1`/`_stage2` (SDF widths,
+voxels), `localfield_stage1`/`_stage2` and `chimap_stage1`/`_stage2` (ppm), `chimap_combined`
+(the stages before the offset), and `vessel_magnitude` when QSMART makes its own from the
+echoes. [Output files](/QSMxT/reference/outputs/#qsmarts-intermediate-maps) says what each holds.
 `--qsmart-offset-grid qsmart-reference` combines the two stages on the k-space grid of the
 authors' code instead of the FFT grid; the two differ only when a matrix dimension is odd, and
 the option is there for comparing with their code. `--ilsqr-precision single` runs the inner

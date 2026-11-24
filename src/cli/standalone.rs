@@ -44,8 +44,10 @@ pub struct QsmartArgs {
     #[arg(long)]
     pub reliability: Option<PathBuf>,
     /// Also write QSMART's intermediate maps into this directory, as <name>.nii:
-    /// vessel_mask (1 = vessel), localfield_stage1, chimap_stage1, localfield_stage2 and
-    /// chimap_stage2 (ppm), and vessel_magnitude when QSMART makes its own (mean-n4)
+    /// vessel_bottom_hat, vesselness, vessel_mask (1 = vessel), curvature, per stage N
+    /// initial_proximity_stageN, proximity_stageN, alpha_stageN (voxels), localfield_stageN and
+    /// chimap_stageN (ppm), vessel_proximity_stage2, chimap_combined (the stages before the
+    /// offset, ppm), and vessel_magnitude when QSMART makes its own (mean-n4)
     #[arg(long, value_name = "DIR")]
     pub intermediates: Option<PathBuf>,
     /// Arithmetic of the inner iLSQR's two LSQR solves (`--qsmart-inversion ilsqr`): double, or

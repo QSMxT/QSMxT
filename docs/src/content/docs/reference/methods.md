@@ -540,7 +540,10 @@ sizes at that release's defaults, takes today's defaults in voxels.
 
 The echo fit's reliability map is kept in the unwrap step's workflow folder
 (`*_desc-echofit_mask`), and the vessel-detection magnitude in QSMART's
-(`*_part-mag_desc-vessels_T2starw`), beside its other intermediates. The blurred
+(`*_part-mag_desc-vessels_T2starw`), beside its other intermediates: the vesselness,
+vessel mask, surface curvature, each stage's proximity maps, SDF widths, local field
+and χ, and the stages combined before the offset (listed in
+[Output files](/QSMxT/reference/outputs/#qsmarts-intermediate-maps)). The blurred
 residual the map was cut at (the value the percentile came to, or the fixed
 threshold) is written to the log and recorded with the unwrap step's parameters
 in its provenance, as `qsmart_fit_threshold`.

@@ -336,8 +336,7 @@ impl Ctx<'_> {
                         reads.push(Item::CombinedMagnitude);
                     },
                 }
-                use crate::stages::qsmart::outputs as q;
-                for name in [q::VESSEL_MASK, q::LOCAL_FIELD_STAGE1, q::CHI_STAGE1, q::LOCAL_FIELD_STAGE2, q::CHI_STAGE2] {
+                for name in crate::stages::qsmart::reported(c) {
                     writes.push(Item::QsmartIntermediate(p, name));
                 }
             }

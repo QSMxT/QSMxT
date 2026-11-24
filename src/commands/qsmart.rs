@@ -15,7 +15,8 @@ use qsmxt_io::error::QsmxtError;
 
 
 /// The file name (without extension) `--intermediates` writes a QSMART intermediate under: the
-/// artifact names (`localfield`, `chimap`) with the stage, as QSM-CI names them.
+/// artifact names (`localfield`, `chimap`) with the stage, as QSM-CI names them, and QSM.rs's
+/// name for the rest.
 fn intermediate_file(name: &str) -> &str {
     use qsmxt_engine::stages::qsmart::outputs as q;
     match name {
@@ -23,6 +24,7 @@ fn intermediate_file(name: &str) -> &str {
         q::CHI_STAGE1 => "chimap_stage1",
         q::LOCAL_FIELD_STAGE2 => "localfield_stage2",
         q::CHI_STAGE2 => "chimap_stage2",
+        q::CHI_COMBINED => "chimap_combined",
         other => other,
     }
 }
