@@ -46,7 +46,7 @@ None.
 
 ## Known gaps
 
-For bipolar readouts, turn on bipolar correction: the complex fit is then the MEDI toolbox's bipolar echo fit (Fit_ppm_complex_bipolar) ([QSMxT#564](https://github.com/QSMxT/QSMxT/issues/564)).
+None known.
 
 ## Citations
 
