@@ -111,11 +111,23 @@ impl Item {
                     // Made in the QSMART step only from motion-corrected echoes; otherwise the
                     // inhomogeneity correction makes it ([`Item::VesselMagnitude`]).
                     crate::stages::qsmart::VESSEL_MAGNITUDE => ("QSMART vessel magnitude (motion-corrected echoes)", None, K::Magnitude, "part-mag_desc-vessels_T2starw"),
+                    qsmart::VESSEL_BOTTOM_HAT => ("QSMART vessel magnitude's bottom-hat", None, K::Magnitude, "part-mag_desc-bottomhat_T2starw"),
+                    qsmart::VESSELNESS => ("QSMART Frangi vesselness", None, K::Magnitude, "desc-frangi_vesselness"),
                     qsmart::VESSEL_MASK => ("QSMART vessel mask", None, K::Mask, "desc-vessels_mask"),
+                    qsmart::INITIAL_PROXIMITY_STAGE1 => ("QSMART initial proximity, stage 1", None, K::Magnitude, "desc-stage1initial_proximity"),
+                    qsmart::CURVATURE => ("QSMART surface curvature", None, K::Magnitude, "desc-gaussian_curvature"),
+                    qsmart::PROXIMITY_STAGE1 => ("QSMART proximity, stage 1", None, K::Magnitude, "desc-stage1_proximity"),
+                    qsmart::ALPHA_STAGE1 => ("QSMART smoothing width, stage 1", Some("voxels"), K::Magnitude, "desc-stage1_alpha"),
                     qsmart::LOCAL_FIELD_STAGE1 => ("QSMART local field, stage 1", Some("ppm"), K::Field, "desc-stage1_localfield"),
                     qsmart::CHI_STAGE1 => ("QSMART susceptibility, stage 1", Some("ppm"), K::Chi, "desc-stage1_Chimap"),
+                    qsmart::INITIAL_PROXIMITY_STAGE2 => ("QSMART initial proximity, stage 2", None, K::Magnitude, "desc-stage2initial_proximity"),
+                    qsmart::VESSEL_PROXIMITY_STAGE2 => ("QSMART vessel proximity, stage 2", None, K::Magnitude, "desc-stage2vessels_proximity"),
+                    qsmart::PROXIMITY_STAGE2 => ("QSMART proximity, stage 2", None, K::Magnitude, "desc-stage2_proximity"),
+                    qsmart::ALPHA_STAGE2 => ("QSMART smoothing width, stage 2", Some("voxels"), K::Magnitude, "desc-stage2_alpha"),
                     qsmart::LOCAL_FIELD_STAGE2 => ("QSMART local field, stage 2", Some("ppm"), K::Field, "desc-stage2_localfield"),
                     qsmart::CHI_STAGE2 => ("QSMART susceptibility, stage 2", Some("ppm"), K::Chi, "desc-stage2_Chimap"),
+                    qsmart::CHI_COMBINED => ("QSMART susceptibility, stages combined before the offset", Some("ppm"), K::Chi,
+                                             "desc-stagescombined_Chimap"),
                     // An intermediate QSMxT has no name for is not saved (`qsmxt run` warns).
                     other => return ItemMeta {
                         label: format!("QSMART {other}{}", pass_suffix(p)), units: None, kind: K::Field,
@@ -207,8 +219,7 @@ impl Item {
         ];
         for p in [Pass::Main, Pass::Reliable] {
             items.extend([Item::LocalField(p), Item::LocalFieldMask(p), Item::RawChi(p)]);
-            for name in [crate::stages::qsmart::VESSEL_MAGNITUDE, qsmart::VESSEL_MASK, qsmart::LOCAL_FIELD_STAGE1,
-                         qsmart::CHI_STAGE1, qsmart::LOCAL_FIELD_STAGE2, qsmart::CHI_STAGE2] {
+            for name in std::iter::once(crate::stages::qsmart::VESSEL_MAGNITUDE).chain(crate::stages::qsmart::REPORTED) {
                 items.push(Item::QsmartIntermediate(p, name));
             }
         }

@@ -43,10 +43,19 @@ fn test_qsmart_writes_its_intermediates() {
     let mut written: Vec<String> = fs_err::read_dir(dir.path().join("inter")).unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
     written.sort();
-    assert_eq!(written, ["chimap_stage1.nii", "chimap_stage2.nii", "localfield_stage1.nii",
-                         "localfield_stage2.nii", "vessel_mask.nii"]);
-    let vessels = qsm_core::io::read_nifti_file(&dir.path().join("inter/vessel_mask.nii")).unwrap();
+    assert_eq!(written, ["alpha_stage1.nii", "alpha_stage2.nii", "chimap_combined.nii", "chimap_stage1.nii",
+                         "chimap_stage2.nii", "curvature.nii", "initial_proximity_stage1.nii",
+                         "initial_proximity_stage2.nii", "localfield_stage1.nii", "localfield_stage2.nii",
+                         "proximity_stage1.nii", "proximity_stage2.nii", "vessel_bottom_hat.nii", "vessel_mask.nii",
+                         "vessel_proximity_stage2.nii", "vesselness.nii"]);
+    let read = |name: &str| qsm_core::io::read_nifti_file(&dir.path().join("inter").join(name)).unwrap();
+    let vessels = read("vessel_mask.nii");
     assert!(vessels.data.iter().all(|&v| v == 0.0 || v == 1.0));
+    // Every map is on the field's grid.
+    let field = read("localfield_stage1.nii");
+    for name in &written {
+        assert_eq!(read(name).dims, field.dims, "{name}");
+    }
 }
 
 #[test]

@@ -387,8 +387,11 @@ fn romeo_threads(s: &Scan) -> u64 {
 /// TGV's bytes per voxel: its f32 workspace over the brain's bounding box (the whole volume, at
 /// worst), the inputs and outputs.
 const TGV_PER_VOXEL: u64 = 128;
-/// QSMART's bytes per voxel.
-const QSMART_PER_VOXEL: u64 = 271;
+/// QSMART's bytes per voxel: 271 measured (#406) when it kept five intermediates, plus the
+/// eleven double-precision maps it has kept since (vessel detection's bottom-hat and vesselness,
+/// the curvature, each stage's proximity maps and smoothing widths, the combined map), all held
+/// until the step returns. Not re-measured.
+const QSMART_PER_VOXEL: u64 = 271 + 11 * 8;
 
 /// What a deep-learning network needs besides its activations, and its activations measured
 /// where qsm-core has no figure.

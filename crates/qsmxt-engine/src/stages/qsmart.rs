@@ -8,10 +8,28 @@ use crate::scan::{scan_metadata, RunMetadata};
 
 mod step;
 
-/// The intermediates [`qsmart`] returns, by name, in the order they are produced: the vessel
-/// mask, then the stage-1 and stage-2 local fields and susceptibility maps. See
+/// The intermediates [`qsmart`] returns, by name ([`REPORTED`]). See
 /// [`qsm_core::pipeline::qsmart::outputs`] for what each holds.
 pub use qsm_core::pipeline::qsmart::outputs;
+
+/// Every intermediate qsm-core's QSMART reports, in the order it reports them: vessel detection's
+/// bottom-hat, vesselness and vessel mask; per stage the SDF's proximity maps and smoothing widths
+/// (and once the surface curvature), its local field and susceptibility map; and the two stages
+/// combined before the offset. [`outputs::VESSEL_PROXIMITY_STAGE2`] only when stage 2's σ2 is
+/// above 0 ([`reported`]). QSMxT keeps them all.
+pub const REPORTED: [&str; 16] = [
+    outputs::VESSEL_BOTTOM_HAT, outputs::VESSELNESS, outputs::VESSEL_MASK,
+    outputs::INITIAL_PROXIMITY_STAGE1, outputs::CURVATURE, outputs::PROXIMITY_STAGE1, outputs::ALPHA_STAGE1,
+    outputs::LOCAL_FIELD_STAGE1, outputs::CHI_STAGE1,
+    outputs::INITIAL_PROXIMITY_STAGE2, outputs::VESSEL_PROXIMITY_STAGE2, outputs::PROXIMITY_STAGE2,
+    outputs::ALPHA_STAGE2, outputs::LOCAL_FIELD_STAGE2, outputs::CHI_STAGE2, outputs::CHI_COMBINED,
+];
+
+/// The intermediates QSMART reports on a run of `config` ([`REPORTED`] as the settings leave it).
+pub fn reported(config: &PipelineConfig) -> impl Iterator<Item = &'static str> {
+    let vessel_proximity = config.inversion.qsmart.sdf_sigma2_stage2 > 0.0;
+    REPORTED.into_iter().filter(move |&n| vessel_proximity || n != outputs::VESSEL_PROXIMITY_STAGE2)
+}
 
 /// QSMxT's name for the magnitude QSMART detected vessels on, kept beside QSMART's own
 /// intermediates ([`outputs`]) when it is QSMART's vessel magnitude rather than the combined one.

@@ -85,6 +85,37 @@ with an existing `acq-fast`, `acq-fastGRE`). `acq-` is the entity BIDS defines f
 telling apart acquisitions of one modality with different parameters, and it
 keeps the names valid. A run with no such twin keeps its name.
 
+## QSMART's intermediate maps
+
+A run with `--qsm-algorithm qsmart` keeps every map QSMART computes on the way
+to χ, for inspecting what it did: the maps the authors' toolbox
+(`QSMART_toolbox_v1.0`) saves in its output folder, plus the proximity maps it
+computes but does not save. They are intermediates, not published outputs: they
+are in the QSMART step's workflow folder (`workflow/sub-<X>/…/qsmart/`, and
+`qsmart-reliable/` for the second pass of a two-pass run) and are removed by
+`--clean-intermediates`. All are on the grid QSMART ran on (the working grid of a
+resampled run). The SDF widths are in voxels, as in the toolbox.
+
+| File | Toolbox file | Contents |
+| --- | --- | --- |
+| `<run>_part-mag_desc-vessels_T2starw.nii` | `AvgEcho_n4.nii` | The magnitude vessels are detected on, when QSMART makes its own here (`mean-n4` from motion-corrected echoes; otherwise the inhomogeneity correction keeps it in its own folder) |
+| `<run>_part-mag_desc-bottomhat_T2starw.nii` | `test.nii` | Its morphological bottom-hat (closing minus image, sphere of `--qsmart-vasc-sphere-radius`), over the whole volume |
+| `<run>_desc-frangi_vesselness.nii` | `enhanced.nii` | Frangi vesselness of the bottom-hat inside the brain mask |
+| `<run>_desc-vessels_mask.nii` | `vasc_only.nii`, inverted | Vessels: vesselness above its Otsu threshold, inside the brain mask (1 = vessel; the toolbox's `vasc_only` is 1 = tissue) |
+| `<run>_desc-gaussian_curvature.nii` | `curvature.nii` | `curvI`: on the surface of the brain mask × the echo fit's reliability map, the Gaussian curvature scaled so the most negative is −`--qsmart-sdf-curv-constant` (500), positive curvature 1 and flat 0; 1 everywhere else. The same for both stages |
+| `<run>_desc-stage1initial_proximity.nii`, `<run>_desc-stage2initial_proximity.nii` | (`prox1`, not saved) | The mask smoothed with Gaussian widths σ1, 2σ1, 2σ1 voxels along the three voxel axes, per stage |
+| `<run>_desc-stage2vessels_proximity.nii` | (`prox2`, not saved) | Stage 2's vessel proximity: the tissue mask (0 in vessels) smoothed with σ2; not written when stage 2's σ2 is 0 |
+| `<run>_desc-stage1_proximity.nii`, `<run>_desc-stage2_proximity.nii` | `prox.nii` | The proximity each stage's SDF widths come from: `prox1` × the smoothed curvature (at least 0.5), raised to at least `--qsmart-sdf-lower-lim` (0.6), × the edge refinement, and in stage 2 × `prox2`. The toolbox's `prox.nii` is stage 2's (it overwrites stage 1's) |
+| `<run>_desc-stage1_alpha.nii`, `<run>_desc-stage2_alpha.nii` | `alpha.nii` | Each voxel's SDF Gaussian width in voxels, σ·round(prox^n, 2) with σ = √(σ1² + σ2²) and n = −ln σ / ln 0.5; 1 in vessels, and where it is 0 the local field is 0. The toolbox's `alpha.nii` is stage 2's |
+| `<run>_desc-stage1_localfield.nii`, `<run>_desc-stage2_localfield.nii` | `lfs_sdf_1.nii`, `lfs_sdf_2.nii` | Each stage's local field (**ppm**; the toolbox saves them before converting to ppm) |
+| `<run>_desc-stage1_Chimap.nii`, `<run>_desc-stage2_Chimap.nii` | `QSM_1.nii`, `QSM_2.nii` | Each stage's susceptibility map (ppm, unreferenced); stage 2 is 0 in vessels |
+| `<run>_desc-stagescombined_Chimap.nii` | `combined_chi.nii` | The stages combined before the offset adjustment: stage 1 in vessels, stage 2 elsewhere (ppm, unreferenced). QSMART's result is this plus one offset in the vessels |
+
+The echo fit's reliability map `R_0` is in the unwrap step's folder
+(`<run>_desc-echofit_mask.nii`, see [QSMART](/QSMxT/reference/methods/#qsmart)).
+`qsmxt qsmart --intermediates DIR` writes the same maps under shorter names (see
+[the command](/QSMxT/reference/cli/#qsmxt-qsmart)).
+
 ## Dataset-level files (`derivatives/qsmxt/`)
 
 | File | Contents |

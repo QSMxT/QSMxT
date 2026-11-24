@@ -20,11 +20,14 @@ use qsmxt_engine::scan::ScanFacts;
 use qsmxt_engine::PipelineConfig;
 use serde_json::Value;
 
-/// The records' `magnitude` figures were measured when that step also corrected the combined
-/// magnitude for inhomogeneity; the correction is now a step of its own (`inhomog`, each echo in
-/// turn), and neither step's figure has been measured since. Their estimates are left out until
-/// they are.
-const STALE_STEP: &str = "magnitude";
+/// Steps whose recorded figures no longer describe the step, left out until they are measured
+/// again:
+/// - `magnitude`: measured when that step also corrected the combined magnitude for
+///   inhomogeneity; the correction is now a step of its own (`inhomog`, each echo in turn), and
+///   neither step's figure has been measured since.
+/// - `qsmart`: measured when QSMART kept five intermediates; it keeps sixteen since QSMxT#628,
+///   and its estimate grew by the eleven maps rather than by a measurement.
+const STALE_STEPS: [&str; 2] = ["magnitude", "qsmart"];
 
 const UNDER: f64 = 0.10;
 const OVER: f64 = 0.30;
@@ -106,7 +109,7 @@ fn the_estimate_is_within_the_margin_of_every_measurement() {
                 let mut high = 0.0f64;
                 for (i, s) in r["heap"].as_array().unwrap().iter().enumerate() {
                     let (step, heap) = (s[0].as_str().unwrap(), s[1].as_f64().unwrap());
-                    if step == STALE_STEP {
+                    if STALE_STEPS.contains(&step) {
                         high = high.max(heap);
                         continue;
                     }
@@ -143,7 +146,7 @@ fn the_estimate_is_within_the_margin_of_every_measurement() {
                 let p = plan_for(&config(&fx, r, browser_profile), &facts(&fx, echoes), &profile);
                 for s in r["need"].as_array().unwrap() {
                     let (step, need) = (s[0].as_str().unwrap(), s[1].as_f64().unwrap());
-                    if step == STALE_STEP {
+                    if STALE_STEPS.contains(&step) {
                         continue;
                     }
                     // Too small to matter (a header, a lookup) and allocator noise.

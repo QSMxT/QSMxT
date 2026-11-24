@@ -220,19 +220,36 @@ pub fn field_mask() -> Tail { mask_desc("field") }
 pub fn unreferenced_chimap() -> Tail { chimap_desc("unreferenced") }
 
 /// One of QSMART's intermediates, by the name QSM.rs reports it under
-/// (`qsm_core::pipeline::qsmart::outputs`): the vessel mask (`desc-vessels_mask`), and each
-/// stage's local field (`desc-stage1_localfield`, `desc-stage2_localfield`) and unreferenced
-/// susceptibility map (`desc-stage1_Chimap`, `desc-stage2_Chimap`). `None` for a name QSMxT does
-/// not know.
+/// (`qsm_core::pipeline::qsmart::outputs`): vessel detection's magnitude, its bottom-hat
+/// (`part-mag_desc-bottomhat_T2starw`), vesselness (`desc-frangi_vesselness`) and vessel mask
+/// (`desc-vessels_mask`); the surface curvature (`desc-gaussian_curvature`); each stage's
+/// proximity maps (`desc-stage<N>initial_proximity`, `desc-stage2vessels_proximity`,
+/// `desc-stage<N>_proximity`), smoothing widths (`desc-stage<N>_alpha`), local field
+/// (`desc-stage<N>_localfield`) and unreferenced susceptibility map (`desc-stage<N>_Chimap`); and
+/// the stages combined before the offset (`desc-stagescombined_Chimap`). `None` for a name QSMxT
+/// does not know. They stay in the QSMART step's workflow directory, which `.bidsignore` covers,
+/// so the suffixes BIDS does not define (`vesselness`, `curvature`, `proximity`, `alpha`) need no
+/// entries of their own.
 pub fn qsmart_intermediate(name: &str) -> Option<Tail> {
     use qsm_core::pipeline::qsmart::outputs;
     Some(match name {
         crate::stages::qsmart::VESSEL_MAGNITUDE => magnitude().with("desc", "vessels"),
+        outputs::VESSEL_BOTTOM_HAT => magnitude().with("desc", "bottomhat"),
+        outputs::VESSELNESS => Tail::new("vesselness").with("desc", "frangi"),
         outputs::VESSEL_MASK => mask_desc("vessels"),
+        outputs::INITIAL_PROXIMITY_STAGE1 => Tail::new("proximity").with("desc", "stage1initial"),
+        outputs::CURVATURE => Tail::new("curvature").with("desc", "gaussian"),
+        outputs::PROXIMITY_STAGE1 => Tail::new("proximity").with("desc", "stage1"),
+        outputs::ALPHA_STAGE1 => Tail::new("alpha").with("desc", "stage1"),
         outputs::LOCAL_FIELD_STAGE1 => Tail::new("localfield").with("desc", "stage1"),
         outputs::CHI_STAGE1 => chimap_desc("stage1"),
+        outputs::INITIAL_PROXIMITY_STAGE2 => Tail::new("proximity").with("desc", "stage2initial"),
+        outputs::VESSEL_PROXIMITY_STAGE2 => Tail::new("proximity").with("desc", "stage2vessels"),
+        outputs::PROXIMITY_STAGE2 => Tail::new("proximity").with("desc", "stage2"),
+        outputs::ALPHA_STAGE2 => Tail::new("alpha").with("desc", "stage2"),
         outputs::LOCAL_FIELD_STAGE2 => Tail::new("localfield").with("desc", "stage2"),
         outputs::CHI_STAGE2 => chimap_desc("stage2"),
+        outputs::CHI_COMBINED => chimap_desc("stagescombined"),
         _ => return None,
     })
 }
@@ -345,12 +362,18 @@ mod tests {
     /// Every intermediate QSMART reports has a name of its own, and an unknown one has none.
     #[test]
     fn every_qsmart_intermediate_is_named_once() {
-        use qsm_core::pipeline::qsmart::outputs;
-        let names: Vec<String> = [outputs::VESSEL_MASK, outputs::LOCAL_FIELD_STAGE1, outputs::CHI_STAGE1,
-                                  outputs::LOCAL_FIELD_STAGE2, outputs::CHI_STAGE2]
+        let names: Vec<String> = crate::stages::qsmart::REPORTED
             .iter().map(|n| compose("sub-01", &qsmart_intermediate(n).unwrap())).collect();
-        assert_eq!(names, ["sub-01_desc-vessels_mask", "sub-01_desc-stage1_localfield", "sub-01_desc-stage1_Chimap",
-                           "sub-01_desc-stage2_localfield", "sub-01_desc-stage2_Chimap"]);
+        assert_eq!(names, ["sub-01_part-mag_desc-bottomhat_T2starw", "sub-01_desc-frangi_vesselness",
+                           "sub-01_desc-vessels_mask", "sub-01_desc-stage1initial_proximity",
+                           "sub-01_desc-gaussian_curvature", "sub-01_desc-stage1_proximity", "sub-01_desc-stage1_alpha",
+                           "sub-01_desc-stage1_localfield", "sub-01_desc-stage1_Chimap",
+                           "sub-01_desc-stage2initial_proximity", "sub-01_desc-stage2vessels_proximity",
+                           "sub-01_desc-stage2_proximity", "sub-01_desc-stage2_alpha",
+                           "sub-01_desc-stage2_localfield", "sub-01_desc-stage2_Chimap",
+                           "sub-01_desc-stagescombined_Chimap"]);
+        let unique: std::collections::HashSet<&String> = names.iter().collect();
+        assert_eq!(unique.len(), names.len());
         assert!(qsmart_intermediate("something_else").is_none());
     }
 }
