@@ -20,7 +20,7 @@ Options:
           Use 128x128x64 sliding-window patches (about 1.5–1.9 GB measured)
 
       --patch <PATCH>
-          Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16)
+          Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16) (if omitted: the whole volume at once, or the window --low-memory or --window chooses)
 
       --tta
           8-fold mirroring test-time augmentation (about 8x slower)

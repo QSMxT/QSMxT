@@ -17,10 +17,10 @@ Options:
           Output eroded mask (for algorithms that erode)
 
       --te <TE>
-          Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); without both, it is an unwrapped total field in ppm. The local field is written in ppm either way
+          Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); if both are omitted, it is an unwrapped total field in ppm. The local field is written in ppm either way
 
       --field-strength <FIELD_STRENGTH>
-          B0 field strength (T) of a wrapped-phase input — see --te
+          B0 field strength (T) of a wrapped-phase input — see --te for when both are omitted
 
       --harperella-radius <HARPERELLA_RADIUS>
           HARPERELLA: SMV kernel radius, in mm (default: 10)

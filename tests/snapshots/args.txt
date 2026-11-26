@@ -1352,7 +1352,7 @@
 --output -o value=OUTPUT num_args=1 action=Set required
 --op value=OPS num_args=1 action=Append
 --fractional-intensity value=FRACTIONAL_INTENSITY num_args=1 action=Set default=0.5
---voxel-scale value=FACTOR num_args=1 action=Set
+--voxel-scale value=FACTOR num_args=1 action=Set default=1
 --bet-smoothness aliases=smoothness value=BET_SMOOTHNESS num_args=1 action=Set
 --bet-gradient-threshold aliases=gradient-threshold value=BET_GRADIENT_THRESHOLD num_args=1 action=Set allow_hyphen_values
 --bet-iterations aliases=iterations value=BET_ITERATIONS num_args=1 action=Set
@@ -2344,10 +2344,10 @@
 --mask -m value=MASK num_args=1 action=Set required
 --force value=FORCE num_args=0 action=SetTrue default=false
 --output -o value=OUTPUT num_args=1 action=Set required
---lambda value=LAMBDA num_args=1 action=Set
+--lambda value=LAMBDA num_args=1 action=Set default=0
 --magnitude value=MAGNITUDES num_args=1 action=Append
---tol value=TOL num_args=1 action=Set
---max-iter value=MAX_ITER num_args=1 action=Set
+--tol value=TOL num_args=1 action=Set default=0.000001
+--max-iter value=MAX_ITER num_args=1 action=Set default=100
 --help -h num_args=0 action=Help
 
 ## qsmxt invert sti
@@ -2357,7 +2357,7 @@
 --mask -m value=MASK num_args=1 action=Set required
 --force value=FORCE num_args=0 action=SetTrue default=false
 --output -o value=OUTPUT num_args=1 action=Set required
---lambda value=LAMBDA num_args=1 action=Set
+--lambda value=LAMBDA num_args=1 action=Set default=0
 --help -h num_args=0 action=Help
 
 ## qsmxt separate
@@ -2580,7 +2580,7 @@
 --mask -m value=MASK num_args=1 action=Set required
 --output -o value=OUTPUT num_args=1 action=Set required
 --echo-times value=ECHO_TIMES num_args=1.. action=Append delimiter=',' required
---t1 value=T1 num_args=1 action=Set
+--t1 value=T1 num_args=1 action=Set default=1
 --b1-map value=B1_MAP num_args=1 action=Set
 --help -h num_args=0 action=Help
 

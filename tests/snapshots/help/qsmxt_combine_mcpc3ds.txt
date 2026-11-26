@@ -16,7 +16,7 @@ Options:
           Echo times in seconds, one per echo (read from the phase JSON sidecars when omitted)
 
       --num-echoes <NUM_ECHOES>
-          Number of echoes when the file names carry no `echo-N` entity
+          Number of echoes when the file names carry no `echo-N` entity (if omitted: counted from those entities)
 
       --sigma <X> <Y> <Z>
           Smoothing sigma (voxels) for the per-coil phase offsets (default 10 10 5)

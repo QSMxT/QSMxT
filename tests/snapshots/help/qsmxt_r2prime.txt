@@ -25,7 +25,7 @@ Options:
           Also write the mask of voxels where R2' is a measurement
 
       --field-strength <FIELD_STRENGTH>
-          B0 field strength in Tesla (--r2primenet: R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given)
+          B0 field strength in Tesla, for --r2primenet (R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given); omit it otherwise
 
       --r2primenet-ignore-field-mismatch
           Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its weights were trained at. The R2' is then uncalibrated

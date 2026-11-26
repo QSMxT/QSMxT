@@ -24,5 +24,7 @@ Options:
       --lambda <LAMBDA>
           Ridge term on the 6x6 normal equations at each k-point. Raise when orientations are few, clustered or near-coplanar
 
+          [default: 0]
+
   -h, --help
           Print help

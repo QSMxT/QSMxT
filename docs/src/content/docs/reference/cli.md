@@ -63,11 +63,11 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `<BIDS_DIR>` | Input BIDS directory. Required. |
 | `<OUTPUT_DIR>` | Output directory (defaults to bids_dir; outputs go into &lt;dir&gt;/derivatives/qsmxt/) |
 | `--config <CONFIG>` | Pipeline configuration file (TOML) |
-| `--include <INCLUDE>` | Include only runs matching these glob patterns (e.g. "sub-1\*" "\*ses-pre\*") |
-| `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") |
-| `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
+| `--include <INCLUDE>` | Include only runs matching these glob patterns (e.g. "sub-1\*" "\*ses-pre\*") (if omitted: every run) |
+| `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") (if omitted: none) |
+| `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process (if omitted: every echo) |
 | `--pipeline <PIPELINE>` | Start from a pipeline: qsmxt-defaults, or an original toolbox's (medi-toolbox, sti-suite-ilsqr, sti-suite-star, qsmart, heidi, chi-sep-ilsqr, chi-sep-medi, chi-sepnet, decompose). The stages it covers (masking, field mapping, background removal, inversion, referencing, χ-separation) go back to QSMxT's defaults and then take the toolbox's settings; the other flags given then change any setting. Values: `qsmxt-defaults`, `medi-toolbox`, `sti-suite-ilsqr`, `sti-suite-star`, `qsmart`, `heidi`, `chi-sep-ilsqr`, `chi-sep-medi`, `chi-sepnet`, `decompose`, `uk-biobank`. |
-| `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), `re:` and a regex with one capture group, or `runs:` and the groups' run keys (`,` between runs, `;` between groups, each group's reference first). Orientations are co-registered if they need it. |
+| `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), `re:` and a regex with one capture group, or `runs:` and the groups' run keys (`,` between runs, `;` between groups, each group's reference first). Orientations are co-registered if they need it (if omitted: each run is reconstructed on its own) |
 | `--axial-resampling` | Resample oblique acquisitions onto an axial grid when their obliquity exceeds --obliquity-threshold. Off by default (methods that only work on axial data resample regardless) |
 | `--no-axial-resampling` | Do not resample oblique acquisitions to axial (overrides a config's axial_resampling) |
 | `--obliquity-threshold <OBLIQUITY_THRESHOLD>` | Obliquity in degrees above which --axial-resampling resamples (default: 10) |
@@ -78,14 +78,14 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--crop-margin-mm <CROP_MARGIN_MM>` | Margin in mm around the mask when --crop-to-mask is set (default 32). Below ~32 mm the reconstruction starts to differ from the uncropped one; it must also clear the largest SMV kernel in use, and V-SHARP defaults to 12 mm. |
 | `--fft-padding` | Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on an awkward grid, and discards nothing, but it changes where k-space is sampled and so shifts the reconstruction slightly. Off by default. |
 | `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
-| `--mask-preset <MASK_PRESET>` | Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. |
-| `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
-| `--mask <MASK_SECTIONS_CLI>` | Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: &lt;input&gt;,&lt;generator&gt;,&lt;refinement1&gt;,&lt;refinement2&gt;,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2 (QSMART's mask) Example: magnitude,hd-bet,signal-erode (HD-BET: `hd-bet[:full\|window\|XxYxZ\|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) |
+| `--mask-preset <MASK_PRESET>` | Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) (default: robust-threshold) Values: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`. |
+| `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) (if omitted: the input each mask section names) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
+| `--mask <MASK_SECTIONS_CLI>` | Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: &lt;input&gt;,&lt;generator&gt;,&lt;refinement1&gt;,&lt;refinement2&gt;,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2 (QSMART's mask) Example: magnitude,hd-bet,signal-erode (HD-BET: `hd-bet[:full\|window\|XxYxZ\|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) (if omitted: the sections of --mask-preset) |
 | `--mask-combine <MASK_COMBINE>` | How to combine multiple --mask sections: `or` (union, the default) or `and` (intersection — a voxel survives only where every section keeps it) Values: `or`, `and`. |
-| `--mask-refine <MASK_REFINEMENTS_CLI>` | Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1. |
-| `--use-custom-masks <USE_CUSTOM_MASKS>` | Prefer a bring-your-own mask from BIDS derivatives when present (else compute it). Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`) to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back. |
+| `--mask-refine <MASK_REFINEMENTS_CLI>` | Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1 (if omitted: those of --mask-preset, if any) |
+| `--use-custom-masks <USE_CUSTOM_MASKS>` | Prefer a bring-your-own mask from BIDS derivatives when present (else compute it). Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`) to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back (if omitted: the mask is computed) |
 | `--two-pass` | Two-pass artefact reduction: reconstruct a second time against a mask with holes at strong susceptibility sources, and merge the two reconstructions (how: --two-pass-mode). Strong sources (haemorrhage, calcification, implants) make the phase around them unrecoverable; leaving those voxels out keeps their streaking from spreading, while the ordinary mask still supplies values inside the holes. Roughly doubles background removal and inversion time, and is not free of downsides — where the holes were not artefactual it can be worse than a single pass. Based on doi:10.1002/mrm.29048 (Stewart et al.). Off by default. The conventional single-pass map is kept alongside as `_desc-singlepass_Chimap.nii`. |
-| `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
+| `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec (if omitted: each BET step's own, 0.5 for a `bet` that gives none) |
 | `--bet-voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe (default: 1) |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe (default: 0) |
@@ -379,7 +379,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--amp-pe-max-pe-spar-ite <AMP_PE_MAX_PE_SPAR_ITE>` | AMP-PE: Inner sparse-reconstruction iterations (default: 5) |
 | `--amp-pe-max-pe-est-ite <AMP_PE_MAX_PE_EST_ITE>` | AMP-PE: Inner parameter-estimation iterations (default: 5) |
 | `--amp-pe-cvg-thd <AMP_PE_CVG_THD>` | AMP-PE: GAMP inner convergence threshold (default: 1e-6) |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--multi-orientation-algorithm <MULTI_ORIENTATION_ALGORITHM>` | Which reconstruction to run over each orientation group (default: cosmos) Values: `cosmos`, `sti`. |
 | `--multi-orientation-lambda <MULTI_ORIENTATION_LAMBDA>` | Regularization for the multi-orientation reconstruction (COSMOS k-space L2, or STI ridge) (default: 0) |
@@ -447,7 +447,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--chi-sepnet-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route native`) sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
 | `--chi-sepnet-frame-patch <D> <H> <W>` | χ-sepnet (`--chi-sepnet-route toolbox`): run the networks as a sliding window of patches this size over the 1 mm frame, D H W, each a multiple of 16, so memory follows the patch. Omit to run the whole frame at once, as the authors do. |
 | `--susep-net-patch <D> <H> <W>` | Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once. |
-| `--use-custom-qsm <TOOL>` | Use a bring-your-own QSM (Chimap) from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ for chi-separation. |
+| `--use-custom-qsm <TOOL>` | Use a bring-your-own QSM (Chimap) from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ for chi-separation (if omitted: QSM is computed) |
 | `--no-magnitude` | Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted inversion) |
 | `--do-swi` | Also compute SWI. |
 | `--swi-unwrapping <SWI_UNWRAPPING>` | SWI phase unwrapping before the echoes are combined [default: laplacian]. Values: `laplacian`, `laplacian-slice`, `romeo`. |
@@ -463,14 +463,14 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--do-t2starmap` | Compute T2\* relaxation map from multi-echo magnitude data. |
 | `--do-r2starmap` | Compute R2\* decay rate map from multi-echo magnitude data. |
 | `--do-r2map` | Compute R2 map from a multi-echo spin-echo (MESE) acquisition (EPG) |
-| `--use-custom-r2 <TOOL>` | Use a bring-your-own R2 map from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ for chi-separation. |
+| `--use-custom-r2 <TOOL>` | Use a bring-your-own R2 map from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ for chi-separation (if omitted: the R2 map is computed from MESE) |
 | `--do-r2primemap` | Compute R2' map (= R2\* − R2; needs GRE magnitude + a MESE acquisition) |
-| `--use-custom-r2prime <TOOL>` | Use a bring-your-own R2' map from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ for chi-separation. |
+| `--use-custom-r2prime <TOOL>` | Use a bring-your-own R2' map from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ for chi-separation (if omitted: the R2' map is computed) |
 | `--r2prime-strategy <R2PRIME_STRATEGY>` | How to obtain R2' when no custom map is supplied. `auto` (default) measures it as R2\* - R2 from a MESE acquisition when one is present and predicts it from R2\* with R2PRIMEnet when it is not; `mese` only ever measures it, producing nothing without spin-echo data; `r2primenet` always predicts it. A measurement and an estimate are not the same thing — the generated methods text says which route was configured. Values: `auto`, `mese`, `r2primenet`. |
 | `--r2primenet-ignore-field-mismatch` | Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its weights were trained at; the predicted R2' is then uncalibrated. Without it, an explicit `--r2prime-strategy r2primenet` refuses a non-3 T run and `auto` skips R2' with a warning. |
 | `--r2primenet-patch <D> <H> <W>` | R2PRIMEnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128, the authors') |
 | `--do-segmentation` | Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789. |
-| `--use-custom-dseg <TOOL>` | Prefer a bring-your-own segmentation from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg. |
+| `--use-custom-dseg <TOOL>` | Prefer a bring-your-own segmentation from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg (if omitted: SynthSeg runs) |
 | `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
 | `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
@@ -479,8 +479,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--synthseg-sigma <SYNTHSEG_SIGMA>` | Gaussian blur on the posteriors, in voxels (0 disables it) (default: 0.5) |
 | `--do-analysis` | Also summarise every quantitative map (χ, χ+/χ−, T2\*, R2\*, R2, R2') per segmented structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per map and structure, plus a dataset-level table gathering all runs. Summarises whatever the run made — it requires --do-segmentation, and QSM only if no other map was asked for (each turned on automatically, and logged) |
 | `--export-dicom` | Also export final maps as DICOM series into each subject's extra_files/ folder. |
-| `--dismiss-recommendation <RULE=VALUE>` | Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g. field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the recommendation back. A required one cannot be dismissed, and a reference-pipeline difference has nothing to dismiss. |
-| `--n-procs <N_PROCS>` | Number of parallel threads. |
+| `--dismiss-recommendation <RULE=VALUE>` | Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g. field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the recommendation back. A required one cannot be dismissed, and a reference-pipeline difference has nothing to dismiss (if omitted: every recommendation is offered) |
+| `--n-procs <N_PROCS>` | Number of parallel threads (if omitted: the number of CPUs available) |
 | `--source-dicom <SOURCE_DICOM>` | Optional source DICOM directory; inherit patient/study identity from the original DICOMs when exporting (used with --export-dicom) |
 | `--dicom-outputs <DICOM_OUTPUTS>` | Restrict DICOM export to these maps (default: all produced); repeat the flag or comma-separate them (used with --export-dicom) Values: `magnitude`, `chimap`, `swi`, `minip`, `desc-swi_phase`, `desc-paramagnetic_smwi`, `desc-diamagnetic_smwi`, `desc-paramagneticsmwi_minip`, `desc-diamagneticsmwi_minip`, `t2starmap`, `r2starmap`, `r2map`, `r2primemap`, `desc-paramagnetic_chimap`, `desc-diamagnetic_chimap`, `desc-total_chimap`, `dseg`. |
 | `--dry` | Print the processing plan, the pipeline graph and the methods text without running anything or writing any file. Also lists what the configuration departs from in the chosen methods' reference pipelines, for every run's scan, and each covered setting's reference value; with --accept-recommendations or --accept-reference-settings, the settings that would change. |
@@ -489,7 +489,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--force` | Force re-run, ignoring cached pipeline state. |
 | `--debug` | Enable debug logging. |
 | `--clean-intermediates` | Once every run (and any multi-orientation combination) is done, delete the intermediate images under workflow/. Published outputs, per-step provenance and the cache state are kept: a re-run with the same configuration recomputes nothing, one with a changed configuration recomputes the intermediates it needs. |
-| `--mem-limit-gb <MEM_LIMIT_GB>` | Memory limit in GB for concurrent run scheduling (if not specified: the memory available, within a Slurm job's or container's memory limit when there is one) |
+| `--mem-limit-gb <MEM_LIMIT_GB>` | Memory limit in GB for concurrent run scheduling (if omitted: the memory available, within a Slurm job's or container's memory limit when there is one) |
 | `--no-mem-limit` | Disable memory-aware concurrency limiting. |
 | `--no-dataset-steps` | Process each run and stop: skip the dataset-level steps (multi-orientation reconstruction, summary tables, cohort figures, provenance, dataset_description.json, pipeline_config.toml, methods.md, the pipeline graph, changes/) and log to logs/&lt;run&gt;.log instead of qsmxt.log. `qsmxt aggregate` does those steps once every run is done; `qsmxt slurm` uses the pair. |
 
@@ -526,8 +526,8 @@ qsmxt validate [OPTIONS] <BIDS_DIR>
 | Argument | Description |
 | --- | --- |
 | `<BIDS_DIR>` | Input BIDS directory. Required. |
-| `--include <INCLUDE>` | Include only runs matching these glob patterns (e.g. "sub-1\*" "\*ses-pre\*") |
-| `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") |
+| `--include <INCLUDE>` | Include only runs matching these glob patterns (e.g. "sub-1\*" "\*ses-pre\*") (if omitted: every run) |
+| `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") (if omitted: none) |
 
 <!-- generated:cli-validate end -->
 
@@ -569,7 +569,7 @@ It also takes every [`qsmxt run`](#qsmxt-run) option except `--dry`, `--mem-limi
 | `<BIDS_DIR>` | Input BIDS directory. Required. |
 | `<OUTPUT_DIR>` | Output directory (defaults to bids_dir; outputs go into &lt;dir&gt;/derivatives/qsmxt/) |
 | `--account <ACCOUNT>` | SLURM account name. Required. |
-| `--partition <PARTITION>` | SLURM partition. |
+| `--partition <PARTITION>` | SLURM partition (if omitted: the cluster's default) |
 | `--time <TIME>` | Wall time limit (e.g., 02:00:00) Default: `02:00:00`. |
 | `--mem <MEM>` | Memory per job in GB [default: estimated per run from its size and the pipeline]. |
 | `--cpus-per-task <CPUS_PER_TASK>` | CPUs per task. Default: `4`. |
@@ -743,7 +743,7 @@ qsmxt mask bet [OPTIONS] --output <OUTPUT> <INPUT>
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
 | `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), largest-component, imfill (every hole), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--fractional-intensity <FRACTIONAL_INTENSITY>` | Fractional intensity (0.0-1.0, smaller = larger brain) Default: `0.5`. |
-| `--voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs — 10 for mouse data, 1 for the acquisition's own geometry (see --bet-voxel-scale). Prefer `mask rs2-net`, which masks rodent brains without the trick. |
+| `--voxel-scale <FACTOR>` | Factor applied to the voxel sizes before BET runs — 10 for mouse data, 1 for the acquisition's own geometry (see --bet-voxel-scale). Prefer `mask rs2-net`, which masks rodent brains without the trick. Default: `1`. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe (default: 1) |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe (default: 0) |
 | `--bet-iterations <BET_ITERATIONS>` | BET surface evolution iterations. Applies to every BET step in the masking recipe (default: 1000) |
@@ -765,7 +765,7 @@ qsmxt mask hd-bet [OPTIONS] --output <OUTPUT> <INPUT>
 | `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, majority (3x3x3 majority filter), largest-component, imfill (every hole), min-intensity:100 (remove voxels below 100 in the input image; needs an image input), signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
 | `--window` | Run in 192x192x96 sliding-window patches (about 3.6–4.5 GB measured) instead of on the whole volume (the default; about 6–8 GB measured, and about twice as fast) |
 | `--low-memory` | Use 128x128x64 sliding-window patches (about 1.5–1.9 GB measured) |
-| `--patch <PATCH>` | Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16) |
+| `--patch <PATCH>` | Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16) (if omitted: the whole volume at once, or the window --low-memory or --window chooses) |
 | `--tta` | 8-fold mirroring test-time augmentation (about 8x slower) |
 | `--tile-step <TILE_STEP>` | Sliding-window step as a fraction of the patch, in (0, 1]. Larger steps mean fewer patches and a shorter run: 0.5 (default) is HD-BET's own, 1.0 abuts the patches. Implies --window. |
 
@@ -1028,7 +1028,7 @@ qsmxt combine mcpc3ds [OPTIONS] --phase <PHASE>... --magnitude <MAGNITUDE>... --
 | `--magnitude <MAGNITUDE>` | Per-coil, per-echo magnitude NIfTI files, same layout as --phase. Required. |
 | `-o, --output <OUTPUT>` | Output prefix: writes &lt;prefix&gt;_rec-mcpc3ds_echo-N_part-phase_&lt;suffix&gt;.nii, &lt;prefix&gt;_rec-mcpc3ds_echo-N_part-mag_&lt;suffix&gt;.nii and &lt;prefix&gt;_desc-mcpc3ds_mask.nii — the pipeline's names. &lt;suffix&gt; is the inputs' BIDS suffix (MEGRE when they carry none) Required. |
 | `--tes <TES>` | Echo times in seconds, one per echo (read from the phase JSON sidecars when omitted) |
-| `--num-echoes <NUM_ECHOES>` | Number of echoes when the file names carry no `echo-N` entity. |
+| `--num-echoes <NUM_ECHOES>` | Number of echoes when the file names carry no `echo-N` entity (if omitted: counted from those entities) |
 | `--sigma <X> <Y> <Z>` | Smoothing sigma (voxels) for the per-coil phase offsets (default 10 10 5) |
 | `--hip-unwrapping <HIP_UNWRAPPING>` | Unwrapping used on the coil-summed HIP phase. Values: `romeo`, `laplacian`, `prelude`, `medi-region-growing`. Default: `romeo`. |
 | `--prelude-labelling <PRELUDE_LABELLING>` | PRELUDE: how the initial regions are labelled (default: auto) Values: `auto`, `slices`, `volume`. |
@@ -1177,8 +1177,8 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output B0 field map NIfTI file (in ppm) Required. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude NIfTI file (4D; improves weighting) |
-| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
-| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
+| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) (if omitted: the --params file's TE) |
+| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) (if omitted: the --params file's B0) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
 | `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
@@ -1235,8 +1235,8 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output B0 field map NIfTI file (in ppm) Required. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude NIfTI file (4D; improves weighting) |
-| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
-| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
+| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) (if omitted: the --params file's TE) |
+| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) (if omitted: the --params file's B0) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
 | `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
@@ -1280,8 +1280,8 @@ qsmxt fieldmap prelude [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output B0 field map NIfTI file (in ppm) Required. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude NIfTI file (4D; improves weighting) |
-| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
-| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
+| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) (if omitted: the --params file's TE) |
+| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) (if omitted: the --params file's B0) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
 | `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
@@ -1321,8 +1321,8 @@ qsmxt fieldmap medi-region-growing [OPTIONS] --mask <MASK> --output <OUTPUT> <IN
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output B0 field map NIfTI file (in ppm) Required. |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude NIfTI file (4D; improves weighting) |
-| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) |
-| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
+| `--tes <TES>` | Echo times in seconds (space-separated, one per echo) (if omitted: the --params file's TE) |
+| `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) (if omitted: the --params file's B0) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--reliability-output <RELIABILITY_OUTPUT>` | `--b0-estimation qsmart-echofit`: also save its reliability map (1 = reliable) here, for `qsmxt qsmart --reliability`. |
 | `--field-mask-output <FIELD_MASK_OUTPUT>` | Also save the mask the field map is defined in here: the mask, less the voxels where phase offset removal could not estimate the phase offset (the field is 0 there). Pass it to `qsmxt bgremove` and the inversions in place of the mask. |
@@ -1533,8 +1533,8 @@ qsmxt bgremove harperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); without both, it is an unwrapped total field in ppm. The local field is written in ppm either way. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
+| `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad (the published method); if both are omitted, it is an unwrapped total field in ppm. The local field is written in ppm either way. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te for when both are omitted. |
 | `--harperella-radius <HARPERELLA_RADIUS>` | HARPERELLA: SMV kernel radius, in mm (default: 10) |
 | `--harperella-max-iter <HARPERELLA_MAX_ITER>` | HARPERELLA: Maximum iterations (default: 40) |
 | `--harperella-tol <HARPERELLA_TOL>` | HARPERELLA: Convergence tolerance (default: 0.001) |
@@ -1555,8 +1555,8 @@ qsmxt bgremove iharperella [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either way. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te. |
+| `--te <TE>` | Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped echo in rad, unwrapped by HARPERELLA's Laplacian; if both are omitted, it is an unwrapped total field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either way. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength (T) of a wrapped-phase input — see --te for when both are omitted. |
 | `--iharperella-max-iter <IHARPERELLA_MAX_ITER>` | iHARPERELLA: Maximum iterations (default: 40) |
 | `--iharperella-tol <IHARPERELLA_TOL>` | iHARPERELLA: Convergence tolerance (default: 0.001) |
 | `--iharperella-pad <X> <Y> <Z>` | iHARPERELLA zero-padding in voxels per side, X Y Z (default: 0 0 0) |
@@ -1595,7 +1595,7 @@ qsmxt bgremove iqfm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--echo-weighting <ECHO_WEIGHTING>` | Echo weighting of the multi-echo combination: `mag2-te2` weights each echo by (magnitude × TE)², the inverse of its noise variance, as in the authors' Python code; `mag-te2` by magnitude × TE², as in the authors' MATLAB code. Values: `mag-te2`, `mag2-te2`. Default: `mag2-te2`. |
 
@@ -1692,7 +1692,7 @@ qsmxt invert rts [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--rts-delta <RTS_DELTA>` | RTS: Threshold for ill-conditioned k-space region (default: 0.15) |
 | `--rts-mu <RTS_MU>` | RTS: Regularization parameter for well-conditioned region (default: 100000) |
@@ -1718,7 +1718,7 @@ qsmxt invert tv [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--tv-lambda <TV_LAMBDA>` | TV-ADMM: L1 regularisation weight (larger = smoother) (default: 0.0003) |
 | `--tv-rho <RHO>` | TV rho (ADMM penalty), or auto for 100 × lambda (default: auto) |
@@ -1740,7 +1740,7 @@ qsmxt invert tkd [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--tkd-threshold <TKD_THRESHOLD>` | TKD threshold on \|D\|; larger is smoother and underestimates χ more (default: 0.25) |
 | `--tkd-pad <X> <Y> <Z>` | TKD: Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded, in voxels (default: 0 0 0) |
@@ -1759,7 +1759,7 @@ qsmxt invert tsvd [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--tsvd-threshold <TSVD_THRESHOLD>` | TSVD: Truncation threshold for SVD (0.1-0.2) (default: 0.15) |
 | `--tsvd-pad <X> <Y> <Z>` | TSVD: Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded, in voxels (default: 0 0 0) |
@@ -1778,7 +1778,7 @@ qsmxt invert tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -1806,7 +1806,7 @@ qsmxt invert tikhonov [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--tikhonov-lambda <TIKHONOV_LAMBDA>` | Tikhonov: L2 regularisation weight (default: 0.01) |
 | `--tikhonov-pad <X> <Y> <Z>` | Tikhonov: Zero-padding before the FFTs (x y z): at least this many, rounded up to an FFT-efficient size; -1 leaves an axis unpadded, in voxels (default: 0 0 0) |
@@ -1825,7 +1825,7 @@ qsmxt invert nltv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -1854,7 +1854,7 @@ qsmxt invert medi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -1897,7 +1897,7 @@ qsmxt invert tfi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -1930,7 +1930,7 @@ qsmxt invert ilsqr [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: 0.001) |
 | `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
@@ -1951,7 +1951,7 @@ qsmxt invert star [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -1972,7 +1972,7 @@ qsmxt invert lsqr [OPTIONS] --mask <MASK> --output <OUTPUT> --magnitude <MAGNITU
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI, LSQR's row weight as the HEIDI package's (its scale does not change the solution): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. Required. |
 | `--b0 <B0>` | B0 field strength in Tesla — sets the default residual weighting. Required. |
@@ -1995,7 +1995,7 @@ qsmxt invert heidi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -2036,7 +2036,7 @@ qsmxt invert ndi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIE
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -2062,7 +2062,7 @@ qsmxt invert fansi [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -2091,7 +2091,7 @@ qsmxt invert fansi-tgv [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strengt
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -2120,7 +2120,7 @@ qsmxt invert l1qsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -2149,7 +2149,7 @@ qsmxt invert whqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <F
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
@@ -2179,7 +2179,7 @@ qsmxt invert hdqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --echo-times <ECHO_
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--magnitude <MAGNITUDE>` | Magnitude of every echo (the data weight is their echo-time-weighted combination): one 4D NIfTI, or one 3D NIfTI per echo in echo order. Required. |
@@ -2204,7 +2204,7 @@ qsmxt invert amp-pe [OPTIONS] --mask <MASK> --output <OUTPUT> --b0 <B0> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--magnitude <MAGNITUDE>` | Magnitude NIfTI (data weight and morphology image): one 3D volume, a 4D one, or one per echo; several echoes are RSS-combined. |
 | `--b0 <B0>` | B0 field strength in Tesla (scales the simulated phase) Required. |
@@ -2234,7 +2234,7 @@ qsmxt invert xqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2252,7 +2252,7 @@ qsmxt invert qsmnet [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2270,7 +2270,7 @@ qsmxt invert qsmnet-plus [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2288,7 +2288,7 @@ qsmxt invert qsmnetme [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2306,7 +2306,7 @@ qsmxt invert autoqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2324,7 +2324,7 @@ qsmxt invert qsmgan [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2342,7 +2342,7 @@ qsmxt invert ir2qsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2360,7 +2360,7 @@ qsmxt invert lpcnn [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2378,7 +2378,7 @@ qsmxt invert modl-qsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2396,7 +2396,7 @@ qsmxt invert nextqsm [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (scan metadata) Default: `3`. |
 
@@ -2417,7 +2417,7 @@ qsmxt invert iqsm [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FI
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 | `--echo-weighting <ECHO_WEIGHTING>` | Echo weighting of the multi-echo combination: `mag2-te2` weights each echo by (magnitude × TE)², the inverse of its noise variance, as in the authors' Python code; `mag-te2` by magnitude × TE², as in the authors' MATLAB code. Values: `mag-te2`, `mag2-te2`. Default: `mag2-te2`. |
 
@@ -2438,7 +2438,7 @@ qsmxt invert iqsm-plus [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strengt
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 | `--echo-times <ECHO_TIMES>` | Echo times in seconds, every echo's, in order. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
-| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) |
+| `--tile-size <TILE_SIZE>` | DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once) |
 | `--tile-halo <TILE_HALO>` | DL tiling: context margin per side, in voxels (default 8) |
 
 ### `qsmxt invert cosmos`
@@ -2457,10 +2457,10 @@ qsmxt invert cosmos [OPTIONS] --input <INPUTS> --mask <MASK> --output <OUTPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file, on the common grid. Required. |
 | `--force` | Reconstruct even when the B0 directions look degenerate. A degenerate set yields a plausible-looking map that is not the method you asked for; prefer fixing the metadata. |
 | `-o, --output <OUTPUT>` | Output susceptibility map NIfTI file. Required. |
-| `--lambda <LAMBDA>` | L2 regularization on the k-space denominator. 0 (default) is plain least squares and is right for 3+ covering orientations; 1e-3..1e-2 helps with 2, or single-axis rotations. |
+| `--lambda <LAMBDA>` | L2 regularization on the k-space denominator. 0 is plain least squares and is right for 3+ covering orientations; 1e-3..1e-2 helps with 2, or single-axis rotations. Default: `0`. |
 | `--magnitude <MAGNITUDES>` | Magnitude NIfTI for one orientation — repeat once per --input to use the magnitude-weighted formulation (conjugate gradient) instead of the closed form. |
-| `--tol <TOL>` | Conjugate-gradient tolerance (weighted formulation only) |
-| `--max-iter <MAX_ITER>` | Maximum conjugate-gradient iterations (weighted formulation only) |
+| `--tol <TOL>` | Conjugate-gradient tolerance (weighted formulation only) Default: `0.000001`. |
+| `--max-iter <MAX_ITER>` | Maximum conjugate-gradient iterations (weighted formulation only) Default: `100`. |
 
 ### `qsmxt invert sti`
 
@@ -2478,7 +2478,7 @@ qsmxt invert sti [OPTIONS] --input <INPUTS> --mask <MASK> --output <OUTPUT>
 | `-m, --mask <MASK>` | Binary mask NIfTI file, on the common grid. Required. |
 | `--force` | Reconstruct even when the B0 directions look degenerate. A degenerate set yields a plausible-looking map that is not the method you asked for; prefer fixing the metadata. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-sti_Chimap.nii (the 4D tensor, components 11 12 13 22 23 33), {prefix}_desc-mms_Chimap.nii, {prefix}_desc-msa_Chimap.nii and {prefix}_desc-sti_evec.nii (the 4D principal eigenvector) — the pipeline's names. Required. |
-| `--lambda <LAMBDA>` | Ridge term on the 6x6 normal equations at each k-point. Raise when orientations are few, clustered or near-coplanar. |
+| `--lambda <LAMBDA>` | Ridge term on the 6x6 normal equations at each k-point. Raise when orientations are few, clustered or near-coplanar. Default: `0`. |
 
 <!-- generated:cli-invert-subcommands end -->
 
@@ -2540,7 +2540,7 @@ qsmxt separate r2star-qsm [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> 
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--r2star <R2STAR>` | R2\* map NIfTI in Hz (else fit from --magnitude + --echo-times) |
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or several 3D files (space-separated). Fits R2\* if --r2star absent. |
-| `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated), required with --magnitude. |
+| `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated), required with --magnitude; omit both to use --r2star. |
 | `--r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>` | R2\*-QSM relaxometric constant at 3T (Hz/ppm) (default: 274) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
 
@@ -2676,7 +2676,7 @@ qsmxt separate hc-chisep [OPTIONS] --qsm <QSM> --mask <MASK> --output <OUTPUT> -
 | `--magnitude <MAGNITUDE>` | Multi-echo magnitude: one 4D file or several 3D files (space-separated) Required. |
 | `--echo-times <ECHO_TIMES>` | GRE echo times in seconds (space- or comma-separated) Required. |
 | `--se-magnitude <SE_MAGNITUDE>` | Multi-echo spin-echo magnitude: one 4D file or several 3D files (optional) |
-| `--se-echo-times <SE_ECHO_TIMES>` | Spin-echo times in seconds (comma-separated) for --se-magnitude. |
+| `--se-echo-times <SE_ECHO_TIMES>` | Spin-echo times in seconds (comma-separated) for --se-magnitude; omit both to use no spin-echo data. |
 | `--hc-chisep-dr-pos-3t <HC_CHISEP_DR_POS_3T>` | HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm) (default: 137) |
 | `--hc-chisep-bin-hz <HC_CHISEP_BIN_HZ>` | HC-ChiSep R2' bin width for the anchored grid search (Hz) (default: 0.25) |
 | `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla. Required. |
@@ -2711,7 +2711,7 @@ qsmxt separate chi-sepnet [OPTIONS] --mask <MASK> --output <OUTPUT> --local-fiel
 | --- | --- |
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names. Required. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla; required with --r2star (R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given). χ-sepnet itself does not use it. |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla; required with --r2star (R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given). χ-sepnet itself does not use it, so omit it otherwise. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--local-field <LOCAL_FIELD>` | Local (tissue) field NIfTI in ppm. Required. |
 | `--r2prime <R2PRIME>` | R2' map NIfTI in Hz (χ-sepnet-R2') |
@@ -2828,7 +2828,7 @@ qsmxt segment [OPTIONS] --output <OUTPUT> <MAGNITUDE>
 | `<MAGNITUDE>` | Input magnitude NIfTI file. Not a susceptibility map: SynthSeg reads anatomy, and χ has none of the tissue contrast it was trained to recognise. Required. |
 | `-o, --output <OUTPUT>` | Output label NIfTI file (FreeSurfer label ids) Required. |
 | `--lookup <LOOKUP>` | Also write the BIDS label lookup table (index/name) to this path. |
-| `--use-custom-dseg <TOOL>` | Prefer a bring-your-own segmentation from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg. |
+| `--use-custom-dseg <TOOL>` | Prefer a bring-your-own segmentation from &lt;bids&gt;/derivatives/&lt;TOOL&gt;/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg (if omitted: SynthSeg runs) |
 | `--synthseg-version <VERSION>` | SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023) |
 | `--synthseg-crop <SYNTHSEG_CROP>` | Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32). Omit to process the whole volume, as the SynthSeg CLI does. |
 | `--synthseg-patch <VOXELS>` | Run SynthSeg as a sliding window of half-overlapping cubes this many voxels on a side at 1 mm (at least 64, rounded up to a multiple of 32), so its memory follows the patch, not the volume. Omit to run the whole volume at once, as the SynthSeg CLI does. |
@@ -2892,7 +2892,7 @@ qsmxt r2 [OPTIONS] --mask <MASK> --output <OUTPUT> --echo-times <ECHO_TIMES>... 
 | `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
 | `-o, --output <OUTPUT>` | Output R2 map NIfTI file. Required. |
 | `--echo-times <ECHO_TIMES>` | Spin-echo times in seconds (space- or comma-separated) Required. |
-| `--t1 <T1>` | Assumed T1 in seconds (EPG dictionary) |
+| `--t1 <T1>` | Assumed T1 in seconds (EPG dictionary) Default: `1`. |
 | `--b1-map <B1_MAP>` | Optional B1 map NIfTI (refocusing efficiency); fitted from the dictionary if absent. |
 
 <!-- generated:cli-r2 end -->
@@ -2916,7 +2916,7 @@ qsmxt r2prime [OPTIONS] --r2star <R2STAR> --mask <MASK> --output <OUTPUT>
 | `--r2-coverage <R2_COVERAGE>` | Binary mask of where the R2 acquisition reached, if it does not cover the whole mask (a MESE slab). Without it, coverage is inferred from R2 &gt; 0. |
 | `-o, --output <OUTPUT>` | Output R2' map NIfTI file. Required. |
 | `--output-coverage <OUTPUT_COVERAGE>` | Also write the mask of voxels where R2' is a measurement. |
-| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla (--r2primenet: R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given) |
+| `--field-strength <FIELD_STRENGTH>` | B0 field strength in Tesla, for --r2primenet (R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given); omit it otherwise. |
 | `--r2primenet-ignore-field-mismatch` | Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its weights were trained at. The R2' is then uncalibrated. |
 | `--r2primenet-patch <D> <H> <W>` | R2PRIMEnet sliding-window patch in voxels, D H W, each a multiple of 16 (default: 192 192 128) |
 

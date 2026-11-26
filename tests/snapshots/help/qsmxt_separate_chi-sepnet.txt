@@ -10,7 +10,7 @@ Options:
           Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii and {prefix}_desc-total_Chimap.nii — the pipeline's names
 
       --field-strength <FIELD_STRENGTH>
-          B0 field strength in Tesla; required with --r2star (R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given). χ-sepnet itself does not use it
+          B0 field strength in Tesla; required with --r2star (R2PRIMEnet refuses a field strength other than 3 T unless --r2primenet-ignore-field-mismatch is given). χ-sepnet itself does not use it, so omit it otherwise
 
       --b0-direction <B0_DIRECTION> <B0_DIRECTION> <B0_DIRECTION>
           B0 direction (3 values)

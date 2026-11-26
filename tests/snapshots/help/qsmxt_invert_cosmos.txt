@@ -22,7 +22,9 @@ Options:
           Output susceptibility map NIfTI file
 
       --lambda <LAMBDA>
-          L2 regularization on the k-space denominator. 0 (default) is plain least squares and is right for 3+ covering orientations; 1e-3..1e-2 helps with 2, or single-axis rotations
+          L2 regularization on the k-space denominator. 0 is plain least squares and is right for 3+ covering orientations; 1e-3..1e-2 helps with 2, or single-axis rotations
+
+          [default: 0]
 
       --magnitude <MAGNITUDES>
           Magnitude NIfTI for one orientation — repeat once per --input to use the magnitude-weighted formulation (conjugate gradient) instead of the closed form
@@ -30,8 +32,12 @@ Options:
       --tol <TOL>
           Conjugate-gradient tolerance (weighted formulation only)
 
+          [default: 0.000001]
+
       --max-iter <MAX_ITER>
           Maximum conjugate-gradient iterations (weighted formulation only)
+
+          [default: 100]
 
   -h, --help
           Print help
