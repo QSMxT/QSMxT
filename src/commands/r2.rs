@@ -16,8 +16,7 @@ pub fn execute(args: R2Args) -> qsmxt_io::Result<()> {
     let (mask, _) = load_mask(&args.mask)?;
     let grid = nifti_grid(&reference);
     let b1 = args.b1_map.as_ref().map(|p| load_nifti(p)).transpose()?;
-    let d = qsm_core::relaxometry::R2EpgParams::default();
-    let params = qsm_core::relaxometry::R2EpgParams { t1: args.t1.unwrap_or(d.t1), ..d };
+    let params = qsm_core::relaxometry::R2EpgParams { t1: args.t1, ..Default::default() };
     let (r2_map, _b1_fit) = qsm_core::relaxometry::r2_epg(
         &multi, &mask, &args.echo_times, &grid, &params,
         b1.as_ref().map(|n| n.data.as_slice()),

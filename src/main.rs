@@ -11,6 +11,8 @@ mod cli_snapshots;
 mod snapshot;
 mod commands;
 #[cfg(test)]
+mod flag_default_tests;
+#[cfg(test)]
 mod standalone_flag_tests;
 #[cfg(test)]
 mod tui_cli_tests;

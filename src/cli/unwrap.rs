@@ -43,7 +43,8 @@ pub struct CombineMcpc3dsArgs {
     /// Echo times in seconds, one per echo (read from the phase JSON sidecars when omitted)
     #[arg(long, num_args = 1..)]
     pub tes: Option<Vec<f64>>,
-    /// Number of echoes when the file names carry no `echo-N` entity
+    /// Number of echoes when the file names carry no `echo-N` entity (if omitted: counted from
+    /// those entities)
     #[arg(long)]
     pub num_echoes: Option<usize>,
     /// Smoothing sigma (voxels) for the per-coil phase offsets (default 10 10 5)

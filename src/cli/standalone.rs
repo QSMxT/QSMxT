@@ -166,8 +166,8 @@ pub struct R2Args {
     #[arg(long, required = true, num_args = 1.., value_delimiter = ',')]
     pub echo_times: Vec<f64>,
     /// Assumed T1 in seconds (EPG dictionary)
-    #[arg(long)]
-    pub t1: Option<f64>,
+    #[arg(long, default_value_t = qsm_core::relaxometry::R2EpgParams::default().t1)]
+    pub t1: f64,
     /// Optional B1 map NIfTI (refocusing efficiency); fitted from the dictionary if absent
     #[arg(long)]
     pub b1_map: Option<PathBuf>,
@@ -198,8 +198,8 @@ pub struct R2primeArgs {
     /// Also write the mask of voxels where R2' is a measurement
     #[arg(long, conflicts_with = "r2primenet")]
     pub output_coverage: Option<PathBuf>,
-    /// B0 field strength in Tesla (--r2primenet: R2PRIMEnet refuses a field strength other than
-    /// 3 T unless --r2primenet-ignore-field-mismatch is given)
+    /// B0 field strength in Tesla, for --r2primenet (R2PRIMEnet refuses a field strength other
+    /// than 3 T unless --r2primenet-ignore-field-mismatch is given); omit it otherwise
     #[arg(long, conflicts_with = "r2")]
     pub field_strength: Option<f64>,
     /// Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its

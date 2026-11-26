@@ -80,7 +80,7 @@ fn test_mask_bet() {
     super::mask::execute(MaskCommand::Bet(MaskBetArgs {
         common: common_mask(input, output.clone()),
         fractional_intensity: 0.5,
-        voxel_scale: None,
+        voxel_scale: qsmxt_engine::bet_default_voxel_scale(),
         settings: Default::default(),
     })).unwrap();
     assert!(output.exists());

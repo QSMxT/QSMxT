@@ -124,6 +124,9 @@ pub(super) struct FlagSpec {
     /// The default as the flag's help gives it, where the flag counts otherwise than the config
     /// (`--romeo-template` counts echoes from 1).
     pub(super) default: Option<&'static str>,
+    /// What is used when the flag is not given, for a setting with no default value of its own
+    /// (`the whole volume at once`).
+    pub(super) omitted: Option<&'static str>,
 }
 
 impl Def {
@@ -162,6 +165,8 @@ impl Def {
     pub(super) fn negated(mut self, long: &'static str, help: &'static str) -> Self { self.cli.negated = Some((long, help)); self }
     /// The default the flag's help names, where the flag counts otherwise than the config.
     pub(super) fn cli_default(mut self, words: &'static str) -> Self { self.cli.default = Some(words); self }
+    /// What is used when the flag is not given, where the setting has no default value (unset).
+    pub(super) fn if_omitted(mut self, what: &'static str) -> Self { self.cli.omitted = Some(what); self }
     /// The opposite cannot be given with the switch.
     pub(super) fn negated_conflicts(mut self) -> Self { self.cli.negated_conflicts = true; self }
 }
@@ -245,7 +250,8 @@ fn derive(d: &'static Def) -> Flag {
 
 /// A setting's flag help: its `.cli(..)` wording, else the front-end help with its units, after
 /// the method it belongs to (`RTS: ...`), then the default, from the setting's own (`(default: 0 0 0)`) unless
-/// the text already says what it is. A switch is off unless given, so it names none.
+/// the text already says what it is, or for an unset one what is used instead (`(if omitted: ...)`). A
+/// switch is off unless given, so it names none.
 fn flag_help(d: &'static Def, switch: bool) -> &'static str {
     let setting = super::settings().iter().find(|s| s.path == d.path).expect("every entry is a setting");
     let text = match d.cli.help {
@@ -270,8 +276,9 @@ fn flag_help(d: &'static Def, switch: bool) -> &'static str {
         None if switch => None,
         None => render_default(&setting.default),
     };
-    match rendered {
-        Some(r) if !text.to_lowercase().contains("default") => leak(format!("{text} (default: {r})")),
+    match (rendered, d.cli.omitted) {
+        (Some(r), _) if !text.to_lowercase().contains("default") => leak(format!("{text} (default: {r})")),
+        (None, Some(o)) => leak(format!("{text} (if omitted: {o})")),
         _ => leak(text),
     }
 }
@@ -335,7 +342,9 @@ const PLACES: &[(&str, &str)] = &[
 /// the setting that chooses it), each opposite switch after its switch, and [`OTHER_FLAGS`] at
 /// their [`PLACES`]. `--help` lists them in this order and a generated command says them in it.
 fn build() -> Vec<Flag> {
-    let other = |long: &str| *OTHER_FLAGS.iter().find(|f| f.long == long).unwrap_or_else(|| panic!("--{long} is no flag"));
+    let other = |long: &str| {
+        with_default(*OTHER_FLAGS.iter().find(|f| f.long == long).unwrap_or_else(|| panic!("--{long} is no flag")))
+    };
     let mut flags: Vec<Flag> = vec![other("pipeline")];
     for d in defs() {
         flags.extend(PLACES.iter().filter(|(_, at)| *at == d.path).map(|(long, _)| other(long)));
@@ -357,6 +366,26 @@ fn build() -> Vec<Flag> {
     flags
 }
 
+/// One of [`OTHER_FLAGS`] with what is used when it is not given, where the code says it: the mask
+/// preset the default recipe is, and the fractional intensity of a `bet` step that gives none.
+fn with_default(mut f: Flag) -> Flag {
+    let what = match f.long {
+        "mask-preset" => crate::masking::masking_preset_command(&crate::config::MaskingConfig::default())
+            .map(|(name, _)| format!("(default: {name})")),
+        "bet-fractional-intensity" => match crate::masking::parse_mask_op("bet") {
+            Ok(crate::MaskOp::Bet { fractional_intensity, .. }) => {
+                Some(format!("(if omitted: each BET step's own, {fractional_intensity} for a `bet` that gives none)"))
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+    if let (Some(what), Some(help)) = (what, f.help) {
+        f.help = Some(leak(format!("{help} {what}")));
+    }
+    f
+}
+
 /// `qsmxt run`'s settings flags, in the order `--help` lists them: built once from the registry
 /// and [`OTHER_FLAGS`] ([`build`]).
 pub static PIPELINE_FLAGS: LazyLock<Vec<Flag>> = LazyLock::new(build);
@@ -372,7 +401,7 @@ pub const OTHER_FLAGS: &[Flag] = {
                help: Some("Start from a pipeline: qsmxt-defaults, or an original toolbox's (medi-toolbox, sti-suite-ilsqr, sti-suite-star, qsmart, heidi, chi-sep-ilsqr, chi-sep-medi, chi-sepnet, decompose). The stages it covers (masking, field mapping, background removal, inversion, referencing, χ-separation) go back to QSMxT's defaults and then take the toolbox's settings; the other flags given then change any setting"), long_help: None,
                values: &[V { name: "qsmxt-defaults", help: None, hide: false, aliases: &[] }, V { name: "medi-toolbox", help: None, hide: false, aliases: &[] }, V { name: "sti-suite-ilsqr", help: None, hide: false, aliases: &[] }, V { name: "sti-suite-star", help: None, hide: false, aliases: &[] }, V { name: "qsmart", help: None, hide: false, aliases: &[] }, V { name: "heidi", help: None, hide: false, aliases: &[] }, V { name: "chi-sep-ilsqr", help: None, hide: false, aliases: &[] }, V { name: "chi-sep-medi", help: None, hide: false, aliases: &[] }, V { name: "chi-sepnet", help: None, hide: false, aliases: &[] }, V { name: "decompose", help: None, hide: false, aliases: &[] }, V { name: "uk-biobank", help: None, hide: false, aliases: &[] }], defaults: &[], default_missing: &[], conflicts: &[], requires: &[], attrs: &[] },
         Flag { id: "masking_input", long: "masking-input", aliases: &[], visible_aliases: &[], value_names: &["MASKING_INPUT"], num_args: (1, 1), action: Set, parse: P::Listed,
-               help: Some("Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude)"), long_help: None,
+               help: Some("Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) (if omitted: the input each mask section names)"), long_help: None,
                values: &[V { name: "magnitude-first", help: None, hide: false, aliases: &[] }, V { name: "magnitude", help: None, hide: false, aliases: &[] }, V { name: "magnitude-last", help: None, hide: false, aliases: &[] }, V { name: "phase-quality", help: None, hide: false, aliases: &[] }], defaults: &[], default_missing: &[], conflicts: &[], requires: &[], attrs: &[] },
         Flag { id: "bet_fractional_intensity", long: "bet-fractional-intensity", aliases: &[], visible_aliases: &[], value_names: &["BET_FRACTIONAL_INTENSITY"], num_args: (1, 1), action: Set, parse: P::F64,
                help: Some("BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec"), long_help: None,
@@ -384,19 +413,19 @@ pub const OTHER_FLAGS: &[Flag] = {
                help: Some("Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build)"), long_help: None,
                values: &[V { name: "robust-threshold", help: None, hide: false, aliases: &[] }, V { name: "bet", help: None, hide: false, aliases: &[] }, V { name: "hd-bet", help: None, hide: false, aliases: &[] }, V { name: "bet-and-phase", help: None, hide: false, aliases: &[] }, V { name: "rs2-net", help: None, hide: false, aliases: &[] }, V { name: "mindgrab", help: None, hide: false, aliases: &[] }, V { name: "mouse-bet", help: Some("Removed. Still parsed, and hidden, so a script that asks for it gets an error that says what to use instead rather than clap's bare \"invalid value\""), hide: true, aliases: &[] }], defaults: &[], default_missing: &[], conflicts: &[], requires: &[], attrs: &[] },
         Flag { id: "mask_sections_cli", long: "mask", aliases: &[], visible_aliases: &[], value_names: &["MASK_SECTIONS_CLI"], num_args: (1, 1), action: Append, parse: P::Text,
-               help: Some("Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: <input>,<generator>,<refinement1>,<refinement2>,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2   (QSMART's mask) Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:full|window|XxYxZ|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`)"), long_help: None,
+               help: Some("Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: <input>,<generator>,<refinement1>,<refinement2>,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2   (QSMART's mask) Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:full|window|XxYxZ|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) (if omitted: the sections of --mask-preset)"), long_help: None,
                values: &[], defaults: &[], default_missing: &[], conflicts: &[], requires: &[], attrs: &[] },
         Flag { id: "mask_combine", long: "mask-combine", aliases: &[], visible_aliases: &[], value_names: &["MASK_COMBINE"], num_args: (1, 1), action: Set, parse: P::Listed,
                help: Some("How to combine multiple --mask sections: `or` (union, the default) or `and` (intersection — a voxel survives only where every section keeps it)"), long_help: None,
                values: &[V { name: "or", help: Some("Union — keep a voxel any section keeps (default)"), hide: false, aliases: &[] }, V { name: "and", help: Some("Intersection — keep only voxels every section keeps"), hide: false, aliases: &[] }], defaults: &[], default_missing: &[], conflicts: &[], requires: &[], attrs: &[] },
         Flag { id: "mask_refinements_cli", long: "mask-refine", aliases: &[], visible_aliases: &[], value_names: &["MASK_REFINEMENTS_CLI"], num_args: (1, 1), action: Append, parse: P::Text,
-               help: Some("Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1"), long_help: None,
+               help: Some("Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1 (if omitted: those of --mask-preset, if any)"), long_help: None,
                values: &[], defaults: &[], default_missing: &[], conflicts: &[], requires: &[], attrs: &[] },
         Flag { id: "two_pass_sections_cli", long: "two-pass-mask", aliases: &[], visible_aliases: &[], value_names: &["TWO_PASS_SECTIONS_CLI"], num_args: (1, 1), action: Append, parse: P::Text,
                help: Some("Define the reliable-pass mask used by --two-pass (repeatable; same format as --mask). Defaults to `phase-quality,threshold:otsu` — an unfilled threshold on the phase-quality map. Its holes are the point, so refinements that close them (fill-holes, close, gaussian) defeat the method. Folded with --two-pass-mask-combine, then --mask-refine like the main mask, and always intersected with it"), long_help: None,
                values: &[], defaults: &[], default_missing: &[], conflicts: &[], requires: &[], attrs: &[] },
         Flag { id: "dismiss_recommendation", long: "dismiss-recommendation", aliases: &[], visible_aliases: &[], value_names: &["RULE=VALUE"], num_args: (1, 1), action: Append, parse: P::Text,
-               help: Some("Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g. field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the recommendation back. A required one cannot be dismissed, and a reference-pipeline difference has nothing to dismiss"), long_help: None,
+               help: Some("Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g. field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the recommendation back. A required one cannot be dismissed, and a reference-pipeline difference has nothing to dismiss (if omitted: every recommendation is offered)"), long_help: None,
                values: &[], defaults: &[], default_missing: &[], conflicts: &[], requires: &[], attrs: &[] },
     ]
 };

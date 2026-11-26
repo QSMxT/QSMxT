@@ -125,8 +125,8 @@ pub struct MaskBetArgs {
     /// Factor applied to the voxel sizes before BET runs — 10 for mouse data, 1 for the
     /// acquisition's own geometry (see --bet-voxel-scale). Prefer `mask rs2-net`, which masks
     /// rodent brains without the trick
-    #[arg(long, value_name = "FACTOR")]
-    pub voxel_scale: Option<f64>,
+    #[arg(long, value_name = "FACTOR", default_value_t = qsmxt_engine::bet_default_voxel_scale())]
+    pub voxel_scale: f64,
     // The settings flags (`qsmxt run`'s, from the flag table).
     #[command(flatten)]
     pub settings: crate::cli_settings::SettingsOf<BetFlags>,
@@ -143,7 +143,8 @@ pub struct MaskHdBetArgs {
     /// Use 128x128x64 sliding-window patches (about 1.5–1.9 GB measured)
     #[arg(long)]
     pub low_memory: bool,
-    /// Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16)
+    /// Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16) (if omitted:
+    /// the whole volume at once, or the window --low-memory or --window chooses)
     #[arg(long)]
     pub patch: Option<String>,
     /// 8-fold mirroring test-time augmentation (about 8x slower)

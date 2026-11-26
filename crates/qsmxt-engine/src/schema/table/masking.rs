@@ -12,7 +12,7 @@ pub(super) fn defs() -> Vec<Def> {
         .when(|x| x.c.masking.sections.len() > 1),
         d("masking.refinements", Masking, "Combined mask steps", "Refinement steps run on the combined mask, after the sections are combined", MaskOps).parent("masking.sections")
         .when(|x| x.c.masking.sections.len() > 1),
-        d("masking.custom_mask_tool", Masking, "Use custom masks", "BYO mask from BIDS derivatives: empty=off, * =any tool, or a tool name (e.g. bet); falls back if absent", Text).basic().optional().flag("--use-custom-masks")
+        d("masking.custom_mask_tool", Masking, "Use custom masks", "BYO mask from BIDS derivatives: empty=off, * =any tool, or a tool name (e.g. bet); falls back if absent", Text).basic().optional().flag("--use-custom-masks").if_omitted("the mask is computed")
         .supplied_file(Item::SuppliedMask, "A brain mask to use instead of computing one from the mask recipe").full("Custom mask")
         .gui("Use a mask from <bids>/derivatives/<tool>/ instead of computing one: * for any tool, or a tool name (e.g. bet); empty to always compute it. Where none is found, the mask is computed")
         .cli("Prefer a bring-your-own mask from BIDS derivatives when present (else compute it). Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`) to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back")

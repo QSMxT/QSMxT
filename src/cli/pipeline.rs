@@ -8,11 +8,12 @@ use super::*;
 /// Which runs of a dataset to process: the `--include` and `--exclude` patterns.
 #[derive(Args, Debug, Default)]
 pub struct RunFilterArgs {
-    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
+    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*") (if omitted:
+    /// every run)
     #[arg(long, num_args = 1..)]
     pub include: Option<Vec<String>>,
 
-    /// Exclude runs matching these glob patterns (e.g. "*mygrea*")
+    /// Exclude runs matching these glob patterns (e.g. "*mygrea*") (if omitted: none)
     #[arg(long, num_args = 1..)]
     pub exclude: Option<Vec<String>>,
 }
@@ -34,7 +35,7 @@ pub struct DatasetArgs {
     #[command(flatten)]
     pub filter: RunFilterArgs,
 
-    /// Limit number of echoes to process
+    /// Limit number of echoes to process (if omitted: every echo)
     #[arg(long)]
     pub num_echoes: Option<usize>,
 }
@@ -117,7 +118,7 @@ pub struct RunArgs {
     #[command(flatten)]
     pub pipeline: crate::cli_settings::SettingsArgs,
 
-    /// Number of parallel threads
+    /// Number of parallel threads (if omitted: the number of CPUs available)
     #[arg(long)]
     pub n_procs: Option<usize>,
 
@@ -138,7 +139,7 @@ pub struct RunArgs {
     #[command(flatten)]
     pub exec: ExecArgs,
 
-    /// Memory limit in GB for concurrent run scheduling (if not specified: the memory available,
+    /// Memory limit in GB for concurrent run scheduling (if omitted: the memory available,
     /// within a Slurm job's or container's memory limit when there is one)
     #[arg(long)]
     pub mem_limit_gb: Option<f64>,
@@ -199,7 +200,7 @@ pub struct SlurmArgs {
     #[arg(long)]
     pub account: String,
 
-    /// SLURM partition
+    /// SLURM partition (if omitted: the cluster's default)
     #[arg(long)]
     pub partition: Option<String>,
 

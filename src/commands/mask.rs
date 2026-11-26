@@ -285,7 +285,7 @@ pub fn execute(cmd: MaskCommand) -> qsmxt_io::Result<()> {
         MaskCommand::Percentile(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(args.percentile) }, &bet_config(&[])?),
         MaskCommand::Bet(args) => generate(&args.common, MaskOp::Bet {
             fractional_intensity: args.fractional_intensity,
-            voxel_scale: args.voxel_scale.unwrap_or_else(qsmxt_engine::bet_default_voxel_scale),
+            voxel_scale: args.voxel_scale,
         }, &bet_config(&args.settings.0)?),
         MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op, &bet_config(&[])?) }
         MaskCommand::Rs2Net(args) => { let op = rs2_net_op(&args)?; generate(&args.common, op, &bet_config(&[])?) }

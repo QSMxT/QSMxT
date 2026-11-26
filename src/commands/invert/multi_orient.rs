@@ -166,12 +166,7 @@ pub(super) fn run_cosmos(args: crate::cli::InvertCosmosArgs) -> qsmxt_io::Result
     let inputs = load_multiorient(args.common, MultiOrientKind::Cosmos)?;
     let bdirs: Vec<_> = inputs.orientations.iter().map(|o| o.b0).collect();
 
-    let d = qsm_core::inversion::CosmosParams::default();
-    let params = qsm_core::inversion::CosmosParams {
-        lambda: args.lambda.unwrap_or(d.lambda),
-        tol: args.tol.unwrap_or(d.tol),
-        max_iter: args.max_iter.unwrap_or(d.max_iter),
-    };
+    let params = qsm_core::inversion::CosmosParams { lambda: args.lambda, tol: args.tol, max_iter: args.max_iter };
 
     let chi = if magnitudes.is_empty() {
         qsm_core::inversion::cosmos(&inputs.fields, &bdirs, &inputs.mask, &inputs.grid, &params)
@@ -211,8 +206,7 @@ pub(super) fn run_sti(args: crate::cli::InvertStiArgs) -> qsmxt_io::Result<()> {
     let inputs = load_multiorient(args.common, MultiOrientKind::Sti)?;
     let bdirs: Vec<_> = inputs.orientations.iter().map(|o| o.b0).collect();
 
-    let d = qsm_core::inversion::StiParams::default();
-    let params = qsm_core::inversion::StiParams { lambda: args.lambda.unwrap_or(d.lambda) };
+    let params = qsm_core::inversion::StiParams { lambda: args.lambda };
 
     let tensor = qsm_core::inversion::sti(
         &inputs.fields, &bdirs, &inputs.mask, &inputs.grid, &params,
