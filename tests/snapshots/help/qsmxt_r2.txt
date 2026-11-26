@@ -19,6 +19,8 @@ Options:
       --t1 <T1>
           Assumed T1 in seconds (EPG dictionary)
 
+          [default: 1]
+
       --b1-map <B1_MAP>
           Optional B1 map NIfTI (refocusing efficiency); fitted from the dictionary if absent
 

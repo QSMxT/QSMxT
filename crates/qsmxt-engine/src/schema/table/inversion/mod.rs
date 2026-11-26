@@ -569,6 +569,7 @@ fn tiling() -> Vec<Def> {
     vec![
         d("inversion.tile_size", Inversion, "Tiled inference", "Run the network on overlapping tiles: bounded memory, approximate. Off = whole volume", Int)
         .value("Tile size", "Overlap-tiling core size in voxels").units("voxels").off(Value::Null).flag("--tile-size").parent("inversion.algorithm")
+        .if_omitted("the whole volume at once")
         .when(|x| x.tileable).gui_value("Tile size", "Core size of each overlapping tile")
         .cli("DL tiling: output core size per patch, in voxels (enables tiling)"),
         d("inversion.tile_halo", Inversion, "Tile halo", "Overlap-tiling context margin in voxels (blank = 8)", Int).units("voxels").optional().flag("--tile-halo").parent("inversion.tile_size")

@@ -12,6 +12,7 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("R2 map from a multi-echo spin-echo (MESE) acquisition via EPG. Required when χ-separation needs it")
         .cli("Compute R2 map from a multi-echo spin-echo (MESE) acquisition (EPG)"),
         d("separation.custom_r2_tool", Relaxometry, "Custom R2 tool", "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)", Text).basic().optional().flag("--use-custom-r2").parent("pipeline.do_r2map")
+        .if_omitted("the R2 map is computed from MESE")
         .supplied_file(Item::SuppliedR2, "An R2 map to use instead of computing one from a MESE acquisition")
         .when(|x| x.reads_r2).full("Custom R2")
         .gui("Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE: * for any tool, or a tool name; empty to compute it")
@@ -21,6 +22,7 @@ pub(super) fn defs() -> Vec<Def> {
         .gui("R2' = R2* − R2; needs GRE magnitude and a MESE acquisition, or R2PRIMEnet. Required when χ-separation needs it")
         .cli("Compute R2' map (= R2* − R2; needs GRE magnitude + a MESE acquisition)"),
         d("separation.custom_r2prime_tool", Relaxometry, "Custom R2' tool", "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)", Text).basic().optional().flag("--use-custom-r2prime").parent("pipeline.do_r2primemap")
+        .if_omitted("the R2' map is computed")
         .supplied_file(Item::SuppliedR2prime, "An R2' map to use instead of computing one")
         .when(|x| x.reads_r2prime).full("Custom R2'")
         .gui("Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it: * for any tool, or a tool name; empty to compute it")

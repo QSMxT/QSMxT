@@ -14,19 +14,19 @@ Options:
           Pipeline configuration file (TOML)
 
       --include <INCLUDE>...
-          Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
+          Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*") (if omitted: every run)
 
       --exclude <EXCLUDE>...
-          Exclude runs matching these glob patterns (e.g. "*mygrea*")
+          Exclude runs matching these glob patterns (e.g. "*mygrea*") (if omitted: none)
 
       --num-echoes <NUM_ECHOES>
-          Limit number of echoes to process
+          Limit number of echoes to process (if omitted: every echo)
 
       --account <ACCOUNT>
           SLURM account name
 
       --partition <PARTITION>
-          SLURM partition
+          SLURM partition (if omitted: the cluster's default)
 
       --time <TIME>
           Wall time limit (e.g., 02:00:00)
@@ -73,7 +73,7 @@ Options:
           [possible values: qsmxt-defaults, medi-toolbox, sti-suite-ilsqr, sti-suite-star, qsmart, heidi, chi-sep-ilsqr, chi-sep-medi, chi-sepnet, decompose, uk-biobank]
 
       --orientation-group <PATTERN>
-          Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), `re:` and a regex with one capture group, or `runs:` and the groups' run keys (`,` between runs, `;` between groups, each group's reference first). Orientations are co-registered if they need it
+          Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), `re:` and a regex with one capture group, or `runs:` and the groups' run keys (`,` between runs, `;` between groups, each group's reference first). Orientations are co-registered if they need it (if omitted: each run is reconstructed on its own)
 
       --axial-resampling
           Resample oblique acquisitions onto an axial grid when their obliquity exceeds --obliquity-threshold. Off by default (methods that only work on axial data resample regardless)
@@ -108,17 +108,17 @@ Options:
           MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs
 
       --mask-preset <MASK_PRESET>
-          Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build)
+          Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction + signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning brain extraction for any contrast; needs a deep-learning build) (default: robust-threshold)
 
           [possible values: robust-threshold, bet, hd-bet, bet-and-phase, rs2-net, mindgrab]
 
       --masking-input <MASKING_INPUT>
-          Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude)
+          Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) (if omitted: the input each mask section names)
 
           [possible values: magnitude-first, magnitude, magnitude-last, phase-quality]
 
       --mask <MASK_SECTIONS_CLI>
-          Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: <input>,<generator>,<refinement1>,<refinement2>,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2   (QSMART's mask) Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:full|window|XxYxZ|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`)
+          Define a mask section (repeatable; multiple sections are combined with --mask-combine). Format: <input>,<generator>,<refinement1>,<refinement2>,... Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2 Example: magnitude,bet:0.5,erode:2 Example: magnitude-first,bet:0.2,min-intensity:100,majority,close:2   (QSMART's mask) Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:full|window|XxYxZ|low-memory][:tta][:step=F]`; signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`) (if omitted: the sections of --mask-preset)
 
       --mask-combine <MASK_COMBINE>
           How to combine multiple --mask sections: `or` (union, the default) or `and` (intersection — a voxel survives only where every section keeps it)
@@ -128,16 +128,16 @@ Options:
           - and: Intersection — keep only voxels every section keeps
 
       --mask-refine <MASK_REFINEMENTS_CLI>
-          Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1
+          Refinement applied to the combined mask, after --mask-combine (repeatable). Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators (threshold/bet/hd-bet) belong in a --mask section instead. Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1 (if omitted: those of --mask-preset, if any)
 
       --use-custom-masks [<USE_CUSTOM_MASKS>]
-          Prefer a bring-your-own mask from BIDS derivatives when present (else compute it). Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`) to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back
+          Prefer a bring-your-own mask from BIDS derivatives when present (else compute it). Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`) to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back (if omitted: the mask is computed)
 
       --two-pass
           Two-pass artefact reduction: reconstruct a second time against a mask with holes at strong susceptibility sources, and merge the two reconstructions (how: --two-pass-mode). Strong sources (haemorrhage, calcification, implants) make the phase around them unrecoverable; leaving those voxels out keeps their streaking from spreading, while the ordinary mask still supplies values inside the holes. Roughly doubles background removal and inversion time, and is not free of downsides — where the holes were not artefactual it can be worse than a single pass. Based on doi:10.1002/mrm.29048 (Stewart et al.). Off by default. The conventional single-pass map is kept alongside as `_desc-singlepass_Chimap.nii`
 
       --bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>
-          BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec
+          BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec (if omitted: each BET step's own, 0.5 for a `bet` that gives none)
 
       --bet-voxel-scale <FACTOR>
           Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a human brain in millimetres, so preclinical data has to be presented at human scale: 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry. Applies to every BET step in the masking recipe
@@ -1169,7 +1169,7 @@ Options:
           AMP-PE: GAMP inner convergence threshold (default: 1e-6)
 
       --tile-size <TILE_SIZE>
-          DL tiling: output core size per patch, in voxels (enables tiling)
+          DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once)
 
       --tile-halo <TILE_HALO>
           DL tiling: context margin per side, in voxels (default 8)
@@ -1395,7 +1395,7 @@ Options:
           Run SUSEP-Net as a sliding window of patches this size in voxels, D H W, each a multiple of 8, so its memory follows the patch, not the volume. Omit to run the whole volume at once
 
       --use-custom-qsm <TOOL>
-          Use a bring-your-own QSM (Chimap) from <bids>/derivatives/<TOOL>/ for chi-separation
+          Use a bring-your-own QSM (Chimap) from <bids>/derivatives/<TOOL>/ for chi-separation (if omitted: QSM is computed)
 
       --no-magnitude
           Do not publish the combined magnitude (part-mag_T2starw). It is still computed, and kept with the run's intermediates, when a step reads it (SMWI, segmentation, a magnitude-weighted inversion)
@@ -1450,13 +1450,13 @@ Options:
           Compute R2 map from a multi-echo spin-echo (MESE) acquisition (EPG)
 
       --use-custom-r2 <TOOL>
-          Use a bring-your-own R2 map from <bids>/derivatives/<TOOL>/ for chi-separation
+          Use a bring-your-own R2 map from <bids>/derivatives/<TOOL>/ for chi-separation (if omitted: the R2 map is computed from MESE)
 
       --do-r2primemap
           Compute R2' map (= R2* − R2; needs GRE magnitude + a MESE acquisition)
 
       --use-custom-r2prime <TOOL>
-          Use a bring-your-own R2' map from <bids>/derivatives/<TOOL>/ for chi-separation
+          Use a bring-your-own R2' map from <bids>/derivatives/<TOOL>/ for chi-separation (if omitted: the R2' map is computed)
 
       --r2prime-strategy <R2PRIME_STRATEGY>
           How to obtain R2' when no custom map is supplied. `auto` (default) measures it as R2* - R2 from a MESE acquisition when one is present and predicts it from R2* with R2PRIMEnet when it is not; `mese` only ever measures it, producing nothing without spin-echo data; `r2primenet` always predicts it. A measurement and an estimate are not the same thing — the generated methods text says which route was configured
@@ -1476,7 +1476,7 @@ Options:
           Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789
 
       --use-custom-dseg [<TOOL>]
-          Prefer a bring-your-own segmentation from <bids>/derivatives/<TOOL>/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg
+          Prefer a bring-your-own segmentation from <bids>/derivatives/<TOOL>/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg (if omitted: SynthSeg runs)
 
       --synthseg-version <VERSION>
           SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023)
@@ -1503,7 +1503,7 @@ Options:
           Also export final maps as DICOM series into each subject's extra_files/ folder
 
       --dismiss-recommendation <RULE=VALUE>
-          Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g. field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the recommendation back. A required one cannot be dismissed, and a reference-pipeline difference has nothing to dismiss
+          Stop offering a recommendation for the setting's current value: RULE=VALUE, the rule's id and the value it was dismissed for, as `qsmxt run --dry` lists them (e.g. field-mapping.phase-offsets=false). Repeatable. A change to the setting brings the recommendation back. A required one cannot be dismissed, and a reference-pipeline difference has nothing to dismiss (if omitted: every recommendation is offered)
 
   -h, --help
           Print help (see a summary with '-h')

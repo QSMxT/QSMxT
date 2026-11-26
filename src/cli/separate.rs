@@ -89,7 +89,7 @@ pub struct SeparateChiSepNetArgs {
     pub output: PathBuf,
     /// B0 field strength in Tesla; required with --r2star (R2PRIMEnet refuses a field strength
     /// other than 3 T unless --r2primenet-ignore-field-mismatch is given). χ-sepnet itself does
-    /// not use it
+    /// not use it, so omit it otherwise
     #[arg(long)]
     pub field_strength: Option<f64>,
     /// B0 direction (3 values)
@@ -126,7 +126,8 @@ pub struct SeparateR2starQsmArgs {
     /// Multi-echo magnitude: one 4D file or several 3D files (space-separated). Fits R2* if --r2star absent.
     #[arg(long, num_args = 1.., requires = "echo_times")]
     pub magnitude: Vec<PathBuf>,
-    /// GRE echo times in seconds (space- or comma-separated), required with --magnitude
+    /// GRE echo times in seconds (space- or comma-separated), required with --magnitude; omit
+    /// both to use --r2star
     #[arg(long, num_args = 1.., value_delimiter = ',')]
     pub echo_times: Vec<f64>,
     // The settings flags (`qsmxt run`'s, from the flag table).
@@ -230,7 +231,8 @@ pub struct SeparateHcChisepArgs {
     /// Multi-echo spin-echo magnitude: one 4D file or several 3D files (optional)
     #[arg(long, num_args = 1..)]
     pub se_magnitude: Vec<PathBuf>,
-    /// Spin-echo times in seconds (comma-separated) for --se-magnitude
+    /// Spin-echo times in seconds (comma-separated) for --se-magnitude; omit both to use no
+    /// spin-echo data
     #[arg(long, num_args = 1.., value_delimiter = ',')]
     pub se_echo_times: Vec<f64>,
     // The settings flags (`qsmxt run`'s, from the flag table).

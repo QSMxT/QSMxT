@@ -42,20 +42,20 @@ pub struct InvertCosmosArgs {
     /// Output susceptibility map NIfTI file
     #[arg(short, long)]
     pub output: PathBuf,
-    /// L2 regularization on the k-space denominator. 0 (default) is plain least squares and is
-    /// right for 3+ covering orientations; 1e-3..1e-2 helps with 2, or single-axis rotations
-    #[arg(long)]
-    pub lambda: Option<f64>,
+    /// L2 regularization on the k-space denominator. 0 is plain least squares and is right for
+    /// 3+ covering orientations; 1e-3..1e-2 helps with 2, or single-axis rotations
+    #[arg(long, default_value_t = qsm_core::inversion::CosmosParams::default().lambda)]
+    pub lambda: f64,
     /// Magnitude NIfTI for one orientation — repeat once per --input to use the
     /// magnitude-weighted formulation (conjugate gradient) instead of the closed form
     #[arg(long = "magnitude", action = clap::ArgAction::Append)]
     pub magnitudes: Vec<PathBuf>,
     /// Conjugate-gradient tolerance (weighted formulation only)
-    #[arg(long)]
-    pub tol: Option<f64>,
+    #[arg(long, default_value_t = qsm_core::inversion::CosmosParams::default().tol)]
+    pub tol: f64,
     /// Maximum conjugate-gradient iterations (weighted formulation only)
-    #[arg(long)]
-    pub max_iter: Option<usize>,
+    #[arg(long, default_value_t = qsm_core::inversion::CosmosParams::default().max_iter)]
+    pub max_iter: usize,
 }
 
 #[derive(Parser, Debug)]
@@ -69,6 +69,6 @@ pub struct InvertStiArgs {
     pub output: PathBuf,
     /// Ridge term on the 6x6 normal equations at each k-point. Raise when orientations are
     /// few, clustered or near-coplanar
-    #[arg(long)]
-    pub lambda: Option<f64>,
+    #[arg(long, default_value_t = qsm_core::inversion::StiParams::default().lambda)]
+    pub lambda: f64,
 }

@@ -14,7 +14,7 @@ Options:
           Also write the BIDS label lookup table (index/name) to this path
 
       --use-custom-dseg [<TOOL>]
-          Prefer a bring-your-own segmentation from <bids>/derivatives/<TOOL>/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg
+          Prefer a bring-your-own segmentation from <bids>/derivatives/<TOOL>/ when present. Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg (if omitted: SynthSeg runs)
 
       --synthseg-version <VERSION>
           SynthSeg weights generation: v1 (SynthSeg 1.0, 32 labels; the default) or v2 (SynthSeg 2.0, 33 labels, adds a general CSF class; Billot et al., PNAS 2023)

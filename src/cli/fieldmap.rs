@@ -36,10 +36,10 @@ pub struct FieldmapCommonArgs {
     /// Multi-echo magnitude NIfTI file (4D; improves weighting)
     #[arg(long)]
     pub magnitude: Option<PathBuf>,
-    /// Echo times in seconds (space-separated, one per echo)
+    /// Echo times in seconds (space-separated, one per echo) (if omitted: the --params file's TE)
     #[arg(long, num_args = 1..)]
     pub tes: Option<Vec<f64>>,
-    /// Field strength in Tesla (alias: --field-strength)
+    /// Field strength in Tesla (alias: --field-strength) (if omitted: the --params file's B0)
     #[arg(long, alias = "field-strength")]
     pub b0: Option<f64>,
     /// JSON params file: {"TE":[..seconds], "B0":<tesla>, "voxel_size":[..], "B0_dir":[..]}.

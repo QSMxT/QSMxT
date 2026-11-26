@@ -19,7 +19,7 @@ Options:
           [default: 0 0 1]
 
       --tile-size <TILE_SIZE>
-          DL tiling: output core size per patch, in voxels (enables tiling)
+          DL tiling: output core size per patch, in voxels (enables tiling) (if omitted: the whole volume at once)
 
       --tile-halo <TILE_HALO>
           DL tiling: context margin per side, in voxels (default 8)

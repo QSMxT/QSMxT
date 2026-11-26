@@ -150,11 +150,11 @@ pub struct BgremoveHarperellaArgs {
     #[arg(long)]
     pub output_mask: Option<std::path::PathBuf>,
     /// Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped
-    /// echo in rad (the published method); without both, it is an unwrapped total field in ppm.
+    /// echo in rad (the published method); if both are omitted, it is an unwrapped total field in ppm.
     /// The local field is written in ppm either way
     #[arg(long, requires = "field_strength")]
     pub te: Option<f64>,
-    /// B0 field strength (T) of a wrapped-phase input — see --te
+    /// B0 field strength (T) of a wrapped-phase input — see --te for when both are omitted
     #[arg(long, requires = "te")]
     pub field_strength: Option<f64>,
     // The settings flags (`qsmxt run`'s, from the flag table).
@@ -176,12 +176,12 @@ pub struct BgremoveIharperellaArgs {
     #[arg(long)]
     pub output_mask: Option<std::path::PathBuf>,
     /// Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped
-    /// echo in rad, unwrapped by HARPERELLA's Laplacian; without both, it is an unwrapped total
+    /// echo in rad, unwrapped by HARPERELLA's Laplacian; if both are omitted, it is an unwrapped total
     /// field in ppm, which iHARPERELLA takes as it is. The local field is written in ppm either
     /// way
     #[arg(long, requires = "field_strength")]
     pub te: Option<f64>,
-    /// B0 field strength (T) of a wrapped-phase input — see --te
+    /// B0 field strength (T) of a wrapped-phase input — see --te for when both are omitted
     #[arg(long, requires = "te")]
     pub field_strength: Option<f64>,
     // The settings flags (`qsmxt run`'s, from the flag table).

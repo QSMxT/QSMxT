@@ -76,10 +76,10 @@ fn cosmos_gives_qsm_core_every_orientation_with_its_direction() {
     super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
         common: common(inputs, mask_path, flat_dirs(&DIRS)),
         output: out.clone(),
-        lambda: None,
+        lambda: qsm_core::inversion::CosmosParams::default().lambda,
         magnitudes: vec![],
-        tol: None,
-        max_iter: None,
+        tol: qsm_core::inversion::CosmosParams::default().tol,
+        max_iter: qsm_core::inversion::CosmosParams::default().max_iter,
     }))
     .unwrap();
 
@@ -99,10 +99,10 @@ fn refuses_identical_directions() {
     let err = super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
         common: common(inputs, mask_path, flat_dirs(&same)),
         output: dir.path().join("out.nii"),
-        lambda: None,
+        lambda: qsm_core::inversion::CosmosParams::default().lambda,
         magnitudes: vec![],
-        tol: None,
-        max_iter: None,
+        tol: qsm_core::inversion::CosmosParams::default().tol,
+        max_iter: qsm_core::inversion::CosmosParams::default().max_iter,
     }))
     .unwrap_err();
     assert!(format!("{err}").contains("one orientation measured 3 times"), "{err}");
@@ -124,10 +124,10 @@ fn force_overrides_the_degeneracy_check() {
     super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
         common: c,
         output: out.clone(),
-        lambda: Some(1e-2),
+        lambda: 1e-2,
         magnitudes: vec![],
-        tol: None,
-        max_iter: None,
+        tol: qsm_core::inversion::CosmosParams::default().tol,
+        max_iter: qsm_core::inversion::CosmosParams::default().max_iter,
     }))
     .unwrap();
     // ...with `--lambda` reaching qsm-core.
@@ -145,10 +145,10 @@ fn rejects_a_direction_count_that_does_not_match_the_inputs() {
     let err = super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
         common: common(inputs, mask_path, flat_dirs(&DIRS[..2])),
         output: dir.path().join("out.nii"),
-        lambda: None,
+        lambda: qsm_core::inversion::CosmosParams::default().lambda,
         magnitudes: vec![],
-        tol: None,
-        max_iter: None,
+        tol: qsm_core::inversion::CosmosParams::default().tol,
+        max_iter: qsm_core::inversion::CosmosParams::default().max_iter,
     }))
     .unwrap_err();
     assert!(format!("{err}").contains("2 B0 direction(s) for 3 input(s)"), "{err}");
@@ -178,10 +178,10 @@ fn rejects_inputs_whose_affines_disagree() {
     let err = super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
         common: common(inputs, mask_path, flat_dirs(&DIRS)),
         output: dir.path().join("out.nii"),
-        lambda: None,
+        lambda: qsm_core::inversion::CosmosParams::default().lambda,
         magnitudes: vec![],
-        tol: None,
-        max_iter: None,
+        tol: qsm_core::inversion::CosmosParams::default().tol,
+        max_iter: qsm_core::inversion::CosmosParams::default().max_iter,
     }))
     .unwrap_err();
     assert!(format!("{err}").contains("not on a common grid"), "{err}");
@@ -207,10 +207,10 @@ fn cosmos_reads_directions_from_a_file() {
     super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
         common: c,
         output: out.clone(),
-        lambda: None,
+        lambda: qsm_core::inversion::CosmosParams::default().lambda,
         magnitudes: vec![],
-        tol: None,
-        max_iter: None,
+        tol: qsm_core::inversion::CosmosParams::default().tol,
+        max_iter: qsm_core::inversion::CosmosParams::default().max_iter,
     }))
     .unwrap();
     assert_same_map(&read(&out), &core_cosmos(&chi, &DIRS, None), "COSMOS with --b0-dirs");
@@ -228,7 +228,7 @@ fn sti_writes_the_tensor_and_its_derived_maps() {
     super::invert::execute(InvertCommand::Sti(InvertStiArgs {
         common: common(inputs, mask_path, flat_dirs(&SIX_DIRS)),
         output: prefix.clone(),
-        lambda: Some(1e-3),
+        lambda: 1e-3,
     }))
     .unwrap();
 
@@ -279,7 +279,7 @@ fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
     super::invert::execute(InvertCommand::Sti(InvertStiArgs {
         common: common(fields, mask_path.clone(), flat_dirs(&SIX_DIRS)),
         output: prefix.clone(),
-        lambda: Some(1e-3),
+        lambda: 1e-3,
     })).unwrap();
     for p in [pipeline.sti_tensor_path(&key), pipeline.sti_mms_path(&key),
               pipeline.sti_msa_path(&key), pipeline.sti_eigenvector_path(&key)] {
@@ -359,7 +359,7 @@ fn sti_refuses_fewer_than_six_orientations() {
     let err = super::invert::execute(InvertCommand::Sti(InvertStiArgs {
         common: common(inputs, mask_path, flat_dirs(&DIRS)),
         output: dir.path().join("sti"),
-        lambda: None,
+        lambda: qsm_core::inversion::StiParams::default().lambda,
     }))
     .unwrap_err();
     assert!(format!("{err}").contains("at least 6"), "{err}");

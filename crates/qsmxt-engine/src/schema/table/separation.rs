@@ -316,6 +316,7 @@ fn susep_net() -> Vec<Def> {
 fn custom_qsm_tool() -> Vec<Def> {
     vec![
         d("separation.custom_qsm_tool", Separation, "Custom QSM tool", "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool", Text).basic().optional().flag("--use-custom-qsm").also(&[SwiSmwi, Segmentation])
+        .if_omitted("QSM is computed")
         .supplied_file(Item::SuppliedChi, "A susceptibility (χ) map to use instead of computing QSM, for χ-separation, the statistics and SMWI")
         .when(|x| x.reads_qsm).full("Custom QSM")
         .gui("Use a χ map (Chimap) from <bids>/derivatives/<tool>/ instead of computing QSM, for χ-separation, the statistics and SMWI: * for any tool, or a tool name; empty to compute it")

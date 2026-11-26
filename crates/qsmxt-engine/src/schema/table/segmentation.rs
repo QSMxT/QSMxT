@@ -7,6 +7,7 @@ pub(super) fn defs() -> Vec<Def> {
         d("pipeline.do_segmentation", Segmentation, "Segmentation", "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Required by the statistics and a region reference: choosing one offers to turn it on (left off, the run turns it on itself)", Bool).basic().flag("--do-segmentation")
         .cli("Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a deep-learning build. doi:10.1016/j.media.2023.102789"),
         d("segmentation.custom_dseg_tool", Segmentation, "Derivatives tool", "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found", Text).basic().optional().flag("--use-custom-dseg").parent("pipeline.do_segmentation")
+        .if_omitted("SynthSeg runs")
         .supplied_file(Item::SuppliedSegmentation, "A segmentation to use instead of running SynthSeg")
         .when(|x| x.segmentation_on).full("Custom segmentation")
         .gui("Use a segmentation (dseg) from <bids>/derivatives/<tool>/ instead of running SynthSeg: * for any tool, or a tool name. SynthSeg runs where none is found")

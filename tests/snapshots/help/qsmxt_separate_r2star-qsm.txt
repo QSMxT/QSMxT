@@ -27,7 +27,7 @@ Options:
           Multi-echo magnitude: one 4D file or several 3D files (space-separated). Fits R2* if --r2star absent
 
       --echo-times <ECHO_TIMES>...
-          GRE echo times in seconds (space- or comma-separated), required with --magnitude
+          GRE echo times in seconds (space- or comma-separated), required with --magnitude; omit both to use --r2star
 
       --r2star-qsm-r-const-3t <R2STAR_QSM_R_CONST_3T>
           R2*-QSM relaxometric constant at 3T (Hz/ppm) (default: 274)
